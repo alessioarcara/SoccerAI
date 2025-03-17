@@ -2,7 +2,9 @@ import os
 from typing import Dict, Any, List, Tuple
 import polars as pl
 import json
-from utils import offset_x_by_60, offset_y_by_40
+from utils import offset_x_by_60, offset_y_by_40, compute_velocity, compute_direction
+import bz2
+import numpy as np
 
 
 def extract_event(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -24,23 +26,36 @@ def extract_event(event: Dict[str, Any]) -> Dict[str, Any]:
 
 def extract_players(event: Dict[str, Any]) -> List[Dict[str, Any]]:
     players = []
+    game_id = event["gameId"]
+    event_id = event["gameEventId"]
+    # players_velocities, end_time, ball_end_pos, players_end_pos = extract_tracking_data(
+    #     game_id, event_id
+    # )
+    # ball_velocity, ball_direction = compute_velocity(
+    #     (event["ball"]["x"], event["ball"]["y"]),
+    #     ball_end_pos,
+    #     event["end_time"],
+    #     end_time,
+    #     True,
+    # )
     for player in event["homePlayers"]:
         players.append(
             {
-                "gameId": event["gameId"],
-                "gameEventId": event["gameEventId"],
+                "gameId": game_id,
+                "gameEventId": event_id,
                 "jerseyNum": player["jerseyNum"],
                 "x": offset_x_by_60(player["x"]),
                 "y": offset_y_by_40(player["y"]),
                 "z": 0.0,
+                "velocity": 0.0,
                 "team": "home",
             }
         )
     for player in event["awayPlayers"]:
         players.append(
             {
-                "gameId": event["gameId"],
-                "gameEventId": event["gameEventId"],
+                "gameId": game_id,
+                "gameEventId": event_id,
                 "jerseyNum": player["jerseyNum"],
                 "x": offset_x_by_60(player["x"]),
                 "y": offset_y_by_40(player["y"]),
@@ -51,8 +66,8 @@ def extract_players(event: Dict[str, Any]) -> List[Dict[str, Any]]:
     ball = event["ball"]
     players.append(
         {
-            "gameId": event["gameId"],
-            "gameEventId": event["gameEventId"],
+            "gameId": game_id,
+            "gameEventId": event_id,
             "jerseyNum": None,
             "x": offset_x_by_60(ball["x"]),
             "y": offset_y_by_40(ball["y"]),
@@ -61,6 +76,53 @@ def extract_players(event: Dict[str, Any]) -> List[Dict[str, Any]]:
         }
     )
     return players
+
+
+def extract_metadata(game_metadata: List[Dict[str, Any]]) -> Dict[str, Any]:
+    return {
+        "gameId": game_metadata[0]["id"],
+        "awayTeamName": game_metadata[0]["awayTeam"]["name"],
+        "awayTeamColor": game_metadata[0]["awayTeamKit"]["primaryColor"],
+        "homeTeamName": game_metadata[0]["homeTeam"]["name"],
+        "homeTeamColor": game_metadata[0]["homeTeamKit"]["primaryColor"],
+    }
+
+
+def extract_tracking_data(
+    game_id: int, event_id: str
+) -> Tuple[Dict[str, Any], float, Tuple[float]]:
+    pass
+    # tracking_file = f"./FIFA_WorldCup_2022/Tracking Data/{game_id}.jsonl.bz2"
+    # velocities = {"home": {}, "away": {}}
+    # players_pos = {"home": {}, "away": {}}
+    # end_frame = -1
+    # with bz2.BZ2File(tracking_file, "r") as tracking_data:
+    #     for frame in tracking_data:
+    #         frame_info = json.loads(frame.decode())
+    #         if frame_info["game_event_id"] == event_id and (
+    #             frame_info["frameNum"] == frame_info["game_event"]["end_frame"]
+    #         ):
+    #             end_frame = frame_info["frameNum"]
+    #             # for player in frame_info["homePlayers"]:
+    #             #     velocities["home"][player["jerseyNum"]] = player["speed"]
+    #             # for player in frame_info["awayPlayers"]:
+    #             #     velocities["away"][player["jerseyNum"]] = player["speed"]
+    #         elif frame_info["game_event_id"] == end_frame + 1:
+    #             ball_pos = (frame_info["balls"][0]["x"], frame_info["balls"][0]["y"])
+    #             end_time = np.round(frame_info["videoTimeMs"] / 1000, 3)
+    #             for player in frame_info["homePlayers"]:
+    #                 players_pos["home"][player["jerseyNum"]] = (
+    #                     player["x"],
+    #                     player["y"],
+    #                 )
+    #             for player in frame_info["awayPlayers"]:
+    #                 players_pos["away"][player["jerseyNum"]] = (
+    #                     player["x"],
+    #                     player["y"],
+    #                 )
+    #             break
+
+    # return velocities, end_time, ball_pos, players_pos
 
 
 def load_and_process_soccer_events(
@@ -79,7 +141,6 @@ def load_and_process_soccer_events(
                 e["homePlayers"] is None
                 or e["awayPlayers"] is None
                 or e["ball"] is None
-                or e["gameEvents"]["gameEventType"] == "OUT"
             ):
                 continue
 
@@ -90,3 +151,21 @@ def load_and_process_soccer_events(
     players_df = pl.DataFrame(all_players).with_row_index()
 
     return event_df, players_df
+
+
+def load_and_process_metadata(
+    metadata_dir_path: str,
+) -> pl.DataFrame:
+    metadata_files = [f for f in os.listdir(metadata_dir_path) if f.endswith(".json")]
+
+    metadata_matches = []
+
+    for metadata_file in metadata_files:
+        with open(os.path.join(metadata_dir_path, metadata_file), "r") as f:
+            data = json.load(f)
+
+        metadata_matches.append(extract_metadata(data))
+
+    metadata_df = pl.DataFrame(metadata_matches).with_row_index()
+
+    return metadata_df

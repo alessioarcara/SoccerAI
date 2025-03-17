@@ -33,3 +33,27 @@ def pos_labeling(
 
 def neg_labeling(event_df: pl.DataFrame) -> List[List[int]]:
     pass
+
+    # all_indices = list(range(event_data.height))
+    # negative_indices = [index for index in all_indices if index not in indices]
+    # tmp_indices = []
+    # negative_indices_copy = negative_indices.copy()
+
+    # for idx in range(len(negative_indices_copy) - 1):
+    #     print(tmp_indices)
+    #     tmp_indices.append(negative_indices_copy[idx])
+    #     if not (negative_indices_copy[idx + 1] - negative_indices_copy[idx] == 1
+    #         and event_data.row(negative_indices_copy[idx + 1], named=True)['teamName'] ==  event_data.row(negative_indices_copy[idx], named=True)['teamName']):
+    #         if len(tmp_indices) < 5:
+    #             negative_indices = [index for index in negative_indices if index not in tmp_indices]
+
+    #         print(tmp_indices)
+    #         tmp_indices = []
+    #         print(tmp_indices)
+
+    # event_data = event_data.with_columns(
+    #     pl.when(pl.col("idx").is_in(indices)).then(1)
+    #     .when(pl.col("idx").is_in(negative_indices)).then(0)
+    #     .alias("label")
+    # )
+    # event_data = event_data.filter(pl.col("label").is_not_null())
