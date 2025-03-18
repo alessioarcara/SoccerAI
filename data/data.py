@@ -2,7 +2,7 @@ import os
 from typing import Dict, Any, List, Tuple
 import polars as pl
 import json
-from utils import offset_x_by_60, offset_y_by_40, compute_velocity, compute_direction
+from utils import offset_x, offset_y, compute_velocity, compute_direction
 import bz2
 import numpy as np
 
@@ -44,8 +44,8 @@ def extract_players(event: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "gameId": game_id,
                 "gameEventId": event_id,
                 "jerseyNum": player["jerseyNum"],
-                "x": offset_x_by_60(player["x"]),
-                "y": offset_y_by_40(player["y"]),
+                "x": offset_x(player["x"]),
+                "y": offset_y(player["y"]),
                 "z": 0.0,
                 "velocity": 0.0,
                 "team": "home",
@@ -57,8 +57,8 @@ def extract_players(event: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "gameId": game_id,
                 "gameEventId": event_id,
                 "jerseyNum": player["jerseyNum"],
-                "x": offset_x_by_60(player["x"]),
-                "y": offset_y_by_40(player["y"]),
+                "x": offset_x(player["x"]),
+                "y": offset_y(player["y"]),
                 "z": 0.0,
                 "team": "away",
             }
@@ -69,8 +69,8 @@ def extract_players(event: Dict[str, Any]) -> List[Dict[str, Any]]:
             "gameId": game_id,
             "gameEventId": event_id,
             "jerseyNum": None,
-            "x": offset_x_by_60(ball["x"]),
-            "y": offset_y_by_40(ball["y"]),
+            "x": offset_x(ball["x"]),
+            "y": offset_y(ball["y"]),
             "z": ball["z"],
             "team": None,
         }

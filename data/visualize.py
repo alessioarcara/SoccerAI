@@ -142,7 +142,10 @@ def shot_frames_navigator(
         with ThreadPoolExecutor(max_workers=8) as executor:
             futures = {
                 executor.submit(
-                    download_video_frame, frame_index, event_dicts[frame_index], output_dir
+                    download_video_frame,
+                    frame_index,
+                    event_dicts[frame_index],
+                    output_dir,
                 ): frame_index
                 for frame_index in frames
             }

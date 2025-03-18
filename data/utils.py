@@ -4,12 +4,12 @@ import subprocess
 import numpy as np
 
 
-def offset_x_by_60(x: int):
-    return (x or 0) + 60
+def offset_x(x: int):
+    return (x or 0) + 52.5
 
 
-def offset_y_by_40(y: int):
-    return (y or 0) + 40
+def offset_y(y: int):
+    return (y or 0) + 34
 
 
 def compute_velocity(
