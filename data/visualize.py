@@ -44,15 +44,105 @@ def plot_players_with_numbers(
     return [scat, *texts]
 
 
+def add_pitch_info(
+    ax,
+    home_team_name: str,
+    away_team_name: str,
+    home_team_color: str,
+    away_team_color: str,
+    home_text_color: str,
+    away_text_color: str,
+    time_str: str = ""
+):
+    """
+    Plots team names and a time label on the pitch.
+
+    Parameters:
+      ax: The Matplotlib Axes object.
+      home_team_name: The name of the home team (displayed on the left).
+      away_team_name: The name of the away team (displayed on the right).
+      home_team_color: Background color for the home team text box.
+      away_team_color: Background color for the away team text box.
+      home_text_color: Text color for the home team.
+      away_text_color: Text color for the away team.
+      time_str: The initial time string to display (default is empty).
+
+    Returns:
+      The time text artist (so it can be updated later).
+    """
+    # Home team label (top left)
+    ax.text(
+        0.01, 1.03,
+        home_team_name,
+        transform=ax.transAxes,
+        fontsize=16,
+        fontweight="bold",
+        color=home_text_color,
+        ha="left",
+        va="center",
+        bbox=dict(facecolor=home_team_color, alpha=0.8, boxstyle="round,pad=0.3")
+    )
+
+    # Away team label (top right)
+    ax.text(
+        0.99, 1.03,
+        away_team_name,
+        transform=ax.transAxes,
+        fontsize=16,
+        fontweight="bold",
+        color=away_text_color,
+        ha="right",
+        va="center",
+        bbox=dict(facecolor=away_team_color, alpha=0.8, boxstyle="round,pad=0.3")
+    )
+
+    # Time label (centered above the pitch)
+    ax.text(
+        0.5, 1.02,
+        time_str,
+        transform=ax.transAxes,
+        fontsize=14,
+        fontweight="bold",
+        color="white",
+        ha="center",
+        va="bottom",
+        bbox=dict(facecolor="black", alpha=0.75, boxstyle="round,pad=0.5")
+    )
+
+
+
 def visualize_frame(
-    row_index: int,
+    frame_index: int,
     event_df: pl.DataFrame,
     players_df: pl.DataFrame,
+    metadata_df: pl.DataFrame,
     ball_trajectory: List[Tuple[float]],
 ) -> None:
-    frame_df = pl.from_dict(event_df.row(row_index, named=True))
+
+    frame_df = pl.from_dict(event_df.row(frame_index, named=True))
     join_table = frame_df.join(players_df, on="gameEventId")
 
+    match_id = event_df[frame_index]["gameId"].item()
+    metadata_game = metadata_df.filter(pl.col("gameId") == str(match_id)).row(
+        0, named=True
+    )
+    home_team_name = metadata_game["homeTeamName"]
+    home_team_color = metadata_game["homeTeamColor"]
+    away_team_name = metadata_game["awayTeamName"]
+    away_team_color = metadata_game["awayTeamColor"]
+
+
+    # Function to choose a contrasting text color based on the team color
+    def get_contrasting_text_color(team_color):
+        color = team_color.strip().lower()
+        # Check for common white representations
+        if color in ["#ffffff", "white"]:
+            return "black"
+        else:
+            return "white"
+
+    home_text_color = get_contrasting_text_color(home_team_color)
+    away_text_color = get_contrasting_text_color(away_team_color)
     pitch = Pitch(
         pitch_type="custom",
         pitch_width=68,
@@ -61,7 +151,7 @@ def visualize_frame(
         line_color="#c7d5cc",
         stripe=True,
     )
-    _, ax = pitch.draw(figsize=(7, 3))
+    fig, ax = pitch.draw(figsize=(10, 8))
 
     home_coords = (
         join_table.filter(pl.col("team") == "home")
@@ -79,30 +169,52 @@ def visualize_frame(
         ax=ax,
         x_coords=home_coords[:, 0],
         y_coords=home_coords[:, 1],
-        color="red",
+        color=home_team_color,
         alpha=0.9,
         s=300,
         jersey_numbers=home_coords[:, 2],
-        label_color="white",
+        label_color=home_text_color,
         zorder=3,
     )
     plot_players_with_numbers(
         ax=ax,
         x_coords=away_coords[:, 0],
         y_coords=away_coords[:, 1],
-        color="blue",
+        color=away_team_color,
         s=300,
         alpha=0.5,
         jersey_numbers=away_coords[:, 2],
-        label_color="white",
+        label_color=away_text_color,
         zorder=4,
+    )
+
+    current_time = event_df.row(frame_index, named=True)['frameTime']
+    time_text = add_pitch_info(
+        ax,
+        home_team_name,
+        away_team_name,
+        home_team_color,  
+        away_team_color, 
+        home_text_color,
+        away_text_color,
+        current_time
     )
 
     ball_df = join_table.filter(pl.col("team").is_null())
     ball_row = ball_df.row(0, named=True)
-    ax.scatter(
-        ball_row["x"], ball_row["y"], color="white", edgecolors="black", s=100, zorder=5
+    # # Load the ball image (ensure you have a PNG with transparency
+    ball_img = mpimg.imread("soccer_ball_transparent.png")
+    ball_image = OffsetImage(ball_img, zoom=0.05)
+    ball_offset_x = 1  # offset in x-direction
+    ball_offset_y = 1  # offset in y-direction
+    ball_ab = AnnotationBbox(
+        ball_image,
+        (ball_row["x"] + ball_offset_x, ball_row["y"] + ball_offset_y),
+        xycoords="data",
+        frameon=False,
+        zorder=5,
     )
+    ax.add_artist(ball_ab)
     if len(ball_trajectory) > 1:
         xs, ys = zip(*ball_trajectory)
         ax.plot(xs, ys, color="yellow", linewidth=2, alpha=0.7, zorder=4)
@@ -122,22 +234,28 @@ def shot_frames_navigator(
     frames: List[int],
     event_df: pl.DataFrame,
     players_df: pl.DataFrame,
+    metadata_df: pl.DataFrame,
     output_dir: str,
     show_video: bool = True,
-    interval: str = 1000,
+    interval: str = "1000",
 ) -> None:
-    """ """
-
+    """
+    Interactive navigator for shot frames.
+      - Uses a Play widget linked to a slider.
+      - Updates the pitch view (via visualize_frame) and video view.
+      - Includes two labeling buttons ("Select Key Pass" and "Discard Chain")
+        that record a label for the current frame and automatically advance the slider.
+    """
+    # Create Play widget and slider; link them.
     play = widgets.Play(
         value=0,
         min=0,
         max=len(frames) - 1,
         step=1,
-        interval=interval,
+        interval=int(interval),
         description="Press play",
         disabled=False,
     )
-
     slider = widgets.IntSlider(
         value=0,
         min=0,
@@ -145,31 +263,31 @@ def shot_frames_navigator(
         description="Frame:",
         continuous_update=False,
     )
-
     widgets.jslink((play, "value"), (slider, "value"))
+    
+    # Output areas for pitch and video.
     pitch_output = widgets.Output()
     video_output = widgets.Output()
 
+    # Pre-load video frames if enabled.
+    video_files = {}
     if show_video:
         event_dicts = event_df.to_dicts()
-        video_files = {}
         with ThreadPoolExecutor(max_workers=8) as executor:
             futures = {
                 executor.submit(
                     download_video_frame, frame_index, event_dicts[frame_index], output_dir
-                ): frame_index
-                for frame_index in frames
+                ): frame_index for frame_index in frames
             }
-
             for future in as_completed(futures):
                 result = future.result()
                 if result:
                     frame_index, filename = result
                     video_files[frame_index] = filename
 
+    # Get ball coordinates for each frame.
     frame_df = event_df.filter(pl.col("index").is_in(frames))
     join_table = frame_df.join(players_df, on="gameEventId")
-
     ball_coordinates = []
     for frame_idx in frames:
         ball_xco = join_table.filter(
@@ -180,15 +298,18 @@ def shot_frames_navigator(
         ).row(0, named=True)["y"]
         ball_coordinates.append((ball_xco, ball_yco))
 
+    # Dictionary to store labels for each frame.
+    labels = {}
+
+    # Callback for slider changes: update pitch and video outputs.
     def on_value_change(change):
         new_val = change["new"]
         frame_index = frames[new_val]
-
         ball_trajectory = ball_coordinates[: new_val + 1]
 
         with pitch_output:
             clear_output(wait=True)
-            visualize_frame(frame_index, event_df, players_df, ball_trajectory)
+            visualize_frame(frame_index, event_df, players_df, metadata_df, ball_trajectory)
 
         if show_video:
             with video_output:
@@ -198,7 +319,6 @@ def shot_frames_navigator(
                     display(Image(filename=video_file))
                 else:
                     print("Frame not available.")
-
         else:
             with video_output:
                 clear_output(wait=True)
@@ -207,13 +327,50 @@ def shot_frames_navigator(
     slider.observe(on_value_change, names="value")
     on_value_change({"new": 0})
 
-    controls = widgets.HBox([play, slider])
-    if show_video:
-        ui = widgets.VBox([widgets.HBox([pitch_output, video_output]), controls])
-    else:
-        ui = widgets.VBox([pitch_output, controls])
+    # Create labeling buttons.
+    select_button = widgets.Button(
+        description="Select Key Pass",
+        button_style="success"
+    )
+    discard_button = widgets.Button(
+        description="Discard Chain",
+        button_style="danger"
+    )
 
+    # When a button is clicked, store the label and advance the slider.
+    def label_current_frame(label: str):
+        current_index = slider.value
+        labels[frames[current_index]] = label
+        # Automatically advance slider if not at the last frame.
+        if current_index < slider.max:
+            slider.value = current_index + 1
+        else:
+            print("Labeling complete!")
+            print("Labels:", labels)
+
+    def on_select_button_clicked(b):
+        label_current_frame("key_pass")
+
+    def on_discard_button_clicked(b):
+        label_current_frame("discarded")
+
+    select_button.on_click(on_select_button_clicked)
+    discard_button.on_click(on_discard_button_clicked)
+
+    # Layout: pitch and video side by side, with Play/slider controls and labeling buttons.
+    pitch_box = widgets.VBox([pitch_output, slider])
+    if show_video:
+        video_box = widgets.VBox([video_output])
+        top_box = widgets.HBox([pitch_box, video_box])
+    else:
+        top_box = pitch_box
+
+    controls_box = widgets.HBox([play])
+    labeling_box = widgets.HBox([select_button, discard_button])
+
+    ui = widgets.VBox([top_box, controls_box, labeling_box])
     display(ui)
+
 
 
 def animate_pitch(
@@ -434,6 +591,17 @@ def animate_pitch(
     return anim
 
 
+
+
+def manual_labeling2() -> List[Tuple[int,int]]:
+    # must give back a tuple where we have:
+    # 1. a label to delete or consider a chain
+    # 2. a index inside the chain to slice it if some keyframe is not useful 
+    pass
+
+
+
+
 def manual_labeling(
     chain_range,
     animate_chain,
@@ -452,7 +620,7 @@ def manual_labeling(
         description="Select Key Pass", button_style="success"
     )
     discard_button = widgets.Button(description="Discard Chain", button_style="danger")
-    button_box = widgets.HBox([select_button, discard_button])
+    button_box = widgets.VBox([select_button, discard_button])
     output_area = widgets.Output()
 
     def next_chain():
