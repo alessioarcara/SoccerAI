@@ -124,8 +124,20 @@ def shot_frames_navigator(
     players_df: pl.DataFrame,
     output_dir: str,
     show_video: bool = True,
+    interval: str = 1000,
 ) -> None:
     """ """
+
+    play = widgets.Play(
+        value=0,
+        min=0,
+        max=len(frames) - 1,
+        step=1,
+        interval=interval,
+        description="Press play",
+        disabled=False,
+    )
+
     slider = widgets.IntSlider(
         value=0,
         min=0,
@@ -133,6 +145,8 @@ def shot_frames_navigator(
         description="Frame:",
         continuous_update=False,
     )
+
+    widgets.jslink((play, "value"), (slider, "value"))
     pitch_output = widgets.Output()
     video_output = widgets.Output()
 
@@ -196,10 +210,11 @@ def shot_frames_navigator(
     slider.observe(on_value_change, names="value")
     on_value_change({"new": 0})
 
+    controls = widgets.HBox([play, slider])
     if show_video:
-        ui = widgets.VBox([widgets.HBox([pitch_output, video_output]), slider])
+        ui = widgets.VBox([widgets.HBox([pitch_output, video_output]), controls])
     else:
-        ui = widgets.VBox([pitch_output, slider])
+        ui = widgets.VBox([pitch_output, controls])
 
     display(ui)
 
