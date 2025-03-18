@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from typing import List, Tuple, Any
 import polars as pl
 import ipywidgets as widgets
-from IPython.display import Image, display, clear_output
+from IPython.display import Image, display, clear_output, HTML, Image
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import matplotlib as mpl
 import matplotlib.image as mpimg
@@ -61,7 +61,7 @@ def visualize_frame(
         line_color="#c7d5cc",
         stripe=True,
     )
-    _, ax = pitch.draw(figsize=(10, 8))
+    _, ax = pitch.draw(figsize=(7, 3))
 
     home_coords = (
         join_table.filter(pl.col("team") == "home")
@@ -133,8 +133,8 @@ def shot_frames_navigator(
         description="Frame:",
         continuous_update=False,
     )
-    pitch_output = widgets.Output()
-    video_output = widgets.Output()
+    pitch_output = widgets.Output(layout=widgets.Layout(width='50%', border='1px solid lightgray'))
+    video_output = widgets.Output(layout=widgets.Layout(width='50%', border='1px solid lightgray'))
 
     if show_video:
         event_dicts = event_df.to_dicts()
@@ -142,10 +142,7 @@ def shot_frames_navigator(
         with ThreadPoolExecutor(max_workers=8) as executor:
             futures = {
                 executor.submit(
-                    download_video_frame,
-                    frame_index,
-                    event_dicts[frame_index],
-                    output_dir,
+                    download_video_frame, frame_index, event_dicts[frame_index], output_dir
                 ): frame_index
                 for frame_index in frames
             }
@@ -397,10 +394,8 @@ def animate_pitch(
             )
             jersey_texts.append(text)
 
-        current_time = frame_df.row(0, named=True)["startTime"]
-        minutes = int(current_time // 60)
-        seconds = int(current_time % 60)
-        time_text.set_text(f"Time: {minutes:02d}:{seconds:02d}")
+        current_time = frame_df.row(0, named=True)['frameTime']
+        time_text.set_text(f"Time: {current_time}")
 
         return (
             home_scatter,
@@ -417,16 +412,11 @@ def animate_pitch(
         frames=len(frames),
         init_func=init,
         interval=interval,
-        blit=False,  # Disable blitting to force full redraw
-        repeat=True,
+        blit=False,
+        repeat=True
     )
-
     plt.close(fig)
     return anim
-
-
-from IPython.display import HTML, clear_output, display
-import ipywidgets as widgets
 
 
 def manual_labeling(
@@ -505,3 +495,176 @@ def animate_chain(
         frames_for_chain, event_df, players_df, metadata_df, interval=interval
     )
     return anim
+
+
+
+def combined_display_two_sliders(
+    frames: List[int],
+    event_df: pl.DataFrame,
+    players_df: pl.DataFrame,
+    metadata_df: pl.DataFrame,
+    output_dir: str,
+    show_video: bool = True,
+    interval=250
+):
+    if not frames:
+        print("No frames to display.")
+        return
+
+    # 1) Create the pitch animation
+    anim = animate_pitch(frames, event_df, players_df, metadata_df, interval=interval)
+
+    # 2) Download video frames if required
+    video_files = {}
+    if show_video:
+        event_dicts = event_df.to_dicts()
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {
+                executor.submit(download_video_frame, f_id, event_dicts[f_id], output_dir): f_id
+                for f_id in frames
+            }
+            for future in as_completed(futures):
+                res = future.result()
+                if res:
+                    frame_id, file_path = res
+                    video_files[frame_id] = file_path
+
+    # 3) Create two Output widgets
+    pitch_output = widgets.Output(layout=widgets.Layout(width='50%', border='1px solid lightgray'))
+    video_output = widgets.Output(layout=widgets.Layout(width='50%', border='1px solid lightgray'))
+
+    # 4) Display the animation inside pitch_output
+    with pitch_output:
+        clear_output(wait=True)
+        anim_html = anim.to_jshtml()  # Matplotlib animation in HTML
+        display(HTML(anim_html))
+
+    # 5) Create a slider for the video
+    video_slider = widgets.IntSlider(
+        value=0,
+        min=0,
+        max=len(frames) - 1,
+        step=1,
+        description="Video Frame:",
+        continuous_update=False
+    )
+
+    def on_video_slider_change(change):
+        i = change["new"]
+        frame_id = frames[i]
+        with video_output:
+            clear_output(wait=True)
+            if show_video:
+                if frame_id in video_files and video_files[frame_id]:
+                    display(Image(filename=video_files[frame_id], width=400))
+                else:
+                    print("No frame available for", frame_id)
+            else:
+                print("Video disabled.")
+
+    video_slider.observe(on_video_slider_change, names="value")
+    on_video_slider_change({"new": 0})  # Initialize video with the first frame
+
+    # 6) Final layout
+    ui = widgets.VBox([
+        widgets.HBox([pitch_output, video_output]),
+        video_slider
+    ])
+    display(ui)
+
+
+def animate_frame_navigator(
+    frames: List[int],
+    event_df: pl.DataFrame,
+    players_df: pl.DataFrame,
+    metadata_df: pl.DataFrame,
+    output_dir: str,
+    show_video: bool = True,
+    interval: int = 250,
+):
+    """
+    Display two side-by-side widgets:
+      1) Pitch animation with a slider.
+      2) Video frame with a slider.
+    """
+    # Pitch slider and output
+    pitch_slider = widgets.IntSlider(
+        value=0,
+        min=0,
+        max=len(frames) - 1,
+        description="Pitch Frame:",
+        continuous_update=False
+    )
+    pitch_output = widgets.Output()
+
+    # Video slider and output
+    video_slider = widgets.IntSlider(
+        value=0,
+        min=0,
+        max=len(frames) - 1,
+        description="Video Frame:",
+        continuous_update=False
+    )
+    video_output = widgets.Output()
+
+    # Pre-load video frames if enabled
+    video_files = {}
+    if show_video:
+        event_dicts = event_df.to_dicts()
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {
+                executor.submit(
+                    download_video_frame, frame_index, event_dicts[frame_index], output_dir
+                ): frame_index for frame_index in frames
+            }
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    frame_index, filename = result
+                    video_files[frame_index] = filename
+
+    # Callback for pitch slider changes
+    def on_pitch_slider_change(change):
+        new_val = change["new"]
+        selected_frames = frames[new_val:]
+        with pitch_output:
+            clear_output(wait=True)
+            anim = animate_pitch(
+                selected_frames,
+                event_df,
+                players_df,
+                metadata_df,
+                interval=interval
+            )
+            pitch_output.anim = anim  # keep reference to avoid GC
+            display(HTML(anim.to_jshtml()))
+
+    # Callback for video slider changes
+    def on_video_slider_change(change):
+        new_val = change["new"]
+        frame_index = frames[new_val]
+        with video_output:
+            clear_output(wait=True)
+            video_file = video_files.get(frame_index)
+            if video_file:
+                display(Image(filename=video_file))
+            else:
+                print("Frame not available.")
+
+    pitch_slider.observe(on_pitch_slider_change, names="value")
+    video_slider.observe(on_video_slider_change, names="value")
+
+    # Initialize outputs
+    on_pitch_slider_change({"new": 0})
+    if show_video:
+        on_video_slider_change({"new": 0})
+
+    # Final layout: side-by-side boxes
+    pitch_box = widgets.VBox([pitch_output, pitch_slider])
+    if show_video:
+        video_box = widgets.VBox([video_output, video_slider])
+        ui = widgets.HBox([pitch_box, video_box])
+    else:
+        ui = pitch_box
+
+    display(ui)
