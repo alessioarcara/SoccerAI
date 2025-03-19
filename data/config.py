@@ -1,4 +1,4 @@
-PITCH_FIGSIZE = figsize=(12, 6.75)           
+PITCH_FIGSIZE = figsize = (12, 6.75)
 
 PITCH_SETTINGS = {
     "pitch_type": "custom",
@@ -20,7 +20,7 @@ BUTTON_STYLE = {
     "height": "40px",
     "margin": "5px",
     "font_weight": "bold",
-    "font_size": "14px"
+    "font_size": "14px",
 }
 
 # Layout for output widgets
@@ -39,34 +39,26 @@ VIDEO_OUTPUT_LAYOUT = {
 }
 
 # Layout for Play widget and slider
-PLAY_LAYOUT = {
-    "width": "120px",
-    "margin": "0 10px 0 20px"
-}
+PLAY_LAYOUT = {"width": "120px", "margin": "0 10px 0 20px"}
 
-SLIDER_LAYOUT = {
-    "width": "300px",
-    "margin": "10px 10px 10px 20px"
-}
-
+SLIDER_LAYOUT = {"width": "300px", "margin": "10px 10px 10px 20px"}
 
 
 # Layout for boxe
 TOP_BOX_LAYOUT = {
     "justify_content": "center",
-    "align_items": "stretch",  
-    "margin": "20px 0 0 0"
+    "align_items": "stretch",
+    "margin": "20px 0 0 0",
 }
 
 CONTROLS_BOX_LAYOUT = {
     "justify_content": "center",
     "align_items": "center",
-    "margin": "10px 0 10px 0"
+    "margin": "10px 0 10px 0",
 }
 
 BUTTONS_BOX_LAYOUT = {
     "justify_content": "center",
     "align_items": "center",
-    "margin": "10px 0 20px 0"
+    "margin": "10px 0 20px 0",
 }
-
