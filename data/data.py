@@ -20,6 +20,7 @@ def extract_event(event: Dict[str, Any]) -> Dict[str, Any]:
         "teamName": event["gameEvents"]["teamName"],
         "playerName": event["gameEvents"]["playerName"],
         "videoUrl": event["gameEvents"]["videoUrl"],
+        "frameTime": event["possessionEvents"]["formattedGameClock"],
         "label": None,
     }
 
