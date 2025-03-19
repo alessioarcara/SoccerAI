@@ -1,19 +1,19 @@
-from mplsoccer import Pitch
 import matplotlib.pyplot as plt
-from typing import List, Tuple, Any
+import numpy as np
 import polars as pl
-import ipywidgets as widgets
-from IPython.display import Image, display, clear_output, HTML, Image
+from mplsoccer import Pitch
+from typing import List, Tuple, Any
+from ipywidgets import widgets, Button, Layout
+from IPython.display import Image, display, clear_output
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import matplotlib as mpl
 import matplotlib.image as mpimg
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from matplotlib.animation import FuncAnimation
+import config
 from utils import download_video_frame
-import numpy as np
 
 mpl.rcParams["animation.embed_limit"] = 50
-
 
 def plot_players_with_numbers(
     ax: plt.Axes,
@@ -26,8 +26,27 @@ def plot_players_with_numbers(
     zorder: int,
     label_color: str = "white",
 ) -> List[Any]:
+    """
+    Plot players (represented as scatter points) on a pitch and display their jersey numbers.
+
+    Parameters:
+        ax (plt.Axes): The matplotlib Axes object where the players will be plotted.
+        x_coords (List[float]): List of X coordinates for each player.
+        y_coords (List[float]): List of Y coordinates for each player.
+        jersey_numbers (List[int]): Jersey numbers for the players in the same order as x_coords and y_coords.
+        color (str): Color used to fill the scatter points.
+        alpha (float): Alpha (opacity) for the scatter points.
+        s (int): Size of the scatter points.
+        zorder (int): Drawing order for the points (higher zorder means drawn on top).
+        label_color (str): Color for the jersey number text.
+
+    Returns:
+        List[Any]: A list containing the scatter plot object and the text objects for the jersey numbers.
+    """
+    # Create a scatter plot for all players
     scat = ax.scatter(x_coords, y_coords, color=color, alpha=alpha, s=s, zorder=zorder)
     texts = []
+    # Overlay text (jersey numbers) at each player's position
     for x, y, number in zip(x_coords, y_coords, jersey_numbers):
         text = ax.text(
             x,
@@ -55,20 +74,20 @@ def add_pitch_info(
     time_str: str = ""
 ):
     """
-    Plots team names and a time label on the pitch.
+    Display team labels (names) and time information on the pitch.
 
     Parameters:
-      ax: The Matplotlib Axes object.
-      home_team_name: The name of the home team (displayed on the left).
-      away_team_name: The name of the away team (displayed on the right).
-      home_team_color: Background color for the home team text box.
-      away_team_color: Background color for the away team text box.
-      home_text_color: Text color for the home team.
-      away_text_color: Text color for the away team.
-      time_str: The initial time string to display (default is empty).
+        ax (plt.Axes): The Matplotlib Axes object on which to place the labels.
+        home_team_name (str): Name of the home team, displayed on the left.
+        away_team_name (str): Name of the away team, displayed on the right.
+        home_team_color (str): Background color for the home team label box.
+        away_team_color (str): Background color for the away team label box.
+        home_text_color (str): Text color for the home team name.
+        away_text_color (str): Text color for the away team name.
+        time_str (str): Initial time string to display at the center-top of the pitch (optional).
 
     Returns:
-      The time text artist (so it can be updated later).
+        None
     """
     # Home team label (top left)
     ax.text(
@@ -110,7 +129,6 @@ def add_pitch_info(
     )
 
 
-
 def visualize_frame(
     frame_index: int,
     event_df: pl.DataFrame,
@@ -118,61 +136,66 @@ def visualize_frame(
     metadata_df: pl.DataFrame,
     ball_trajectory: List[Tuple[float]],
 ) -> None:
+    """
+    Visualize a single frame on the pitch, including home/away players, the ball, and its trajectory.
 
+    Parameters:
+        frame_index (int): Index of the frame to visualize.
+        event_df (pl.DataFrame): Dataframe containing event information (including frame data).
+        players_df (pl.DataFrame): Dataframe containing player information to join with events.
+        metadata_df (pl.DataFrame): Dataframe with match metadata (team colors, names, etc.).
+        ball_trajectory (List[Tuple[float]]): List of (x, y) coordinates for the ball, forming a trajectory up to this frame.
+
+    Returns:
+        None
+    """
+    # Retrieve data for the specified frame and merge with player information
     frame_df = pl.from_dict(event_df.row(frame_index, named=True))
     join_table = frame_df.join(players_df, on="gameEventId")
-
+    
+    # Extract metadata (team names, colors, etc.)
     match_id = event_df[frame_index]["gameId"].item()
-    metadata_game = metadata_df.filter(pl.col("gameId") == str(match_id)).row(
-        0, named=True
-    )
+    metadata_game = metadata_df.filter(pl.col("gameId") == str(match_id)).row(0, named=True)
     home_team_name = metadata_game["homeTeamName"]
     home_team_color = metadata_game["homeTeamColor"]
     away_team_name = metadata_game["awayTeamName"]
     away_team_color = metadata_game["awayTeamColor"]
-
-
-    # Function to choose a contrasting text color based on the team color
-    def get_contrasting_text_color(team_color):
+    
+    def get_contrasting_text_color(team_color: str) -> str:
+        """
+        Choose black or white text to ensure contrast with the background (team_color).
+        """
         color = team_color.strip().lower()
-        # Check for common white representations
-        if color in ["#ffffff", "white"]:
-            return "black"
-        else:
-            return "white"
-
+        return "black" if color in ["#ffffff", "white"] else "white"
+    
     home_text_color = get_contrasting_text_color(home_team_color)
     away_text_color = get_contrasting_text_color(away_team_color)
-    pitch = Pitch(
-        pitch_type="custom",
-        pitch_width=68,
-        pitch_length=105,
-        pitch_color="grass",
-        line_color="#c7d5cc",
-        stripe=True,
-    )
-    fig, ax = pitch.draw(figsize=(10, 8))
-
+    
+    # Create the pitch using settings from config
+    pitch = Pitch(**config.PITCH_SETTINGS)
+    fig, ax = pitch.draw(figsize=config.PITCH_FIGSIZE)
+    
+    # Separate and plot home players
     home_coords = (
         join_table.filter(pl.col("team") == "home")
         .select(pl.col("x"), pl.col("y"), pl.col("jerseyNum"))
         .to_numpy()
     )
-
+    # Separate and plot away players
     away_coords = (
         join_table.filter(pl.col("team") == "away")
         .select(pl.col("x"), pl.col("y"), pl.col("jerseyNum"))
         .to_numpy()
     )
-
+    
     plot_players_with_numbers(
         ax=ax,
         x_coords=home_coords[:, 0],
         y_coords=home_coords[:, 1],
+        jersey_numbers=home_coords[:, 2],
         color=home_team_color,
         alpha=0.9,
         s=300,
-        jersey_numbers=home_coords[:, 2],
         label_color=home_text_color,
         zorder=3,
     )
@@ -180,41 +203,42 @@ def visualize_frame(
         ax=ax,
         x_coords=away_coords[:, 0],
         y_coords=away_coords[:, 1],
-        color=away_team_color,
-        s=300,
-        alpha=0.5,
         jersey_numbers=away_coords[:, 2],
+        color=away_team_color,
+        alpha=0.5,
+        s=300,
         label_color=away_text_color,
         zorder=4,
     )
-
+    
+    # Add pitch info (team names and time)
     current_time = event_df.row(frame_index, named=True)['frameTime']
-    time_text = add_pitch_info(
+    add_pitch_info(
         ax,
         home_team_name,
         away_team_name,
-        home_team_color,  
-        away_team_color, 
+        home_team_color,
+        away_team_color,
         home_text_color,
         away_text_color,
         current_time
     )
-
+    
+    # Draw the ball using the configured image
     ball_df = join_table.filter(pl.col("team").is_null())
     ball_row = ball_df.row(0, named=True)
-    # # Load the ball image (ensure you have a PNG with transparency
-    ball_img = mpimg.imread("soccer_ball_transparent.png")
-    ball_image = OffsetImage(ball_img, zoom=0.05)
-    ball_offset_x = 1  # offset in x-direction
-    ball_offset_y = 1  # offset in y-direction
+    ball_img = mpimg.imread(config.BALL_IMAGE_PATH)
+    ball_image = OffsetImage(ball_img, zoom=config.BALL_ZOOM)
     ball_ab = AnnotationBbox(
         ball_image,
-        (ball_row["x"] + ball_offset_x, ball_row["y"] + ball_offset_y),
+        (ball_row["x"] + config.BALL_OFFSET_X, ball_row["y"] + config.BALL_OFFSET_Y),
         xycoords="data",
         frameon=False,
         zorder=5,
     )
     ax.add_artist(ball_ab)
+    
+    # Draw ball trajectory if available
     if len(ball_trajectory) > 1:
         xs, ys = zip(*ball_trajectory)
         ax.plot(xs, ys, color="yellow", linewidth=2, alpha=0.7, zorder=4)
@@ -225,7 +249,7 @@ def visualize_frame(
             arrowprops=dict(arrowstyle="->", color="yellow", lw=5),
             zorder=5,
         )
-
+    
     plt.tight_layout()
     plt.show()
 
@@ -238,139 +262,268 @@ def shot_frames_navigator(
     output_dir: str,
     show_video: bool = True,
     interval: str = "1000",
-) -> None:
+):
     """
-    Interactive navigator for shot frames.
-      - Uses a Play widget linked to a slider.
-      - Updates the pitch view (via visualize_frame) and video view.
-      - Includes two labeling buttons ("Select Key Pass" and "Discard Chain")
-        that record a label for the current frame and automatically advance the slider.
+    Create an interactive widget to navigate through shot frames.
+    Displays:
+      - A pitch visualization (left) for the selected frame.
+      - The corresponding video frame (right), if available.
+      - Playback/slider controls at the bottom.
+
+    Parameters:
+        frames (List[int]): List of frame indices to navigate through.
+        event_df (pl.DataFrame): Event dataframe containing relevant frames.
+        players_df (pl.DataFrame): Dataframe with player information.
+        metadata_df (pl.DataFrame): Dataframe with match metadata.
+        output_dir (str): Directory to store and retrieve downloaded video frames.
+        show_video (bool): If True, display video frames alongside the pitch.
+        interval (str): Milliseconds between frames when "Play" is pressed.
+
+    Returns:
+        None
     """
-    # Create Play widget and slider; link them.
+    # Play widget
     play = widgets.Play(
         value=0,
         min=0,
         max=len(frames) - 1,
         step=1,
         interval=int(interval),
-        description="Press play",
-        disabled=False,
+        description="Play",
+        disabled=False
     )
+    
+    # Slider widget
     slider = widgets.IntSlider(
         value=0,
         min=0,
         max=len(frames) - 1,
         description="Frame:",
         continuous_update=False,
+        layout=widgets.Layout(width="300px")
     )
-    widgets.jslink((play, "value"), (slider, "value"))
-    
-    # Output areas for pitch and video.
-    pitch_output = widgets.Output()
-    video_output = widgets.Output()
+    widgets.jslink((play, 'value'), (slider, 'value'))
 
-    # Pre-load video frames if enabled.
+    pitch_output = widgets.Output(layout=widgets.Layout(**config.PITCH_OUTPUT_LAYOUT))
+    video_output = widgets.Output(layout=widgets.Layout(**config.VIDEO_OUTPUT_LAYOUT))
+
+    # Pre-download video files if show_video is True
     video_files = {}
     if show_video:
         event_dicts = event_df.to_dicts()
         with ThreadPoolExecutor(max_workers=8) as executor:
             futures = {
-                executor.submit(
-                    download_video_frame, frame_index, event_dicts[frame_index], output_dir
-                ): frame_index for frame_index in frames
+                executor.submit(download_video_frame, f_idx, event_dicts[f_idx], output_dir): f_idx
+                for f_idx in frames
             }
             for future in as_completed(futures):
-                result = future.result()
-                if result:
-                    frame_index, filename = result
-                    video_files[frame_index] = filename
+                res = future.result()
+                if res:
+                    frame_idx, filename = res
+                    video_files[frame_idx] = filename
 
-    # Get ball coordinates for each frame.
+    # Collect ball coordinates to draw trajectory
     frame_df = event_df.filter(pl.col("index").is_in(frames))
     join_table = frame_df.join(players_df, on="gameEventId")
     ball_coordinates = []
-    for frame_idx in frames:
-        ball_xco = join_table.filter(
-            (pl.col("team").is_null()) & (pl.col("index") == frame_idx)
+    for f_idx in frames:
+        ball_x = join_table.filter(
+            (pl.col("team").is_null()) & (pl.col("index") == f_idx)
         ).row(0, named=True)["x"]
-        ball_yco = join_table.filter(
-            (pl.col("team").is_null()) & (pl.col("index") == frame_idx)
+        ball_y = join_table.filter(
+            (pl.col("team").is_null()) & (pl.col("index") == f_idx)
         ).row(0, named=True)["y"]
-        ball_coordinates.append((ball_xco, ball_yco))
+        ball_coordinates.append((ball_x, ball_y))
 
-    # Dictionary to store labels for each frame.
-    labels = {}
-
-    # Callback for slider changes: update pitch and video outputs.
     def on_value_change(change):
+        """
+        Callback for slider value changes. Updates pitch and video outputs.
+        """
         new_val = change["new"]
         frame_index = frames[new_val]
-        ball_trajectory = ball_coordinates[: new_val + 1]
+        ball_traj = ball_coordinates[: new_val + 1]
 
         with pitch_output:
             clear_output(wait=True)
-            visualize_frame(frame_index, event_df, players_df, metadata_df, ball_trajectory)
+            visualize_frame(frame_index, event_df, players_df, metadata_df, ball_traj)
 
         if show_video:
             with video_output:
                 clear_output(wait=True)
-                video_file = video_files.get(frame_index)
-                if video_file:
-                    display(Image(filename=video_file))
+                vfile = video_files.get(frame_index)
+                if vfile:
+                    display(Image(filename=vfile, width=400))
                 else:
                     print("Frame not available.")
         else:
             with video_output:
                 clear_output(wait=True)
-                print("Video disabled")
+                print("Video disabled.")
 
     slider.observe(on_value_change, names="value")
     on_value_change({"new": 0})
 
-    # Create labeling buttons.
-    select_button = widgets.Button(
-        description="Select Key Pass",
-        button_style="success"
+    top_box = widgets.HBox(
+        [pitch_output, video_output],
+        layout=widgets.Layout(**config.TOP_BOX_LAYOUT)
     )
-    discard_button = widgets.Button(
-        description="Discard Chain",
-        button_style="danger"
+    
+    controls_box = widgets.HBox(
+        [play, slider],
+        layout=widgets.Layout(**config.CONTROLS_BOX_LAYOUT)
     )
-
-    # When a button is clicked, store the label and advance the slider.
-    def label_current_frame(label: str):
-        current_index = slider.value
-        labels[frames[current_index]] = label
-        # Automatically advance slider if not at the last frame.
-        if current_index < slider.max:
-            slider.value = current_index + 1
-        else:
-            print("Labeling complete!")
-            print("Labels:", labels)
-
-    def on_select_button_clicked(b):
-        label_current_frame("key_pass")
-
-    def on_discard_button_clicked(b):
-        label_current_frame("discarded")
-
-    select_button.on_click(on_select_button_clicked)
-    discard_button.on_click(on_discard_button_clicked)
-
-    # Layout: pitch and video side by side, with Play/slider controls and labeling buttons.
-    pitch_box = widgets.VBox([pitch_output, slider])
-    if show_video:
-        video_box = widgets.VBox([video_output])
-        top_box = widgets.HBox([pitch_box, video_box])
-    else:
-        top_box = pitch_box
-
-    controls_box = widgets.HBox([play])
-    labeling_box = widgets.HBox([select_button, discard_button])
-
-    ui = widgets.VBox([top_box, controls_box, labeling_box])
+    
+    # Combine everything in a vertical layout
+    ui = widgets.VBox(
+        [top_box, controls_box],
+        layout=widgets.Layout(width="100%", align_items="center")
+    )
     display(ui)
 
+
+def label_shot_chains_with_options(
+    chains: List[List[int]],
+    chain_range: Tuple[int, int],
+    event_df: pl.DataFrame,
+    players_df: pl.DataFrame,
+    metadata_df: pl.DataFrame,
+    output_dir: str,
+    show_video: bool = True,
+    interval: int = 1000
+) -> List[List[int]]:
+    """
+    Provide an interactive UI to label a subset of shot chains.
+
+    For each chain within the specified range:
+      1) Display a navigation widget showing each frame on the pitch (and video if available).
+      2) Offer three choices:
+         - Accept Entire Chain: Keep the chain as is.
+         - Accept & Customize: Keep only selected frames from the chain.
+         - Discard Chain: Ignore the chain entirely.
+         
+    Parameters:
+        chains (List[List[int]]): A list of chains, each chain is a list of frame indices.
+        chain_range (Tuple[int, int]): (start, end) indices defining which chains to label.
+        event_df (pl.DataFrame): Dataframe containing event information.
+        players_df (pl.DataFrame): Dataframe with player details for joining.
+        metadata_df (pl.DataFrame): Dataframe containing match metadata.
+        output_dir (str): Directory for video frames.
+        show_video (bool): If True, displays video frames for each event.
+        interval (int): Milliseconds between frames in the Play widget.
+
+    Returns:
+        List[List[int]]: A list of lists, each sub-list containing the accepted frame indices for a chain.
+    """
+    accepted_chains = []
+    current_chain_index = chain_range[0]
+    
+    main_output = widgets.Output()
+    extra_output = widgets.Output()
+    
+    # Create action buttons
+    accept_entire_button = Button(
+        description="Accept Entire Chain",
+        button_style="success",
+        layout=Layout(**config.BUTTON_STYLE)
+    )
+    customize_button = Button(
+        description="Accept & Customize",
+        button_style="info",
+        layout=Layout(**config.BUTTON_STYLE)
+    )
+    discard_button = Button(
+        description="Discard Chain",
+        button_style="danger",
+        layout=Layout(**config.BUTTON_STYLE)
+    )
+
+    buttons_box = widgets.HBox([accept_entire_button, customize_button, discard_button])
+    
+    def update_ui():
+        """
+        Show the navigation widget (pitch + video) for the current chain.
+        """
+        with main_output:
+            clear_output(wait=True)
+            shot_frames_navigator(
+                chains[current_chain_index],
+                event_df,
+                players_df,
+                metadata_df,
+                output_dir,
+                show_video=show_video,
+                interval=interval
+            )
+    
+    def next_chain():
+        """
+        Proceed to the next chain if available, or indicate completion.
+        """
+        nonlocal current_chain_index
+        current_chain_index += 1
+        with extra_output:
+            clear_output(wait=True)
+        if current_chain_index < chain_range[1]:
+            update_ui()
+        else:
+            with main_output:
+                clear_output(wait=True)
+                print("Labeling complete!")
+
+    def on_accept_entire(_):
+        """
+        Accept the entire chain without modifications.
+        """
+        accepted_chains.append(chains[current_chain_index])
+        print(f"Chain {current_chain_index} accepted entirely.")
+        next_chain()
+    
+    def on_discard(_):
+        """
+        Discard the chain entirely.
+        """
+        print(f"Chain {current_chain_index} discarded.")
+        next_chain()
+    
+    def on_customize(_):
+        """
+        Accept only a subset of frames from the current chain, chosen by the user.
+        """
+        current_chain = chains[current_chain_index]
+        selection_widget = widgets.SelectMultiple(
+            options=current_chain,
+            value=tuple(current_chain),  # default to all frames selected
+            description="Keep frames:",
+            disabled=False
+        )
+        confirm_button = widgets.Button(
+            description="Confirm Custom Selection",
+            button_style="info"
+        )
+        
+        def on_confirm(_):
+            selected_frames = list(selection_widget.value)
+            accepted_chains.append(selected_frames)
+            print(f"Chain {current_chain_index} accepted with custom selection: {selected_frames}")
+            next_chain()
+        
+        confirm_button.on_click(on_confirm)
+        with extra_output:
+            clear_output(wait=True)
+            display(selection_widget, confirm_button)
+    
+    # Attach callbacks to buttons
+    accept_entire_button.on_click(on_accept_entire)
+    customize_button.on_click(on_customize)
+    discard_button.on_click(on_discard)
+    
+    # Display the first chain
+    update_ui()
+    
+    ui = widgets.VBox([main_output, extra_output, buttons_box])
+    display(ui)
+    
+    return accepted_chains
 
 
 def animate_pitch(
@@ -380,7 +533,21 @@ def animate_pitch(
     metadata_df: pl.DataFrame,
     interval=250,
 ):
-    # Create the pitch with custom settings
+    """
+    Create an animation showing a sequence of frames on a soccer pitch.
+    Shows home/away players, the ball, and the ball trajectory.
+
+    Parameters:
+        frames (List[int]): Frame indices to animate.
+        event_df (pl.DataFrame): Dataframe containing event/frame data.
+        players_df (pl.DataFrame): Dataframe with player info for joining.
+        metadata_df (pl.DataFrame): Dataframe with match metadata (team colors/names, etc.).
+        interval (int): Delay between frames in milliseconds.
+
+    Returns:
+        FuncAnimation: A matplotlib.animation.FuncAnimation object containing the animation.
+    """
+    # Configure the pitch
     pitch = Pitch(
         pitch_type="custom",
         pitch_width=68,
@@ -391,53 +558,52 @@ def animate_pitch(
     )
     fig, ax = pitch.draw(figsize=(10, 8))
 
-    # Load the ball image (ensure you have a PNG with transparency)
+    # Load the transparent ball image (PNG recommended)
     ball_img = mpimg.imread("soccer_ball_transparent.png")
     ball_image = OffsetImage(ball_img, zoom=0.05)
 
-    # Create the initial AnnotationBbox for the ball and store it in a mutable container (a list)
+    # Create an AnnotationBbox for the ball and store it in a container so we can update it
     ball_container = [
         AnnotationBbox(
             ball_image,
-            (52.5, 52.5),  # Initial position (will be updated)
-            xycoords="data",  # Use data coordinates from the pitch
+            (52.5, 52.5),  # Temporary initial position
+            xycoords="data",
             frameon=False,
             zorder=5,
         )
     ]
     ax.add_artist(ball_container[0])
 
-    # Extract match metadata
+    # Extract relevant metadata (teams, colors, etc.)
     match_id = event_df[frames[0]]["gameId"].item()
-    metadata_game = metadata_df.filter(pl.col("gameId") == str(match_id)).row(
-        0, named=True
-    )
+    metadata_game = metadata_df.filter(pl.col("gameId") == str(match_id)).row(0, named=True)
     home_team_name = metadata_game["homeTeamName"]
     home_team_color = metadata_game["homeTeamColor"]
     away_team_name = metadata_game["awayTeamName"]
     away_team_color = metadata_game["awayTeamColor"]
 
-    # Create scatter plots for home and away players
+    # Create scatter plots for home and away teams; we'll update these in the animation
     home_scatter = ax.scatter([], [], color=home_team_color, s=300, alpha=0.9, zorder=3)
     away_scatter = ax.scatter([], [], color=away_team_color, s=300, alpha=0.5, zorder=4)
+    
+    # Prepare lines for the ball trajectory
     (traj_line,) = ax.plot([], [], color="yellow", alpha=0.7, lw=2, zorder=4)
     (last_line,) = ax.plot([], [], color="red", alpha=0.7, lw=2, zorder=4)
 
     traj_x, traj_y = [], []
     jersey_texts = []
 
-    # Function to choose a contrasting text color based on the team color
-    def get_contrasting_text_color(team_color):
+    def get_contrasting_text_color(team_color: str) -> str:
+        """
+        Return a suitable text color ('black' or 'white') for visibility against team_color.
+        """
         color = team_color.strip().lower()
-        # Check for common white representations
-        if color in ["#ffffff", "white"]:
-            return "black"
-        else:
-            return "white"
+        return "black" if color in ["#ffffff", "white"] else "white"
 
     home_text_color = get_contrasting_text_color(home_team_color)
     away_text_color = get_contrasting_text_color(away_team_color)
-    # Add team names on the pitch
+
+    # Add team labels at the top of the pitch
     ax.text(
         0.01,
         1.03,
@@ -463,7 +629,7 @@ def animate_pitch(
         bbox=dict(facecolor=away_team_color, alpha=0.8, boxstyle="round,pad=0.3"),
     )
 
-    # Add time text on the pitch
+    # Time text label
     time_text = ax.text(
         0.5,
         1.02,
@@ -477,23 +643,28 @@ def animate_pitch(
         bbox=dict(facecolor="black", alpha=0.75, boxstyle="round,pad=0.5"),
     )
 
-    # Define a constant offset for the ball (adjust these values as needed)
-    ball_offset_x = 1  # offset in x-direction
-    ball_offset_y = 1  # offset in y-direction
+    # Offsets for the ball so it doesn't overlap with players at the same (x,y)
+    ball_offset_x = 1  
+    ball_offset_y = 1  
     last_index = frames[-1]
 
     def init():
-        # Initialize player scatter plots and trajectory line
+        """
+        Initialization function for FuncAnimation. Sets up empty plots.
+        """
         home_scatter.set_offsets(np.empty((0, 2)))
         away_scatter.set_offsets(np.empty((0, 2)))
         traj_line.set_data([], [])
         for text in jersey_texts:
             text.remove()
         jersey_texts.clear()
-        # Return the artists to be updated
         return home_scatter, away_scatter, ball_container[0], traj_line, time_text
 
     def update(i):
+        """
+        Update function for each animation frame. Fetches data for the current index
+        and updates player positions, ball location, trajectory, and displayed time.
+        """
         frame_idx = frames[i]
         frame_df = event_df.filter(pl.col("index") == frame_idx)
         join_table = frame_df.join(players_df, on="gameEventId")
@@ -508,13 +679,12 @@ def animate_pitch(
         home_scatter.set_offsets(home_coords if home.height else np.empty((0, 2)))
         away_scatter.set_offsets(away_coords if away.height else np.empty((0, 2)))
 
-        # Get the ball coordinates from data
+        # Retrieve ball coordinates, then apply offset
         bx, by = ball.row(0, named=True)["x"], ball.row(0, named=True)["y"]
-        # Apply the offset so the ball doesn't overlap with the player
         new_bx = bx + ball_offset_x
         new_by = by + ball_offset_y
 
-        # Remove the previous AnnotationBbox and create a new one with updated position
+        # Remove previous ball AnnotationBbox and add an updated one
         ball_container[0].remove()
         new_ball_ab = AnnotationBbox(
             ball_image, (new_bx, new_by), xycoords="data", frameon=False, zorder=5
@@ -522,21 +692,22 @@ def animate_pitch(
         ax.add_artist(new_ball_ab)
         ball_container[0] = new_ball_ab
 
+        # Update trajectory
         traj_x.append(bx)
         traj_y.append(by)
-        traj_line.set_data(traj_x, traj_y)
-
+        # If this isn't the last frame, display full trajectory; otherwise, highlight the last segment in red
         if frame_idx != last_index:
             traj_line.set_data(traj_x, traj_y)
         else:
             traj_line.set_data(traj_x[:-1], traj_y[:-1])
             last_line.set_data(traj_x[-2:], traj_y[-2:])
 
+        # Remove and re-draw jersey number texts
         for text in jersey_texts:
             text.remove()
         jersey_texts.clear()
 
-        # Add jersey numbers for home players
+        # Label home players
         for player in home.iter_rows(named=True):
             text = ax.text(
                 player["x"],
@@ -551,7 +722,7 @@ def animate_pitch(
             )
             jersey_texts.append(text)
 
-        # Add jersey numbers for away players
+        # Label away players
         for player in away.iter_rows(named=True):
             text = ax.text(
                 player["x"],
@@ -566,6 +737,7 @@ def animate_pitch(
             )
             jersey_texts.append(text)
 
+        # Update time text
         current_time = frame_df.row(0, named=True)['frameTime']
         time_text.set_text(f"Time: {current_time}")
 
@@ -589,265 +761,3 @@ def animate_pitch(
     )
     plt.close(fig)
     return anim
-
-
-
-
-def manual_labeling2() -> List[Tuple[int,int]]:
-    # must give back a tuple where we have:
-    # 1. a label to delete or consider a chain
-    # 2. a index inside the chain to slice it if some keyframe is not useful 
-    pass
-
-
-
-
-def manual_labeling(
-    chain_range,
-    animate_chain,
-    pos_chains,
-    event_df,
-    players_df,
-    metadata_df,
-    interval=250,
-):
-    # Dictionary to store labels for each chain
-    labels = {}
-    current_chain = chain_range[0]
-
-    # Create buttons for selecting or discarding a chain
-    select_button = widgets.Button(
-        description="Select Key Pass", button_style="success"
-    )
-    discard_button = widgets.Button(description="Discard Chain", button_style="danger")
-    button_box = widgets.VBox([select_button, discard_button])
-    output_area = widgets.Output()
-
-    def next_chain():
-        nonlocal current_chain
-        current_chain += 1
-        with output_area:
-            clear_output()
-            if current_chain >= chain_range[1]:
-                print("Labeling complete!")
-                print("Labels:", labels)
-            else:
-                anim = animate_chain(
-                    current_chain,
-                    pos_chains,
-                    event_df,
-                    players_df,
-                    metadata_df,
-                    interval=interval,
-                )
-                display(HTML(anim.to_jshtml()))
-
-    def on_select_button_clicked(b):
-        labels[current_chain] = "key_pass"
-        next_chain()
-
-    def on_discard_button_clicked(b):
-        labels[current_chain] = "discarded"
-        next_chain()
-
-    select_button.on_click(on_select_button_clicked)
-    discard_button.on_click(on_discard_button_clicked)
-
-    with output_area:
-        clear_output()
-        anim = animate_chain(
-            current_chain,
-            pos_chains,
-            event_df,
-            players_df,
-            metadata_df,
-            interval=interval,
-        )
-        display(HTML(anim.to_jshtml()))
-
-    display(button_box, output_area)
-    return labels
-
-
-def animate_chain(
-    chain_id, pos_chains, event_df, players_df, metadata_df, interval=250
-):
-    # Extract frames for the given chain and create the animation
-    frames_for_chain = pos_chains[chain_id]
-    anim = animate_pitch(
-        frames_for_chain, event_df, players_df, metadata_df, interval=interval
-    )
-    return anim
-
-
-
-def combined_display_two_sliders(
-    frames: List[int],
-    event_df: pl.DataFrame,
-    players_df: pl.DataFrame,
-    metadata_df: pl.DataFrame,
-    output_dir: str,
-    show_video: bool = True,
-    interval=250
-):
-    if not frames:
-        print("No frames to display.")
-        return
-
-    # 1) Create the pitch animation
-    anim = animate_pitch(frames, event_df, players_df, metadata_df, interval=interval)
-
-    # 2) Download video frames if required
-    video_files = {}
-    if show_video:
-        event_dicts = event_df.to_dicts()
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            futures = {
-                executor.submit(download_video_frame, f_id, event_dicts[f_id], output_dir): f_id
-                for f_id in frames
-            }
-            for future in as_completed(futures):
-                res = future.result()
-                if res:
-                    frame_id, file_path = res
-                    video_files[frame_id] = file_path
-
-    # 3) Create two Output widgets
-    pitch_output = widgets.Output(layout=widgets.Layout(width='50%', border='1px solid lightgray'))
-    video_output = widgets.Output(layout=widgets.Layout(width='50%', border='1px solid lightgray'))
-
-    # 4) Display the animation inside pitch_output
-    with pitch_output:
-        clear_output(wait=True)
-        anim_html = anim.to_jshtml()  # Matplotlib animation in HTML
-        display(HTML(anim_html))
-
-    # 5) Create a slider for the video
-    video_slider = widgets.IntSlider(
-        value=0,
-        min=0,
-        max=len(frames) - 1,
-        step=1,
-        description="Video Frame:",
-        continuous_update=False
-    )
-
-    def on_video_slider_change(change):
-        i = change["new"]
-        frame_id = frames[i]
-        with video_output:
-            clear_output(wait=True)
-            if show_video:
-                if frame_id in video_files and video_files[frame_id]:
-                    display(Image(filename=video_files[frame_id], width=400))
-                else:
-                    print("No frame available for", frame_id)
-            else:
-                print("Video disabled.")
-
-    video_slider.observe(on_video_slider_change, names="value")
-    on_video_slider_change({"new": 0})  # Initialize video with the first frame
-
-    # 6) Final layout
-    ui = widgets.VBox([
-        widgets.HBox([pitch_output, video_output]),
-        video_slider
-    ])
-    display(ui)
-
-
-def animate_frame_navigator(
-    frames: List[int],
-    event_df: pl.DataFrame,
-    players_df: pl.DataFrame,
-    metadata_df: pl.DataFrame,
-    output_dir: str,
-    show_video: bool = True,
-    interval: int = 250,
-):
-    """
-    Display two side-by-side widgets:
-      1) Pitch animation with a slider.
-      2) Video frame with a slider.
-    """
-    # Pitch slider and output
-    pitch_slider = widgets.IntSlider(
-        value=0,
-        min=0,
-        max=len(frames) - 1,
-        description="Pitch Frame:",
-        continuous_update=False
-    )
-    pitch_output = widgets.Output()
-
-    # Video slider and output
-    video_slider = widgets.IntSlider(
-        value=0,
-        min=0,
-        max=len(frames) - 1,
-        description="Video Frame:",
-        continuous_update=False
-    )
-    video_output = widgets.Output()
-
-    # Pre-load video frames if enabled
-    video_files = {}
-    if show_video:
-        event_dicts = event_df.to_dicts()
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            futures = {
-                executor.submit(
-                    download_video_frame, frame_index, event_dicts[frame_index], output_dir
-                ): frame_index for frame_index in frames
-            }
-            for future in as_completed(futures):
-                result = future.result()
-                if result:
-                    frame_index, filename = result
-                    video_files[frame_index] = filename
-
-    # Callback for pitch slider changes
-    def on_pitch_slider_change(change):
-        new_val = change["new"]
-        selected_frames = frames[new_val:]
-        with pitch_output:
-            clear_output(wait=True)
-            anim = animate_pitch(
-                selected_frames,
-                event_df,
-                players_df,
-                metadata_df,
-                interval=interval
-            )
-            pitch_output.anim = anim  # keep reference to avoid GC
-            display(HTML(anim.to_jshtml()))
-
-    # Callback for video slider changes
-    def on_video_slider_change(change):
-        new_val = change["new"]
-        frame_index = frames[new_val]
-        with video_output:
-            clear_output(wait=True)
-            video_file = video_files.get(frame_index)
-            if video_file:
-                display(Image(filename=video_file))
-            else:
-                print("Frame not available.")
-
-    pitch_slider.observe(on_pitch_slider_change, names="value")
-    video_slider.observe(on_video_slider_change, names="value")
-
-    # Initialize outputs
-    on_pitch_slider_change({"new": 0})
-    if show_video:
-        on_video_slider_change({"new": 0})
-
-    # Final layout: side-by-side boxes
-    pitch_box = widgets.VBox([pitch_output, pitch_slider])
-    if show_video:
-        video_box = widgets.VBox([video_output, video_slider])
-        ui = widgets.HBox([pitch_box, video_box])
-    else:
-        ui = pitch_box
-
-    display(ui)
