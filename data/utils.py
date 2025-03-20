@@ -1,7 +1,9 @@
-from typing import Tuple, Union, Optional
+from typing import Tuple, Union, Optional, Dict, Any
 import os
 import subprocess
 import numpy as np
+import bz2
+import json
 
 
 def offset_x(x: int):
@@ -13,12 +15,8 @@ def offset_y(y: int):
 
 
 def compute_velocity(
-    start_pos: Tuple[float],
-    end_pos: Tuple[float],
-    start_time: float,
-    end_time: float,
-    return_direction=False,
-) -> Union[Tuple[float], float]:
+    start_pos: Tuple[float], end_pos: Tuple[float], start_time: float, end_time: float
+) -> float:
 
     delta_t = end_time - start_time
     delta_x = end_pos[0] - start_pos[0]
@@ -26,16 +24,15 @@ def compute_velocity(
     velocity_y = delta_y / delta_t
     velocity_x = delta_x / delta_t
     velocity = np.linalg.norm([velocity_x, velocity_y])
-
-    if return_direction:
-        direction = np.arctan2(velocity_y / velocity_x)
-        return velocity, direction
-
     return velocity
 
 
-def compute_direction():
-    pass
+def compute_direction(start_pos: Tuple[float], end_pos: Tuple[float]) -> float:
+    delta_x = end_pos[0] - start_pos[0]
+    delta_y = end_pos[1] - start_pos[1]
+
+    direction = np.arctan2(delta_y, delta_x)
+    return direction
 
 
 def download_video_frame(
@@ -91,3 +88,57 @@ def download_video_frame(
         return frame_index, output_filename
     except subprocess.CalledProcessError:
         return frame_index, None
+
+
+def create_event_byte_map(game_id: int) -> Dict[int, Any]:
+    event_byte_map = {}
+    tracking_file = f"/home/soccerdata/FIFA_WorldCup_2022/Tracking Data/{game_id}.jsonl"
+    with open(tracking_file, "r") as tracking_data:
+        event_id = -1
+        end_frame = -1
+        current_byte_pos = tracking_data.tell()
+        while True:
+            frame = tracking_data.readline()
+            if not frame:
+                break
+            frame_info = json.loads(frame)
+            if frame_info["game_event_id"] is not None and end_frame == -1:
+                event_id = int(frame_info["game_event_id"])
+                event_byte_map[event_id] = {"ball_pos": -1, "players_pos": -1}
+                end_frame = frame_info["game_event"]["end_frame"]
+
+            if frame_info["frameNum"] == end_frame:
+                event_byte_map[event_id]["players_pos"] = current_byte_pos
+            elif frame_info["frameNum"] > end_frame and end_frame != -1:
+                event_byte_map[event_id]["ball_pos"] = current_byte_pos
+                end_frame = -1
+
+                if frame_info["game_event_id"] is not None and end_frame == -1:
+                    event_id = int(frame_info["game_event_id"])
+                    event_byte_map[event_id] = {"ball_pos": -1, "players_pos": -1}
+                    end_frame = frame_info["game_event"]["end_frame"]
+                if frame_info["frameNum"] == end_frame:
+                    event_byte_map[event_id]["players_pos"] = current_byte_pos
+
+            current_byte_pos = tracking_data.tell()
+        return event_byte_map
+
+
+def decompress_tracking_file(filepath: str) -> None:
+    command = ["bunzip2", filepath]
+    subprocess.run(
+        command,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+def compress_tracking_file(filepath: str) -> None:
+    command = ["bzip2", filepath]
+    subprocess.run(
+        command,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
