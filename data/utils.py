@@ -104,21 +104,11 @@ def create_event_byte_map(game_id: int) -> Dict[int, Any]:
             frame_info = json.loads(frame)
             if frame_info["game_event_id"] is not None and end_frame == -1:
                 event_id = int(frame_info["game_event_id"])
-                event_byte_map[event_id] = {"ball_pos": -1, "players_pos": -1}
+                event_byte_map[event_id] = {"byte_pos": -1}
                 end_frame = frame_info["game_event"]["end_frame"]
-
             if frame_info["frameNum"] == end_frame:
-                event_byte_map[event_id]["players_pos"] = current_byte_pos
-            elif frame_info["frameNum"] > end_frame and end_frame != -1:
-                event_byte_map[event_id]["ball_pos"] = current_byte_pos
+                event_byte_map[event_id]["byte_pos"] = current_byte_pos
                 end_frame = -1
-
-                if frame_info["game_event_id"] is not None and end_frame == -1:
-                    event_id = int(frame_info["game_event_id"])
-                    event_byte_map[event_id] = {"ball_pos": -1, "players_pos": -1}
-                    end_frame = frame_info["game_event"]["end_frame"]
-                if frame_info["frameNum"] == end_frame:
-                    event_byte_map[event_id]["players_pos"] = current_byte_pos
 
             current_byte_pos = tracking_data.tell()
         return event_byte_map
