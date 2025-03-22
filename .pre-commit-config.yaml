@@ -4,15 +4,12 @@ repos:
   hooks:
     - id: nbstripout
 - repo: https://github.com/astral-sh/ruff-pre-commit
-  # Ruff version.
   rev: v0.11.2
   hooks:
-    # Run the linter.
     - id: ruff
-      args: [ --fix ]
-    # Run the formatter.
+      name: lint with ruff
+    - id: ruff
+      name: sort imports with ruff
+      args: [--select, I, --fix]
     - id: ruff-format
-- repo: https://github.com/pycqa/isort
-  rev: 6.0.1
-  hooks:
-    - id: isort
+      name: format with ruff

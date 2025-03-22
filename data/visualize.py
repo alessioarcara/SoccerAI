@@ -1,14 +1,15 @@
-import matplotlib.pyplot as plt
-import polars as pl
-from mplsoccer import Pitch
-from typing import List, Tuple, Any
-from ipywidgets import widgets, Button, Layout
-from IPython.display import Image, display, clear_output
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, List, Tuple
+
+import config
 import matplotlib as mpl
 import matplotlib.image as mpimg
-from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-import config
+import matplotlib.pyplot as plt
+import polars as pl
+from IPython.display import Image, clear_output, display
+from ipywidgets import Button, Layout, widgets
+from matplotlib.offsetbox import AnnotationBbox, OffsetImage
+from mplsoccer import Pitch
 from utils import download_video_frame
 
 mpl.rcParams["animation.embed_limit"] = 50
