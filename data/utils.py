@@ -1,6 +1,7 @@
-from typing import Tuple, Union, Optional
 import os
 import subprocess
+from typing import Optional, Tuple, Union
+
 import numpy as np
 
 
@@ -19,7 +20,6 @@ def compute_velocity(
     end_time: float,
     return_direction=False,
 ) -> Union[Tuple[float], float]:
-
     delta_t = end_time - start_time
     delta_x = end_pos[0] - start_pos[0]
     delta_y = end_pos[1] - start_pos[1]
