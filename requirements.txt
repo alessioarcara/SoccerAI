@@ -1,2 +1,6 @@
 polars
 mplsoccer
+pre-commit
+nbstripout
+black
+isort
