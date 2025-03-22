@@ -1,0 +1,43 @@
+repos:
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.7.1
+    hooks:
+      - id: nbstripout
+        name: Strip Jupyter Notebook outputs
+        entry: nbstripout
+        language: python
+        types: [jupyter]
+
+  - repo: https://github.com/nbQA-dev/nbQA
+    rev: 1.7.0 
+    hooks:
+      - id: nbqa-black
+        name: Black for Jupyter Notebooks
+        entry: nbqa black
+        language: python
+        types: [jupyter]
+
+      # - id: nbqa-flake8
+      #   name: Flake8 for Jupyter Notebooks
+      #   entry: nbqa flake8
+      #   language: python
+      #   types: [jupyter]
+
+  - repo: https://github.com/psf/black
+    rev: 23.9.1
+    hooks:
+      - id: black
+        name: Black code formatter
+        entry: black
+        language: python
+        types: [python]
+
+  # - repo: https://github.com/pycqa/flake8
+  #   rev: 6.1.0
+  #   hooks:
+  #     - id: flake8
+  #       name: Flake8 code linter
+  #       entry: flake8
+  #       language: python
+  #       types: [python]
+

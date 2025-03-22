@@ -5,8 +5,11 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from bs4 import BeautifulSoup
 import time
+import pandas as pd
 
-def get_page_source(url: str, output_file) -> str:
+
+
+def get_player_html(player_name: str) -> str:
     chrome_options = Options()
     chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
@@ -14,28 +17,21 @@ def get_page_source(url: str, output_file) -> str:
     chrome_options.add_argument("--disable-gpu")
 
     driver = webdriver.Chrome(options=chrome_options)
+    url = f"https://fbref.com/en/players/e14ec482/{player_name}"
     
     try:
         driver.get(url)
         html = driver.page_source
-        
-        with open(output_file, "w", encoding="utf-8") as f:
-            f.write(html)
-    
+
     finally:
         driver.quit()
+    
+    return html 
 
-
-import pandas as pd
 
 def extract_shoot_stats(html_file: str) -> pl.DataFrame:
 
-    print(html_file)
-    
-    with open(html_file, 'r', encoding='utf-8') as f:
-        html = f.read()
-
-    soup = BeautifulSoup(html, 'html.parser')
+    soup = BeautifulSoup(html_file, 'html.parser')
 
     div_all_stats = soup.find('div', id='all_stats_shooting')
     if not div_all_stats:
@@ -73,60 +69,62 @@ def extract_shoot_stats(html_file: str) -> pl.DataFrame:
 
 
 
-def parse_meta_stats(html: str) -> Dict[str,Any]:
-
-    with open(html, 'r', encoding='utf-8') as f:
-        html = f.read()
-
-
+def parse_player_metastats(html: str) -> pl.DataFrame:
     soup = BeautifulSoup(html, 'html.parser')
     meta_div = soup.find('div', id='meta')
-    if meta_div is None:
-        print("Meta div not found.")
-        return {}
     
-    data = {
-        "Full Name": None,
-        "Position": None,
-        "Footed": None,
-        "Height": None,
-        "Weight": None,
-        "Born": None,
-        "Birth Date": None,
-        "Age Info": None,
-        "Birth Place": None,
-        "National Team": None,
-        "Club": None
-    }
+    if not meta_div:
+        schema = {
+            "Full Name": pl.Utf8,
+            "Position": pl.Utf8,
+            "Footed": pl.Utf8,
+            "Height": pl.Utf8,
+            "Weight": pl.Utf8,
+            "Born": pl.Utf8,
+            "Birth Date": pl.Utf8,
+            "Age Info": pl.Utf8,
+            "National Team": pl.Utf8,
+            "Weekly Wages": pl.Utf8
+        }
+        return pl.DataFrame(schema=schema)
     
-    p_full = meta_div.find('p')
-    if p_full:
-        strong_full = p_full.find('strong')
-        if strong_full:
-            data["Full Name"] = strong_full.get_text(strip=True)
+    data = {}
+
+    h1_full = meta_div.find('h1')
+    if h1_full:
+        data["Full Name"] = h1_full.get_text(strip=True)
     
     p_pos = None
     for p in meta_div.find_all('p'):
-        if p.find('strong') and "Position:" in p.find('strong').get_text():
+        strong_tag = p.find('strong')
+        if strong_tag and "Position:" in strong_tag.get_text():
             p_pos = p
             break
     if p_pos:
-        # Example text: "Position: FW-MF (WM) ▪ Footed: Right"
-        # Split the text using the "▪" delimiter.
-        parts = p_pos.get_text(separator="|", strip=True).split("▪")
-        if len(parts) == 2:
-            data["Position"] = parts[0].replace("Position:", "").strip()
-            data["Footed"] = parts[1].replace("Footed:", "").strip()
-    
+        strong_tags = p_pos.find_all('strong')
+        if len(strong_tags) >= 2:
+            pos_text = strong_tags[0].next_sibling
+            foot_text = strong_tags[1].next_sibling
+            # Remove the bullet symbol if it exists
+            if pos_text:
+                pos_text = pos_text.replace("▪", "").strip()
+            if foot_text:
+                foot_text = foot_text.replace("▪", "").strip()
+            data["Position"] = pos_text if pos_text else None
+            data["Footed"] = foot_text if foot_text else None
+
+    p_hw = None
     for p in meta_div.find_all('p'):
         text = p.get_text()
         if "cm" in text and "kg" in text:
-            spans = p.find_all('span')
-            if len(spans) >= 2:
-                data["Height"] = spans[0].get_text(strip=True)
-                data["Weight"] = spans[1].get_text(strip=True)
+            p_hw = p
             break
-
+    if p_hw:
+        spans = p_hw.find_all('span')
+        if len(spans) >= 2:
+            data["Height"] = spans[0].get_text(strip=True)
+            data["Weight"] = spans[1].get_text(strip=True)
+    
     p_born = None
     for p in meta_div.find_all('p'):
         strong = p.find('strong')
@@ -134,32 +132,36 @@ def parse_meta_stats(html: str) -> Dict[str,Any]:
             p_born = p
             break
     if p_born:
-        span_birth = p_born.find('span', id="necro-birth")
-        if span_birth:
-            data["Born"] = span_birth.get_text(strip=True)
-            data["Birth Date"] = span_birth.attrs.get("data-birth")
         nobr = p_born.find('nobr')
         if nobr:
             data["Age Info"] = nobr.get_text(strip=True)
-        for content in p_born.contents:
-            if isinstance(content, str) and content.strip().startswith("in "):
-                data["Birth Place"] = content.strip()
-                break
 
+
+    p_nat = None
     for p in meta_div.find_all('p'):
         strong = p.find('strong')
         if strong and "National Team:" in strong.get_text():
-            a_nat = p.find('a')
-            if a_nat:
-                data["National Team"] = a_nat.get_text(strip=True)
+            p_nat = p
             break
-
+    if p_nat:
+        a_nat = p_nat.find('a')
+        if a_nat:
+            data["National Team"] = a_nat.get_text(strip=True)
+    
+    p_wages = None
     for p in meta_div.find_all('p'):
-        strong = p.find('strong')
-        if strong and "Club:" in strong.get_text():
-            a_club = p.find('a')
-            if a_club:
-                data["Club"] = a_club.get_text(strip=True)
-            break 
+        if p.find('strong') and "Wages" in p.get_text():
+            p_wages = p
+            break
+    if p_wages:
+        wage_span = p_wages.find("span", style=lambda x: x and "color:#932a12" in x)
+        if wage_span:
+            data["Weekly Wages"] = wage_span.get_text(strip=True)
 
+    for key, value in data.items():
+        if isinstance(value, str):
+            data[key] = value.replace('\xa0', ' ')
+    
     return data
+
+
