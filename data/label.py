@@ -21,6 +21,11 @@ def pos_labeling(
             prev_idx >= 0
             and event_df.row(prev_idx, named=True)["teamName"] == team_name
         ):
+            # Skip challenge events
+            if event_df.row(prev_idx, named=True)["possessionEventType"] == "CH":
+                prev_idx -= 1
+                continue
+
             pos_chain.append(prev_idx)
             prev_idx -= 1
 
