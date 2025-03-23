@@ -1,6 +1,10 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
+import config
 import polars as pl
+from IPython.display import clear_output, display
+from ipywidgets import Button, Layout, widgets
+from visualize import shot_frames_navigator
 
 
 def pos_labeling(
@@ -63,3 +67,91 @@ def neg_labeling(event_df: pl.DataFrame) -> List[List[int]]:
     #     .alias("label")
     # )
     # event_data = event_data.filter(pl.col("label").is_not_null())
+
+
+def filter_shot_chains(
+    chains: List[List[int]],
+    chains_range: Tuple[int, int],
+    event_df: pl.DataFrame,
+    players_df: pl.DataFrame,
+    metadata_df: pl.DataFrame,
+    output_dir: str,
+    show_video: bool = True,
+    interval: int = 1000,
+) -> List[List[int]]:
+    accepted_chains = []
+    current_chain_index = chains_range[0]
+    selection_widget = None
+
+    main_output = widgets.Output()
+    extra_output = widgets.Output()
+
+    accept_button = Button(
+        description="Accept Chain",
+        button_style="success",
+        layout=Layout(**config.BUTTON_STYLE),
+    )
+    discard_button = Button(
+        description="Discard Chain",
+        button_style="danger",
+        layout=Layout(**config.BUTTON_STYLE),
+    )
+
+    controls = widgets.HBox([accept_button, discard_button])
+
+    def update_ui():
+        with main_output:
+            clear_output(wait=True)
+            shot_frames_navigator(
+                chains[current_chain_index],
+                event_df,
+                players_df,
+                metadata_df,
+                output_dir,
+                show_video=show_video,
+                interval=interval,
+            )
+
+    def update_selection_widget():
+        nonlocal selection_widget
+        with extra_output:
+            clear_output(wait=True)
+            current_chain = chains[current_chain_index]
+            selection_widget = widgets.SelectMultiple(
+                options=current_chain,
+                value=current_chain,
+                description="Keep frames:",
+                disabled=False,
+            )
+            display(selection_widget)
+
+    def next_chain():
+        nonlocal current_chain_index
+        current_chain_index += 1
+        if current_chain_index < chains_range[1]:
+            update_ui()
+            update_selection_widget()
+        else:
+            with main_output:
+                clear_output(wait=True)
+                print("Labeling complete!")
+
+    def on_accept(_):
+        nonlocal selection_widget
+        selected_frames = list(selection_widget.value)
+        accepted_chains.append(selected_frames)
+        next_chain()
+
+    def on_discard(_):
+        next_chain()
+
+    accept_button.on_click(on_accept)
+    discard_button.on_click(on_discard)
+
+    update_selection_widget()
+    update_ui()
+
+    ui = widgets.VBox([main_output, extra_output, controls])
+    display(ui)
+
+    return accepted_chains
