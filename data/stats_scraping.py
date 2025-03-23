@@ -1,71 +1,178 @@
-from typing import Dict,Optional, Any
+from typing import Dict,List,Optional, Any
+import time
+import statistics
+import random
 import polars as pl 
 from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 from bs4 import BeautifulSoup
-import time
-import pandas as pd
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import WebDriverException
 
 
 
-def get_player_html(player_name: str) -> str:
+def create_webdriver():
     chrome_options = Options()
     chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
     chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument('user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"')
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    return webdriver.Chrome(options=chrome_options)
 
-    driver = webdriver.Chrome(options=chrome_options)
-    url = f"https://fbref.com/en/players/e14ec482/{player_name}"
+
+
+def get_player_id(driver, player_name: str) -> str:
+    base_search_url = "https://fbref.com/search/search.fcgi?search="
+    query = player_name.replace(" ", "+")
+    search_url = base_search_url + query
     
+    #print(f"URL visited: {search_url}")
+
+    driver.get(search_url)
+    links = driver.find_elements(By.CSS_SELECTOR, "a")
+    
+    for link in links:
+        url = link.get_attribute("href")
+        if url and "/en/players/" in url:
+            #print(f"Founded valid player URL: {url}")
+            player_id = url.split("/")[5]
+            return player_id
+    
+    #print("No valid URL per player founded.")
+    return None
+
+
+def get_player_html(driver, player_name, player_id):
+    url = f"https://fbref.com/en/players/{player_id}/{player_name.replace(' ', '-')}"
     try:
         driver.get(url)
-        html = driver.page_source
+        time.sleep(random.uniform(0, 2))
+        return driver.page_source
+    except WebDriverException as e:
+        print(f"Error download on the {player_name}'s page: {e}")
+        return None
 
-    finally:
-        driver.quit()
+
+
+
+def enrich_roosters(rooster_df: pl.DataFrame) -> pl.DataFrame:
+    rooster_rows = rooster_df.to_dicts()
+    updated_rows = []
+    driver = create_webdriver()
+
+    for player in rooster_rows[:5]:
+        player_name = player["playerNickname"]
+        #print(player_name)
+        player_id = get_player_id(driver, player_name)
+        # print(player_id)
+        player_html = get_player_html(driver, player_name, player_id)
+        player_metastats = parse_player_metastats(player_html)
+        print(f"Metastats added for {player_name}")
+        # print(player_metastats)
+        player_shooting_stats = extract_shoot_stats(player_html,num_years_back=3,min_minute_90s=5)
+        
+        player_info = player_metastats | player_shooting_stats
+        player.update(player_info)
+        updated_rows.append(player)
+
+    enriched_roosters = pl.DataFrame(updated_rows)
+    enriched_roosters.write_csv('enrich_roosters.csv')
+    driver.quit()
+    return enriched_roosters
+
+
+
+def compute_shooting_stats_average(season_data, num_years_back=3, min_minutes_90s=5.0):
+
+    indices_2021 = [i for i, (season, _) in enumerate(season_data) if season == '2021-2022']
+    if not indices_2021:
+        return {}
+
+    last_index_2021 = indices_2021[-1]
+    selected_seasons = season_data[max(0, last_index_2021 - num_years_back):last_index_2021 + 1]
+    stats_sum = {}
+    stats_count = {}
+    skip_keys = {'age', 'team', 'country', 'comp_level', 'lg_finish', 'matches'}
+
+    for _, stats in selected_seasons:
+        minutes = stats.get('minutes_90s', 0.0)
+        if minutes is None or minutes < min_minutes_90s:
+            continue
+
+        has_useful_data = any(
+            key not in skip_keys and value is not None
+            for key, value in stats.items()
+        )
+        
+        if not has_useful_data:
+            continue
     
-    return html 
+        for key, value in stats.items():
+            if key in skip_keys:
+                continue
+            if value is not None:
+                stats_count[key] = stats_count.get(key,0) + 1
+                stats_sum[key] = stats_sum.get(key,0) + value
+    
+    return {
+        key: round(stats_sum[key] / stats_count[key],3)
+        for key in stats_sum
+        if stats_count[key] > 0
+    }
 
 
-def extract_shoot_stats(html_file: str) -> pl.DataFrame:
-
+def extract_shoot_stats(html_file: str, num_years_back: int = 3, min_minute_90s: int = 5) -> dict:
     soup = BeautifulSoup(html_file, 'html.parser')
-
     div_all_stats = soup.find('div', id='all_stats_shooting')
+
     if not div_all_stats:
-        raise Exception("Div with id 'all_stats_shooting' not found.")
+        return {}
 
     table = div_all_stats.find('table')
     if not table:
-        raise Exception("Table not found within 'all_stats_shooting'.")
+        return {}
 
-    tfoot = table.find('tfoot')
-    if not tfoot:
-        raise Exception("<tfoot> element not found in the table.")
+    tbody = table.find('tbody')
+    if not tbody:
+        return {}
 
-    # Extract rows from tfoot, getting text from each cell
-    rows = []
-    for tr in tfoot.find_all('tr'):
-        cells = [cell.get_text(strip=True) for cell in tr.find_all(['th', 'td'])]
-        rows.append(cells)
+    rows = tbody.find_all('tr')
 
-    # # Determine maximum number of columns
-    # max_cols = max(len(row) for row in rows)
+    season_data = []
+    for row in rows:
+        season_th = row.find('th', {'data-stat': 'year_id'})
+        if not season_th:
+            continue
 
-    # # Pad rows with fewer columns with None
-    # normalized_rows = [row + [None]*(max_cols - len(row)) for row in rows]
+        season = season_th.get_text(strip=True)
+        data_cells = row.find_all('td')
+        if not data_cells:
+            continue
 
-    # # If all rows have the same number of cells and you want to use the first row as header:
-    # if normalized_rows and all(len(row) == len(normalized_rows[0]) for row in normalized_rows):
-    #     header = normalized_rows[0]
-    #     data = normalized_rows[1:]
-    #     df = pl.DataFrame(data, schema=header)
-    # else:
-    df = pd.DataFrame(rows)
+        stats = {}
+        for cell in data_cells:
+            stat_name = cell.get('data-stat')
+            stat_value = cell.get_text(strip=True)
 
-    return df
+            try:
+                value = float(stat_value)
+            except ValueError:
+                value = None
+
+            stats[stat_name] = value
+
+        season_data.append((season, stats))
+
+        
+    averaged_stats = compute_shooting_stats_average(
+        season_data,
+        num_years_back=num_years_back,
+        min_minutes_90s=min_minute_90s
+    )
+
+    return averaged_stats
+
 
 
 
@@ -74,20 +181,19 @@ def parse_player_metastats(html: str) -> pl.DataFrame:
     meta_div = soup.find('div', id='meta')
     
     if not meta_div:
-        schema = {
-            "Full Name": pl.Utf8,
-            "Position": pl.Utf8,
-            "Footed": pl.Utf8,
-            "Height": pl.Utf8,
-            "Weight": pl.Utf8,
-            "Born": pl.Utf8,
-            "Birth Date": pl.Utf8,
-            "Age Info": pl.Utf8,
-            "National Team": pl.Utf8,
-            "Weekly Wages": pl.Utf8
+        return {
+            "Full Name": None,
+            "Position": None,
+            "Footed": None,
+            "Height": None,
+            "Weight": None,
+            "Born": None,
+            "Birth Date": None,
+            "Age Info": None,
+            "National Team": None,
+            "Weekly Wages": None
         }
-        return pl.DataFrame(schema=schema)
-    
+        
     data = {}
 
     h1_full = meta_div.find('h1')
@@ -163,5 +269,4 @@ def parse_player_metastats(html: str) -> pl.DataFrame:
             data[key] = value.replace('\xa0', ' ')
     
     return data
-
 
