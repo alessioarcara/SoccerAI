@@ -10,7 +10,6 @@ from visualize import shot_frames_navigator
 def pos_labeling(
     event_df: pl.DataFrame, chain_len: Optional[int] = None
 ) -> List[List[int]]:
-    """ """
     shots_df = event_df.filter(event_df["possessionEventType"] == "SH")
     pos_chains = []
 
@@ -41,32 +40,33 @@ def pos_labeling(
     return pos_chains
 
 
-def neg_labeling(event_df: pl.DataFrame) -> List[List[int]]:
-    pass
+def neg_labeling(
+    event_df: pl.DataFrame,
+    players_df: pl.DataFrame,
+    metadata_df: pl.DataFrame,
+    pos_chains: List[List[int]],
+    chain_len: int,
+) -> List[List[int]]:
+    pos_indices = [idx for chain in pos_chains for idx in chain]
+    negatives_df = event_df.filter(~pl.col("index").is_in(pos_indices))
 
-    # all_indices = list(range(event_data.height))
-    # negative_indices = [index for index in all_indices if index not in indices]
-    # tmp_indices = []
-    # negative_indices_copy = negative_indices.copy()
+    neg_chains = []
+    neg_chain = []
+    curr_team_name = None
 
-    # for idx in range(len(negative_indices_copy) - 1):
-    #     print(tmp_indices)
-    #     tmp_indices.append(negative_indices_copy[idx])
-    #     if not (negative_indices_copy[idx + 1] - negative_indices_copy[idx] == 1
-    #         and event_data.row(negative_indices_copy[idx + 1], named=True)['teamName'] ==  event_data.row(negative_indices_copy[idx], named=True)['teamName']):
-    #         if len(tmp_indices) < 5:
-    #             negative_indices = [index for index in negative_indices if index not in tmp_indices]
+    for row in negatives_df.iter_rows(named=True):
+        idx = row["index"]
+        team_name = row["teamName"]
 
-    #         print(tmp_indices)
-    #         tmp_indices = []
-    #         print(tmp_indices)
+        if curr_team_name == team_name:
+            neg_chain.append(idx)
+        else:
+            if len(neg_chain) >= chain_len:
+                neg_chains.append(neg_chain)
+            neg_chain = [idx]
+            curr_team_name = team_name
 
-    # event_data = event_data.with_columns(
-    #     pl.when(pl.col("idx").is_in(indices)).then(1)
-    #     .when(pl.col("idx").is_in(negative_indices)).then(0)
-    #     .alias("label")
-    # )
-    # event_data = event_data.filter(pl.col("label").is_not_null())
+    return neg_chains
 
 
 def filter_shot_chains(

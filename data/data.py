@@ -89,6 +89,8 @@ def extract_metadata(game_metadata: List[Dict[str, Any]]) -> Dict[str, Any]:
         "awayTeamColor": game_metadata[0]["awayTeamKit"]["primaryColor"],
         "homeTeamName": game_metadata[0]["homeTeam"]["name"],
         "homeTeamColor": game_metadata[0]["homeTeamKit"]["primaryColor"],
+        "homeTeamStartLeft": game_metadata[0]["homeTeamStartLeft"],
+        "startPeriod2": game_metadata[0]["startPeriod2"],
     }
 
 
