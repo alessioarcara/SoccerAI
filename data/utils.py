@@ -106,29 +106,10 @@ def create_event_byte_map(game_id: int) -> Dict[int, Any]:
                 event_id = int(frame_info["game_event_id"])
                 event_byte_map[event_id] = {"byte_pos": -1}
                 end_frame = frame_info["game_event"]["end_frame"]
-            if frame_info["frameNum"] == end_frame:
+            if frame_info["frameNum"] == end_frame - 1:
                 event_byte_map[event_id]["byte_pos"] = current_byte_pos
+            elif frame_info["frameNum"] == end_frame:
                 end_frame = -1
 
             current_byte_pos = tracking_data.tell()
         return event_byte_map
-
-
-def decompress_tracking_file(filepath: str) -> None:
-    command = ["bunzip2", filepath]
-    subprocess.run(
-        command,
-        check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-
-
-def compress_tracking_file(filepath: str) -> None:
-    command = ["bzip2", filepath]
-    subprocess.run(
-        command,
-        check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )

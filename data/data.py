@@ -8,8 +8,6 @@ from utils import (
     compute_velocity,
     compute_direction,
     create_event_byte_map,
-    decompress_tracking_file,
-    compress_tracking_file,
 )
 import numpy as np
 import traceback
@@ -41,7 +39,7 @@ def extract_players(
     game_id = event["gameId"]
     event_id = event["gameEventId"]
 
-    if byte_pos is not None:
+    if byte_pos is not None and byte_pos != -1:
         time, ball_pos, players_pos = extract_tracking_data(game_id, byte_pos)
     else:
         ball_pos = None
@@ -49,7 +47,11 @@ def extract_players(
         players_pos = {"home": None, "away": None}
 
     for player in event["homePlayers"]:
-        if players_pos["home"] is not None:
+        if (
+            players_pos["home"] is not None
+            and player["jerseyNum"] in players_pos["home"]["start"]
+            and player["jerseyNum"] in players_pos["home"]["end"]
+        ):
             player_velocity = compute_velocity(
                 players_pos["home"]["start"][player["jerseyNum"]],
                 players_pos["home"]["end"][player["jerseyNum"]],
@@ -78,7 +80,11 @@ def extract_players(
         )
 
     for player in event["awayPlayers"]:
-        if players_pos["away"] is not None:
+        if (
+            players_pos["away"] is not None
+            and player["jerseyNum"] in players_pos["away"]["start"]
+            and player["jerseyNum"] in players_pos["away"]["end"]
+        ):
             player_velocity = compute_velocity(
                 players_pos["away"]["start"][player["jerseyNum"]],
                 players_pos["away"]["end"][player["jerseyNum"]],
@@ -209,18 +215,12 @@ def load_and_process_soccer_events(
 
     all_events = []
     all_players = []
-    count_game = 0
-    for event_file in event_files[:1]:
+    for event_file in event_files:
         with open(os.path.join(event_dir_path, event_file), "r") as f:
             data = json.load(f)
-        tracking_filepath = f"/home/soccerdata/FIFA_WorldCup_2022/Tracking Data/{data[0]['gameId']}.jsonl.bz2"
-        decompress_tracking_file(tracking_filepath)
         event_byte_map = create_event_byte_map(data[0]["gameId"])
-        count_game += 1
-        print(f"Game number {count_game} in progress...")
-        count_event = 0
+        print(f"Game number {data[0]['gameId']} in progress...")
         for e in data:
-            count_event += 1
             if (
                 e["homePlayers"] is None
                 or e["awayPlayers"] is None
@@ -236,7 +236,6 @@ def load_and_process_soccer_events(
                 )
             else:
                 all_players.extend(extract_players(e))
-        compress_tracking_file(tracking_filepath.removesuffix(".bz2"))
     event_df = pl.DataFrame(all_events).with_row_index()
     players_df = pl.DataFrame(all_players).with_row_index()
 
