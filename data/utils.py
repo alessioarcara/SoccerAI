@@ -92,24 +92,44 @@ def download_video_frame(
 
 def create_event_byte_map(game_id: int) -> Dict[int, Any]:
     event_byte_map = {}
+    end_frames = {}
     tracking_file = f"/home/soccerdata/FIFA_WorldCup_2022/Tracking Data/{game_id}.jsonl"
     with open(tracking_file, "r") as tracking_data:
-        event_id = -1
-        end_frame = -1
         current_byte_pos = tracking_data.tell()
         while True:
             frame = tracking_data.readline()
             if not frame:
                 break
             frame_info = json.loads(frame)
-            if frame_info["game_event_id"] is not None and end_frame == -1:
+            if (
+                frame_info["game_event_id"] is not None
+                and not frame_info["game_event_id"] in end_frames
+            ):
                 event_id = int(frame_info["game_event_id"])
                 event_byte_map[event_id] = {"byte_pos": -1}
-                end_frame = frame_info["game_event"]["end_frame"]
-            if frame_info["frameNum"] == end_frame - 1:
-                event_byte_map[event_id]["byte_pos"] = current_byte_pos
-            elif frame_info["frameNum"] == end_frame:
-                end_frame = -1
-
+                if game_id == 3816 and event_id == 6501225:
+                    print("Event found!")
+                end_frames[event_id] = frame_info["game_event"]["end_frame"]
+            if frame_info["frameNum"] in [x - 1 for x in end_frames.values()]:
+                for k, v in list(end_frames.items()):
+                    if frame_info["frameNum"] == v - 1:
+                        event_byte_map[k]["byte_pos"] = current_byte_pos
+            if frame_info["frameNum"] in end_frames.values():
+                for k, v in list(end_frames.items()):
+                    if frame_info["frameNum"] == v:
+                        end_frames.pop(k)
+                        if event_byte_map[k]["byte_pos"] == -1:
+                            event_byte_map[k]["byte_pos"] = current_byte_pos
+                if (
+                    frame_info["game_event_id"] is not None
+                    and frame_info["frameNum"]
+                    == frame_info["game_event"]["start_frame"]
+                ):
+                    event_id = int(frame_info["game_event_id"])
+                    event_byte_map[event_id] = {"byte_pos": -1}
+                    end_frames[event_id] = frame_info["game_event"]["end_frame"]
+                    if frame_info["frameNum"] == end_frames[event_id]:
+                        event_byte_map[event_id]["byte_pos"] = current_byte_pos
+                        end_frames.pop(event_id)
             current_byte_pos = tracking_data.tell()
         return event_byte_map

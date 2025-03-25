@@ -10,7 +10,6 @@ from utils import (
     create_event_byte_map,
 )
 import numpy as np
-import traceback
 
 
 def extract_event(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -219,7 +218,6 @@ def load_and_process_soccer_events(
         with open(os.path.join(event_dir_path, event_file), "r") as f:
             data = json.load(f)
         event_byte_map = create_event_byte_map(data[0]["gameId"])
-        print(f"Game number {data[0]['gameId']} in progress...")
         for e in data:
             if (
                 e["homePlayers"] is None
@@ -229,7 +227,6 @@ def load_and_process_soccer_events(
                 continue
 
             all_events.append(extract_event(e))
-            print(f"Event number {e["gameEventId"]} in progress...")
             if e["gameEventId"] in event_byte_map:
                 all_players.extend(
                     extract_players(e, event_byte_map[e["gameEventId"]]["byte_pos"])
