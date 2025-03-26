@@ -40,6 +40,32 @@ def pos_labeling(
     return pos_chains
 
 
+def in_enemy_half(
+    home_team_name: str,
+    home_team_start_left: bool,
+    second_half_start: int,
+    team_name: str,
+    frame_time: str,
+    x_position: float,
+) -> bool:
+    try:
+        minutes, seconds = map(int, frame_time.split(":"))
+        current_time_seconds = minutes * 60 + seconds
+        is_second_half = current_time_seconds >= second_half_start
+    except (ValueError, TypeError):
+        return False
+
+    home_team_currently_left = (
+        home_team_start_left if not is_second_half else not home_team_start_left
+    )
+    player_on_left = x_position < 0
+
+    if team_name == home_team_name:
+        return player_on_left != home_team_currently_left
+    else:
+        return player_on_left == home_team_currently_left
+
+
 def neg_labeling(
     event_df: pl.DataFrame,
     players_df: pl.DataFrame,
@@ -62,7 +88,40 @@ def neg_labeling(
             neg_chain.append(idx)
         else:
             if len(neg_chain) >= chain_len:
-                neg_chains.append(neg_chain)
+                last_action_idx = neg_chain[-1]
+
+                # TODO: refactor -> funzione a parte e usare guardie con return
+                while True:
+                    chain_last_action_event_df = event_df.filter(
+                        pl.col("index") == last_action_idx
+                    )
+
+                    game_id = chain_last_action_event_df.select("gameId").item()
+
+                    metadata_event_df = metadata_df.filter(
+                        pl.col("gameId").cast(int) == game_id
+                    ).row(0, named=True)
+
+                    ball_last_action_df = chain_last_action_event_df.join(
+                        players_df, on=["gameEventId", "possessionEventId"]
+                    ).filter(pl.col("team").is_null())
+
+                    if ball_last_action_df.height == 0:
+                        break
+
+                    ball_last_action = ball_last_action_df.row(0, named=True)
+
+                    if in_enemy_half(
+                        home_team_name=metadata_event_df["homeTeamName"],
+                        home_team_start_left=metadata_event_df["homeTeamStartLeft"],
+                        second_half_start=metadata_event_df["startPeriod2"],
+                        team_name=curr_team_name,
+                        frame_time=ball_last_action["frameTime"],
+                        x_position=ball_last_action["x"],
+                    ):
+                        neg_chains.append(neg_chain)
+
+                    break
             neg_chain = [idx]
             curr_team_name = team_name
 
