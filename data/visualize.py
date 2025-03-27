@@ -7,7 +7,7 @@ import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import polars as pl
 from IPython.display import Image, clear_output, display
-from ipywidgets import Button, Layout, widgets
+from ipywidgets import widgets
 from matplotlib.offsetbox import AnnotationBbox, OffsetImage
 from mplsoccer import Pitch
 from utils import download_video_frame
@@ -96,24 +96,23 @@ def plot_pitch_info(
     )
 
 
+def get_contrasting_text_color(team_color: str) -> str:
+    color = team_color.strip().lower()
+    return "black" if color in ["#ffffff", "white"] else "white"
+
+
 def visualize_frame(
     frame_index: int,
     event_df: pl.DataFrame,
-    players_df: pl.DataFrame,
+    frames_df: pl.DataFrame,
     metadata_df: pl.DataFrame,
     ball_trajectory: List[Tuple[float]],
 ) -> None:
-    frame_df = pl.from_dict(event_df.row(frame_index, named=True))
-    join_table = frame_df.join(players_df, on="gameEventId")
-
+    frame_df = frames_df.filter(pl.col("index") == frame_index)
     match_id = event_df[frame_index]["gameId"].item()
     metadata_game = metadata_df.filter(pl.col("gameId") == str(match_id)).row(
         0, named=True
     )
-
-    def get_contrasting_text_color(team_color: str) -> str:
-        color = team_color.strip().lower()
-        return "black" if color in ["#ffffff", "white"] else "white"
 
     home_team_color = metadata_game["homeTeamColor"]
     away_team_color = metadata_game["awayTeamColor"]
@@ -124,13 +123,13 @@ def visualize_frame(
     _, ax = pitch.draw(figsize=config.PITCH_FIGSIZE)
 
     home_coords = (
-        join_table.filter(pl.col("team") == "home")
+        frame_df.filter(pl.col("team") == "home")
         .select(pl.col("x"), pl.col("y"), pl.col("jerseyNum"))
         .to_numpy()
     )
 
     away_coords = (
-        join_table.filter(pl.col("team") == "away")
+        frame_df.filter(pl.col("team") == "away")
         .select(pl.col("x"), pl.col("y"), pl.col("jerseyNum"))
         .to_numpy()
     )
@@ -148,7 +147,7 @@ def visualize_frame(
     )
 
     plot_players_with_numbers(
-        ax=ax,
+        ax,
         x_coords=away_coords[:, 0],
         y_coords=away_coords[:, 1],
         jersey_numbers=away_coords[:, 2],
@@ -172,7 +171,7 @@ def visualize_frame(
     )
 
     # Draw the ball using the ball sprite
-    ball_df = join_table.filter(pl.col("team").is_null())
+    ball_df = frame_df.filter(pl.col("team").is_null())
     ball_row = ball_df.row(0, named=True)
     ball_img = mpimg.imread(config.BALL_IMAGE_PATH)
     ball_image = OffsetImage(ball_img, zoom=config.BALL_ZOOM)
@@ -251,27 +250,28 @@ def shot_frames_navigator(
                     video_files[frame_idx] = filename
 
     # Collect ball coordinates to draw trajectory
-    frame_df = event_df.filter(pl.col("index").is_in(frames))
-    join_table = frame_df.join(players_df, on="gameEventId")
+    frames_df = event_df.filter(pl.col("index").is_in(frames)).join(
+        players_df, on=["gameEventId", "possessionEventId"]
+    )
+
     ball_coordinates = []
     for f_idx in frames:
-        ball_x = join_table.filter(
+        ball_data = frames_df.filter(
             (pl.col("team").is_null()) & (pl.col("index") == f_idx)
-        ).row(0, named=True)["x"]
-        ball_y = join_table.filter(
-            (pl.col("team").is_null()) & (pl.col("index") == f_idx)
-        ).row(0, named=True)["y"]
-        ball_coordinates.append((ball_x, ball_y))
+        ).row(0, named=True)
+        ball_coordinates.append((ball_data["x"], ball_data["y"]))
 
     # Updates pitch and video outputs.
     def on_slider_value_change(change):
         new_val = change["new"]
         frame_index = frames[new_val]
-        ball_traj = ball_coordinates[: new_val + 1]
+        ball_trajectory = ball_coordinates[: new_val + 1]
 
         with pitch_output:
             clear_output(wait=True)
-            visualize_frame(frame_index, event_df, players_df, metadata_df, ball_traj)
+            visualize_frame(
+                frame_index, event_df, frames_df, metadata_df, ball_trajectory
+            )
 
         if show_video:
             with video_output:
@@ -302,91 +302,3 @@ def shot_frames_navigator(
         layout=widgets.Layout(width="100%", align_items="center"),
     )
     display(ui)
-
-
-def label_shot_chains(
-    chains: List[List[int]],
-    chains_range: Tuple[int, int],
-    event_df: pl.DataFrame,
-    players_df: pl.DataFrame,
-    metadata_df: pl.DataFrame,
-    output_dir: str,
-    show_video: bool = True,
-    interval: int = 1000,
-) -> List[List[int]]:
-    accepted_chains = []
-    current_chain_index = chains_range[0]
-    selection_widget = None
-
-    main_output = widgets.Output()
-    extra_output = widgets.Output()
-
-    accept_button = Button(
-        description="Accept Chain",
-        button_style="success",
-        layout=Layout(**config.BUTTON_STYLE),
-    )
-    discard_button = Button(
-        description="Discard Chain",
-        button_style="danger",
-        layout=Layout(**config.BUTTON_STYLE),
-    )
-
-    controls = widgets.HBox([accept_button, discard_button])
-
-    def update_ui():
-        with main_output:
-            clear_output(wait=True)
-            shot_frames_navigator(
-                chains[current_chain_index],
-                event_df,
-                players_df,
-                metadata_df,
-                output_dir,
-                show_video=show_video,
-                interval=interval,
-            )
-
-    def update_selection_widget():
-        nonlocal selection_widget
-        with extra_output:
-            clear_output(wait=True)
-            current_chain = chains[current_chain_index]
-            selection_widget = widgets.SelectMultiple(
-                options=current_chain,
-                value=current_chain,
-                description="Keep frames:",
-                disabled=False,
-            )
-            display(selection_widget)
-
-    def next_chain():
-        nonlocal current_chain_index
-        current_chain_index += 1
-        if current_chain_index < chains_range[1]:
-            update_ui()
-            update_selection_widget()
-        else:
-            with main_output:
-                clear_output(wait=True)
-                print("Labeling complete!")
-
-    def on_accept(_):
-        nonlocal selection_widget
-        selected_frames = list(selection_widget.value)
-        accepted_chains.append(selected_frames)
-        next_chain()
-
-    def on_discard(_):
-        next_chain()
-
-    accept_button.on_click(on_accept)
-    discard_button.on_click(on_discard)
-
-    update_selection_widget()
-    update_ui()
-
-    ui = widgets.VBox([main_output, extra_output, controls])
-    display(ui)
-
-    return accepted_chains
