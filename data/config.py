@@ -7,6 +7,8 @@ PITCH_SETTINGS = {
     "pitch_color": "grass",
     "line_color": "#c7d5cc",
     "stripe": True,
+    "axis": True,
+    "label": True,
 }
 
 BALL_IMAGE_PATH = "soccer_ball_transparent.png"
