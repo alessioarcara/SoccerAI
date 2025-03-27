@@ -40,30 +40,101 @@ def pos_labeling(
     return pos_chains
 
 
-def in_enemy_half(
-    home_team_name: str,
-    home_team_start_left: bool,
-    second_half_start: int,
+def is_within_goal_distance(
+    x_position,
+    team_name,
+    home_team_name,
+    home_team_start_left,
+    is_second_half,
+    goal_distance,
+):
+    if team_name is None or home_team_name is None:
+        return False
+
+    is_near_left_goal = x_position <= goal_distance
+    is_near_right_goal = x_position >= (105 - goal_distance)
+    is_home_team = team_name == home_team_name
+
+    if is_home_team:
+        if home_team_start_left:
+            if not is_second_half:
+                result = is_near_right_goal
+            else:
+                result = is_near_left_goal
+        else:
+            if not is_second_half:
+                result = is_near_left_goal
+            else:
+                result = is_near_right_goal
+    else:
+        if home_team_start_left:
+            if not is_second_half:
+                result = is_near_left_goal
+            else:
+                result = is_near_right_goal
+        else:
+            if not is_second_half:
+                result = is_near_right_goal
+            else:
+                result = is_near_left_goal
+
+    if result:
+        print(f"home-team:{home_team_name}, start_left?: {home_team_start_left}")
+        print(
+            f"Debug - x_position: {x_position}, team: {team_name}, is_second_half: {is_second_half}"
+        )
+
+    return result
+
+
+def is_in_enemy_half(
+    event_df: pl.DataFrame,
+    players_df: pl.DataFrame,
+    metadata_df,
+    last_action_idx: int,
     team_name: str,
-    frame_time: str,
-    x_position: float,
+    goal_distance: float,
 ) -> bool:
+    chain_last_action_event_df = event_df.filter(pl.col("index") == last_action_idx)
+
+    game_id = chain_last_action_event_df.select("gameId").item()
+
+    try:
+        metadata_event = metadata_df.filter(pl.col("gameId").cast(int) == game_id).row(
+            0, named=True
+        )
+
+        ball_last_action = (
+            chain_last_action_event_df.join(
+                players_df, on=["gameEventId", "possessionEventId"]
+            )
+            .filter(pl.col("team").is_null())
+            .row(0, named=True)
+        )
+    except Exception:
+        return False
+
+    home_team_name = metadata_event["homeTeamName"]
+    home_team_start_left = metadata_event["homeTeamStartLeft"]
+    second_half_start = metadata_event["startPeriod2"]
+    frame_time = ball_last_action["frameTime"]
+    x_position = ball_last_action["x"]
+
     try:
         minutes, seconds = map(int, frame_time.split(":"))
         current_time_seconds = minutes * 60 + seconds
         is_second_half = current_time_seconds >= second_half_start
-    except (ValueError, TypeError):
+    except Exception:
         return False
 
-    home_team_currently_left = (
-        home_team_start_left if not is_second_half else not home_team_start_left
+    return is_within_goal_distance(
+        x_position,
+        team_name,
+        home_team_name,
+        home_team_start_left,
+        is_second_half,
+        goal_distance,
     )
-    player_on_left = x_position < 0
-
-    if team_name == home_team_name:
-        return player_on_left != home_team_currently_left
-    else:
-        return player_on_left == home_team_currently_left
 
 
 def neg_labeling(
@@ -72,6 +143,7 @@ def neg_labeling(
     metadata_df: pl.DataFrame,
     pos_chains: List[List[int]],
     chain_len: int,
+    goal_distance: float = 52.5,
 ) -> List[List[int]]:
     pos_indices = [idx for chain in pos_chains for idx in chain]
     negatives_df = event_df.filter(~pl.col("index").is_in(pos_indices))
@@ -87,41 +159,16 @@ def neg_labeling(
         if curr_team_name == team_name:
             neg_chain.append(idx)
         else:
-            if len(neg_chain) >= chain_len:
-                last_action_idx = neg_chain[-1]
+            if len(neg_chain) >= chain_len and is_in_enemy_half(
+                event_df,
+                players_df,
+                metadata_df,
+                neg_chain[-1],
+                team_name,
+                goal_distance,
+            ):
+                neg_chains.append(neg_chain)
 
-                # TODO: refactor -> funzione a parte e usare guardie con return
-                while True:
-                    chain_last_action_event_df = event_df.filter(
-                        pl.col("index") == last_action_idx
-                    )
-
-                    game_id = chain_last_action_event_df.select("gameId").item()
-
-                    metadata_event_df = metadata_df.filter(
-                        pl.col("gameId").cast(int) == game_id
-                    ).row(0, named=True)
-
-                    ball_last_action_df = chain_last_action_event_df.join(
-                        players_df, on=["gameEventId", "possessionEventId"]
-                    ).filter(pl.col("team").is_null())
-
-                    if ball_last_action_df.height == 0:
-                        break
-
-                    ball_last_action = ball_last_action_df.row(0, named=True)
-
-                    if in_enemy_half(
-                        home_team_name=metadata_event_df["homeTeamName"],
-                        home_team_start_left=metadata_event_df["homeTeamStartLeft"],
-                        second_half_start=metadata_event_df["startPeriod2"],
-                        team_name=curr_team_name,
-                        frame_time=ball_last_action["frameTime"],
-                        x_position=ball_last_action["x"],
-                    ):
-                        neg_chains.append(neg_chain)
-
-                    break
             neg_chain = [idx]
             curr_team_name = team_name
 
