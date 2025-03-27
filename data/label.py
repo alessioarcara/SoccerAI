@@ -40,63 +40,16 @@ def pos_labeling(
     return pos_chains
 
 
-def is_within_goal_distance(
-    x_position,
-    team_name,
-    home_team_name,
-    home_team_start_left,
-    is_second_half,
-    goal_distance,
-):
-    if team_name is None or home_team_name is None:
-        return False
-
-    is_near_left_goal = x_position <= goal_distance
-    is_near_right_goal = x_position >= (105 - goal_distance)
-    is_home_team = team_name == home_team_name
-
-    if is_home_team:
-        if home_team_start_left:
-            if not is_second_half:
-                result = is_near_right_goal
-            else:
-                result = is_near_left_goal
-        else:
-            if not is_second_half:
-                result = is_near_left_goal
-            else:
-                result = is_near_right_goal
-    else:
-        if home_team_start_left:
-            if not is_second_half:
-                result = is_near_left_goal
-            else:
-                result = is_near_right_goal
-        else:
-            if not is_second_half:
-                result = is_near_right_goal
-            else:
-                result = is_near_left_goal
-
-    if result:
-        print(f"home-team:{home_team_name}, start_left?: {home_team_start_left}")
-        print(
-            f"Debug - x_position: {x_position}, team: {team_name}, is_second_half: {is_second_half}"
-        )
-
-    return result
-
-
-def is_in_enemy_half(
+def is_within_range(
     event_df: pl.DataFrame,
     players_df: pl.DataFrame,
     metadata_df,
     last_action_idx: int,
     team_name: str,
-    goal_distance: float,
+    outer_distance: float,
+    inner_distance: float,
 ) -> bool:
     chain_last_action_event_df = event_df.filter(pl.col("index") == last_action_idx)
-
     game_id = chain_last_action_event_df.select("gameId").item()
 
     try:
@@ -127,14 +80,36 @@ def is_in_enemy_half(
     except Exception:
         return False
 
-    return is_within_goal_distance(
-        x_position,
-        team_name,
-        home_team_name,
-        home_team_start_left,
-        is_second_half,
-        goal_distance,
+    is_within_left_range = inner_distance <= x_position <= outer_distance
+    is_within_right_range = (
+        (105 - outer_distance) <= x_position <= (105 - inner_distance)
     )
+    is_home_team = team_name == home_team_name
+
+    if is_home_team:
+        if home_team_start_left:
+            if not is_second_half:
+                result = is_within_right_range
+            else:
+                result = is_within_left_range
+        else:
+            if not is_second_half:
+                result = is_within_left_range
+            else:
+                result = is_within_right_range
+    else:
+        if home_team_start_left:
+            if not is_second_half:
+                result = is_within_left_range
+            else:
+                result = is_within_right_range
+        else:
+            if not is_second_half:
+                result = is_within_right_range
+            else:
+                result = is_within_left_range
+
+    return result
 
 
 def neg_labeling(
@@ -143,7 +118,8 @@ def neg_labeling(
     metadata_df: pl.DataFrame,
     pos_chains: List[List[int]],
     chain_len: int,
-    goal_distance: float = 52.5,
+    outer_distance: float,
+    inner_distance: float = 0.0,
 ) -> List[List[int]]:
     pos_indices = [idx for chain in pos_chains for idx in chain]
     negatives_df = event_df.filter(~pl.col("index").is_in(pos_indices))
@@ -159,13 +135,14 @@ def neg_labeling(
         if curr_team_name == team_name:
             neg_chain.append(idx)
         else:
-            if len(neg_chain) >= chain_len and is_in_enemy_half(
+            if len(neg_chain) >= chain_len and is_within_range(
                 event_df,
                 players_df,
                 metadata_df,
                 neg_chain[-1],
-                team_name,
-                goal_distance,
+                curr_team_name,
+                outer_distance,
+                inner_distance,
             ):
                 neg_chains.append(neg_chain)
 
