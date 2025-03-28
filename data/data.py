@@ -158,19 +158,24 @@ def extract_tracking_data(
     frame_key = "start"
     time = {}
     ball_pos = {}
+    frames_pair_found = False
     with open(tracking_file, "r") as tracking_data:
-        for _ in range(2):
-            if frame_key == "start":
+        while not frames_pair_found:
+            if tracking_data.tell() == 0:
                 tracking_data.seek(byte_pos)
             line = tracking_data.readline()
             if line:
                 frame_info = json.loads(line)
-                if len(frame_info["balls"]) == 0:
-                    ball_pos[frame_key] = None
+                if (
+                    frame_info["ballsSmoothed"] is None
+                    or frame_info["ballsSmoothed"]["x"] is None
+                    or frame_info["ballsSmoothed"]["y"] is None
+                ):
+                    continue
                 else:
                     ball_pos[frame_key] = (
-                        frame_info["balls"][0]["x"],
-                        frame_info["balls"][0]["y"],
+                        frame_info["ballsSmoothed"]["x"],
+                        frame_info["ballsSmoothed"]["y"],
                     )
 
                 time[frame_key] = np.round(frame_info["videoTimeMs"] / 1000, 3)
@@ -181,7 +186,7 @@ def extract_tracking_data(
                             player["y"],
                         )
                 else:
-                    players_pos["home"][frame_key] = None
+                    continue
                 if frame_info["awayPlayersSmoothed"] is not None:
                     for player in frame_info["awayPlayersSmoothed"]:
                         players_pos["away"][frame_key][player["jerseyNum"]] = (
@@ -189,20 +194,16 @@ def extract_tracking_data(
                             player["y"],
                         )
                 else:
-                    players_pos["away"][frame_key] = None
+                    continue
             else:
-                ball_pos["end"] = None
-                players_pos["home"]["end"] = None
-                players_pos["away"]["end"] = None
+                ball_pos = None
+                players_pos["home"] = None
+                players_pos["away"] = None
                 time["end"] = None
-
-            frame_key = "end"
-    if players_pos["home"]["start"] is None or players_pos["home"]["end"] is None:
-        players_pos["home"] = None
-    if players_pos["away"]["start"] is None or players_pos["away"]["end"] is None:
-        players_pos["away"] = None
-    if ball_pos["start"] is None or ball_pos["end"] is None:
-        ball_pos = None
+            if frame_key == "start":
+                frame_key = "end"
+            else:
+                frames_pair_found = True
 
     return time, ball_pos, players_pos
 
