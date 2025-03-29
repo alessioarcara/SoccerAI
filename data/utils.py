@@ -2,6 +2,10 @@ from typing import Tuple, Union, Optional
 import os
 import subprocess
 import numpy as np
+import unicodedata
+from functools import lru_cache
+
+
 
 
 def offset_x(x: int):
@@ -91,3 +95,11 @@ def download_video_frame(
         return frame_index, output_filename
     except subprocess.CalledProcessError:
         return frame_index, None
+
+
+@lru_cache(maxsize=1024)
+def normalize(text: str) -> str:
+    return ''.join(
+        c for c in unicodedata.normalize('NFKD', text)
+        if not unicodedata.combining(c)
+    ).lower().strip()

@@ -94,7 +94,8 @@ def extract_player_info(player_info: Dict[str, Any]) -> Dict[str, Any]:
         "playerId": player_info["player"]["id"],
         "playerNickname": player_info["player"]["nickname"],
         "shirtNumber": player_info["shirtNumber"],
-        "playerTeam": player_info["team"]["name"]
+        "playerTeam": player_info["team"]["name"],
+        "playerRole": player_info["positionGroupType"]
     }
 
 
