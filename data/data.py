@@ -37,7 +37,6 @@ def extract_players(
     players = []
     game_id = event["gameId"]
     event_id = event["gameEventId"]
-
     if byte_pos is not None and byte_pos != -1:
         time, ball_pos, players_pos = extract_tracking_data(game_id, byte_pos)
     else:
@@ -113,7 +112,10 @@ def extract_players(
     ball = event["ball"]
     if ball_pos is not None:
         ball_velocity = compute_velocity(
-            ball_pos["start"], ball_pos["end"], time["start"], time["end"]
+            ball_pos["start"],
+            ball_pos["end"],
+            time["start"],
+            time["end"],
         )
         ball_direction = compute_direction(ball_pos["start"], ball_pos["end"])
     else:
@@ -195,15 +197,16 @@ def extract_tracking_data(
                         )
                 else:
                     continue
+                if frame_key == "start":
+                    frame_key = "end"
+                else:
+                    frames_pair_found = True
             else:
                 ball_pos = None
                 players_pos["home"] = None
                 players_pos["away"] = None
                 time["end"] = None
-            if frame_key == "start":
-                frame_key = "end"
-            else:
-                frames_pair_found = True
+                break
 
     return time, ball_pos, players_pos
 
@@ -229,9 +232,7 @@ def load_and_process_soccer_events(
 
             all_events.append(extract_event(e))
             if e["gameEventId"] in event_byte_map:
-                all_players.extend(
-                    extract_players(e, event_byte_map[e["gameEventId"]]["byte_pos"])
-                )
+                all_players.extend(extract_players(e, event_byte_map[e["gameEventId"]]))
             else:
                 all_players.extend(extract_players(e))
     event_df = pl.DataFrame(all_events).with_row_index()

@@ -15,7 +15,10 @@ def offset_y(y: int):
 
 
 def compute_velocity(
-    start_pos: Tuple[float], end_pos: Tuple[float], start_time: float, end_time: float
+    start_pos: Tuple[float],
+    end_pos: Tuple[float],
+    start_time: float,
+    end_time: float,
 ) -> float:
 
     delta_t = end_time - start_time
@@ -31,8 +34,9 @@ def compute_direction(start_pos: Tuple[float], end_pos: Tuple[float]) -> float:
     delta_x = end_pos[0] - start_pos[0]
     delta_y = end_pos[1] - start_pos[1]
 
-    direction = np.arctan2(delta_y, delta_x)
-    return direction
+    direction_rad = np.arctan2(delta_y, delta_x)
+    direction_grad = np.rad2deg(direction_rad)
+    return direction_grad
 
 
 def download_video_frame(
@@ -110,62 +114,35 @@ def create_event_byte_map(game_id: int) -> Dict[int, Any]:
             if frame_info["frameNum"] in end_frames.values():
                 for k, v in list(end_frames.items()):
                     if frame_info["frameNum"] == v:
-                        events_done.add(v)
+                        events_done.add(k)
                         end_frames.pop(k)
-                        if event_byte_map[k]["byte_pos"] == -1:
-                            event_byte_map[k]["byte_pos"] = previous_byte_pos
-            else:
-                if (
-                    frame_info["game_event_id"] is not None
-                    and not frame_info["game_event_id"] in end_frames
-                ):
-                    event_id = int(frame_info["game_event_id"])
-                    if frame_info["frameNum"] == frame_info["game_event"]["end_frame"]:
-                        if (
-                            frame_info["game_event"]["game_event_type"]
-                            != "SECONDKICKOFF"
-                        ):
-                            event_byte_map[event_id] = {"byte_pos": previous_byte_pos}
-                        else:
-                            event_byte_map[event_id] = {"byte_pos": current_byte_pos}
-                        events_done.add(frame_info["frameNum"])
-                        previous_byte_pos = current_byte_pos
-                        current_byte_pos = tracking_data.tell()
-                        continue
-                    event_byte_map[event_id] = {"byte_pos": -1}
-                    end_frames[event_id] = frame_info["game_event"]["end_frame"]
-                if (
-                    frame_info["possession_event_id"] is not None
-                    and frame_info["game_event_id"] is not None
-                ):
-                    event_byte_map[int(frame_info["game_event_id"])][
-                        "byte_pos"
-                    ] = previous_byte_pos
+                        if event_byte_map[k] == -1:
+                            event_byte_map[k] = previous_byte_pos
+            if (
+                frame_info["game_event_id"] is not None
+                and not frame_info["game_event_id"] in end_frames
+                and not frame_info["game_event_id"] in events_done
+            ):
+                event_id = int(frame_info["game_event_id"])
+                if frame_info["frameNum"] == frame_info["game_event"]["end_frame"]:
+                    if frame_info["game_event"]["game_event_type"] != "SECONDKICKOFF":
+                        event_byte_map[event_id] = previous_byte_pos
+                    else:
+                        event_byte_map[event_id] = current_byte_pos
+                    events_done.add(frame_info["game_event_id"])
+                    previous_byte_pos = current_byte_pos
+                    current_byte_pos = tracking_data.tell()
+                    continue
+                event_byte_map[event_id] = -1
+                end_frames[event_id] = frame_info["game_event"]["end_frame"]
+            if (
+                frame_info["possession_event_id"] is not None
+                and frame_info["game_event_id"] is not None
+                and not frame_info["game_event_id"] in events_done
+            ):
+                event_byte_map[int(frame_info["game_event_id"])] = previous_byte_pos
+                events_done.add(int(frame_info["game_event_id"]))
 
-            # if frame_info["frameNum"] in [x - 1 for x in end_frames.values()]:
-            #     for k, v in list(end_frames.items()):
-            #         if frame_info["frameNum"] == v - 1:
-            #             event_byte_map[k]["byte_pos"] = current_byte_pos
-            # if frame_info["frameNum"] in end_frames.values():
-            #     for k, v in list(end_frames.items()):
-            #         if frame_info["frameNum"] == v:
-            #             end_frames.pop(k)
-            #             if event_byte_map[k]["byte_pos"] == -1:
-            #                 event_byte_map[k]["byte_pos"] = current_byte_pos
-            #     if (
-            #         frame_info["game_event_id"] is not None
-            #         and frame_info["frameNum"]
-            #         == frame_info["game_event"]["start_frame"]
-            #     ):
-            #         event_id = int(frame_info["game_event_id"])
-            #         event_byte_map[event_id] = {"byte_pos": -1}
-            #         end_frames[event_id] = frame_info["game_event"]["end_frame"]
-            #         if frame_info["frameNum"] == end_frames[event_id]:
-            #             event_byte_map[event_id]["byte_pos"] = current_byte_pos
-            #             end_frames.pop(event_id)
             previous_byte_pos = current_byte_pos
             current_byte_pos = tracking_data.tell()
         return event_byte_map
-
-
-# event_byte_map deve contenere un dizionario???
