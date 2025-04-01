@@ -8,8 +8,8 @@ from bs4 import BeautifulSoup
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import WebDriverException
-from config import TEAM_ABBREVS, SHOOTING_STATS
-from utils import normalize
+from data.config import TEAM_ABBREVS, SHOOTING_STATS
+from data.scraping.utils import normalize
 
 
 def create_webdriver():

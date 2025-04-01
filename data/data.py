@@ -2,7 +2,7 @@ import os
 from typing import Dict, Any, List, Tuple
 import polars as pl
 import json
-from utils import offset_x, offset_y
+from data.utils import offset_x, offset_y
 
 
 def extract_event(event: Dict[str, Any]) -> Dict[str, Any]:

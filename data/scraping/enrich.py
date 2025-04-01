@@ -13,8 +13,8 @@ from data.scraping.transfermarkt import (
     find_best_player_match,
 )
 from data.scraping.transfermarkt import search_tm_club_id, get_players_from_tmrooster
-from utils import normalize
-from config import SHOOTING_STATS, TEAM_ABBREVS
+from data.scraping.utils import normalize
+from data.config import SHOOTING_STATS, TEAM_ABBREVS
 
 
 def enrich_player_record(player: dict, tm_player_id: str = None) -> dict:
