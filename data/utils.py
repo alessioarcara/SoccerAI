@@ -2,10 +2,6 @@ from typing import Tuple, Union, Optional
 import os
 import subprocess
 import numpy as np
-import unicodedata
-from functools import lru_cache
-
-
 
 
 def offset_x(x: int):
@@ -23,7 +19,6 @@ def compute_velocity(
     end_time: float,
     return_direction=False,
 ) -> Union[Tuple[float], float]:
-
     delta_t = end_time - start_time
     delta_x = end_pos[0] - start_pos[0]
     delta_y = end_pos[1] - start_pos[1]
@@ -95,11 +90,3 @@ def download_video_frame(
         return frame_index, output_filename
     except subprocess.CalledProcessError:
         return frame_index, None
-
-
-@lru_cache(maxsize=1024)
-def normalize(text: str) -> str:
-    return ''.join(
-        c for c in unicodedata.normalize('NFKD', text)
-        if not unicodedata.combining(c)
-    ).lower().strip()

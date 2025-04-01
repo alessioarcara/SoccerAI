@@ -1,5 +1,5 @@
 from data import load_and_process_roosters
-from enrich import enrich_roosters
+from data.scraping.enrich import enrich_roosters
 
 def main():
     rooster_df = load_and_process_roosters("/home/soccerdata/FIFA_WorldCup_2022/Rosters")

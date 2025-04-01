@@ -1,16 +1,17 @@
-from mplsoccer import Pitch
-import matplotlib.pyplot as plt
-from typing import List, Tuple, Any
-import polars as pl
-import ipywidgets as widgets
-from IPython.display import Image, display, clear_output
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, List, Tuple
+
+import ipywidgets as widgets
 import matplotlib as mpl
 import matplotlib.image as mpimg
-from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-from matplotlib.animation import FuncAnimation
-from utils import download_video_frame
+import matplotlib.pyplot as plt
 import numpy as np
+import polars as pl
+from IPython.display import HTML, Image, clear_output, display
+from matplotlib.animation import FuncAnimation
+from matplotlib.offsetbox import AnnotationBbox, OffsetImage
+from mplsoccer import Pitch
+from utils import download_video_frame
 
 mpl.rcParams["animation.embed_limit"] = 50
 
@@ -438,10 +439,6 @@ def animate_pitch(
 
     plt.close(fig)
     return anim
-
-
-from IPython.display import HTML, clear_output, display
-import ipywidgets as widgets
 
 
 def manual_labeling(

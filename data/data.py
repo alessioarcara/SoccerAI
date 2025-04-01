@@ -2,9 +2,7 @@ import os
 from typing import Dict, Any, List, Tuple
 import polars as pl
 import json
-from utils import offset_x, offset_y, compute_velocity, compute_direction
-import bz2
-import numpy as np
+from utils import offset_x, offset_y
 
 
 def extract_event(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -88,20 +86,14 @@ def extract_metadata(game_metadata: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-
 def extract_player_info(player_info: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "playerId": player_info["player"]["id"],
         "playerNickname": player_info["player"]["nickname"],
         "shirtNumber": player_info["shirtNumber"],
         "playerTeam": player_info["team"]["name"],
-        "playerRole": player_info["positionGroupType"]
+        "playerRole": player_info["positionGroupType"],
     }
-
-
-
-
-
 
 
 def extract_tracking_data(
@@ -194,18 +186,18 @@ def load_and_process_roosters(
 
     roosters = []
     teams = []
-    
+
     for rooster_file in roosters_files:
         with open(os.path.join(roosters_dir_path, rooster_file), "r") as f:
             match_roosters_data = json.load(f)
 
         # first player is an home team player
-        home_team_name = match_roosters_data[0]['team']['name']
+        home_team_name = match_roosters_data[0]["team"]["name"]
         for i in range(len(match_roosters_data)):
-            if match_roosters_data[i]['team']['name'] != home_team_name:
-                away_team_name = match_roosters_data[i]['team']['name']
+            if match_roosters_data[i]["team"]["name"] != home_team_name:
+                away_team_name = match_roosters_data[i]["team"]["name"]
                 break
-                    
+
         for player_info in match_roosters_data:
             player_team = player_info["team"]["name"]
             if player_team not in teams:
@@ -215,8 +207,6 @@ def load_and_process_roosters(
             teams.append(home_team_name)
         if away_team_name not in teams:
             teams.append(away_team_name)
-
-
 
     roosters_df = pl.DataFrame(roosters)
 
