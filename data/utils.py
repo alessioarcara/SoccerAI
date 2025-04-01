@@ -1,8 +1,7 @@
-from typing import Tuple, Union, Optional, Dict, Any
+from typing import Tuple, Optional, Dict, Any, List
 import os
 import subprocess
 import numpy as np
-import bz2
 import json
 
 
@@ -15,28 +14,19 @@ def offset_y(y: int):
 
 
 def compute_velocity(
-    start_pos: Tuple[float],
-    end_pos: Tuple[float],
-    start_time: float,
-    end_time: float,
-) -> float:
+    space_delta: List[np.float64], time_delta: np.float64
+) -> np.float64:
 
-    delta_t = end_time - start_time
-    delta_x = end_pos[0] - start_pos[0]
-    delta_y = end_pos[1] - start_pos[1]
-    velocity_y = delta_y / delta_t
-    velocity_x = delta_x / delta_t
-    velocity = np.linalg.norm([velocity_x, velocity_y])
-    return velocity
-
-
-def compute_direction(start_pos: Tuple[float], end_pos: Tuple[float]) -> float:
-    delta_x = end_pos[0] - start_pos[0]
-    delta_y = end_pos[1] - start_pos[1]
-
-    direction_rad = np.arctan2(delta_y, delta_x)
-    direction_grad = np.rad2deg(direction_rad)
-    return direction_grad
+    velocity_x = space_delta[0] / time_delta
+    velocity_y = space_delta[1] / time_delta
+    if len(space_delta) > 2:
+        velocity_z = space_delta[2] / time_delta
+        velocity = np.linalg.norm([velocity_x, velocity_y, velocity_z])
+    else:
+        velocity = np.linalg.norm([velocity_x, velocity_y])
+    direction = np.arctan2(velocity_y, velocity_x)
+    direction = np.rad2deg(direction)
+    return velocity, direction
 
 
 def download_video_frame(
@@ -146,3 +136,11 @@ def create_event_byte_map(game_id: int) -> Dict[int, Any]:
             previous_byte_pos = current_byte_pos
             current_byte_pos = tracking_data.tell()
         return event_byte_map
+
+
+def compute_deltas(deltas: List[List[float]]) -> List[List[float]]:
+    for i in range(len(deltas.copy()) // 2):
+        for j in range(len(deltas[i])):
+            deltas[i][j] = deltas[i + 1][j] - deltas[i][j]
+        deltas.pop(i + 1)
+    return deltas

@@ -6,8 +6,8 @@ from utils import (
     offset_x,
     offset_y,
     compute_velocity,
-    compute_direction,
     create_event_byte_map,
+    compute_deltas,
 )
 import numpy as np
 
@@ -38,27 +38,23 @@ def extract_players(
     game_id = event["gameId"]
     event_id = event["gameEventId"]
     if byte_pos is not None and byte_pos != -1:
-        time, ball_pos, players_pos = extract_tracking_data(game_id, byte_pos)
+        time_delta, ball_delta, home_players_deltas, away_players_deltas = (
+            extract_tracking_data(game_id, byte_pos)
+        )
     else:
-        ball_pos = None
-        time = None
-        players_pos = {"home": None, "away": None}
+        ball_delta = None
+        time_delta = None
+        home_players_deltas = None
+        away_players_deltas = None
 
     for player in event["homePlayers"]:
         if (
-            players_pos["home"] is not None
-            and player["jerseyNum"] in players_pos["home"]["start"]
-            and player["jerseyNum"] in players_pos["home"]["end"]
+            home_players_deltas is not None
+            and player["jerseyNum"] in home_players_deltas
         ):
-            player_velocity = compute_velocity(
-                players_pos["home"]["start"][player["jerseyNum"]],
-                players_pos["home"]["end"][player["jerseyNum"]],
-                time["start"],
-                time["end"],
-            )
-            player_direction = compute_direction(
-                players_pos["home"]["start"][player["jerseyNum"]],
-                players_pos["home"]["end"][player["jerseyNum"]],
+            player_velocity, player_direction = compute_velocity(
+                home_players_deltas[player["jerseyNum"]],
+                time_delta,
             )
         else:
             player_velocity = None
@@ -79,19 +75,12 @@ def extract_players(
 
     for player in event["awayPlayers"]:
         if (
-            players_pos["away"] is not None
-            and player["jerseyNum"] in players_pos["away"]["start"]
-            and player["jerseyNum"] in players_pos["away"]["end"]
+            away_players_deltas is not None
+            and player["jerseyNum"] in away_players_deltas
         ):
-            player_velocity = compute_velocity(
-                players_pos["away"]["start"][player["jerseyNum"]],
-                players_pos["away"]["end"][player["jerseyNum"]],
-                time["start"],
-                time["end"],
-            )
-            player_direction = compute_direction(
-                players_pos["away"]["start"][player["jerseyNum"]],
-                players_pos["away"]["end"][player["jerseyNum"]],
+            player_velocity, player_direction = compute_velocity(
+                away_players_deltas[player["jerseyNum"]],
+                time_delta,
             )
         else:
             player_velocity = None
@@ -110,14 +99,8 @@ def extract_players(
             }
         )
     ball = event["ball"]
-    if ball_pos is not None:
-        ball_velocity = compute_velocity(
-            ball_pos["start"],
-            ball_pos["end"],
-            time["start"],
-            time["end"],
-        )
-        ball_direction = compute_direction(ball_pos["start"], ball_pos["end"])
+    if ball_delta is not None:
+        ball_velocity, ball_direction = compute_velocity(ball_delta, time_delta)
     else:
         ball_velocity = None
         ball_direction = None
@@ -153,62 +136,100 @@ def extract_tracking_data(
 ) -> Tuple[Dict[str, Any], float, Tuple[float]]:
 
     tracking_file = f"/home/soccerdata/FIFA_WorldCup_2022/Tracking Data/{game_id}.jsonl"
-    players_pos = {
-        "home": {"start": {}, "end": {}},
-        "away": {"start": {}, "end": {}},
-    }
-    frame_key = "start"
-    time = {}
-    ball_pos = {}
-    frames_pair_found = False
+    time_delta = []
+    ball_delta = []
+    home_players_deltas = {}
+    away_players_deltas = {}
+    previous_frame = -1
     with open(tracking_file, "r") as tracking_data:
-        while not frames_pair_found:
+        while len(time_delta) < 2:
             if tracking_data.tell() == 0:
                 tracking_data.seek(byte_pos)
             line = tracking_data.readline()
             if line:
                 frame_info = json.loads(line)
                 if (
-                    frame_info["ballsSmoothed"] is None
+                    len(ball_delta) == 0
+                    or frame_info["ballsSmoothed"] is None
                     or frame_info["ballsSmoothed"]["x"] is None
                     or frame_info["ballsSmoothed"]["y"] is None
                 ):
+                    ball_velocity = 0
+                else:
+                    delta_t = (
+                        np.round(frame_info["videoTimeMs"] / 1000, 3) - time_delta[0]
+                    )
+                    delta_x = frame_info["ballsSmoothed"]["x"] - ball_delta[0][0]
+                    delta_y = frame_info["ballsSmoothed"]["y"] - ball_delta[0][1]
+                    delta_z = frame_info["ballsSmoothed"]["z"] - ball_delta[0][2]
+                    ball_velocity, _ = compute_velocity(
+                        [delta_x, delta_y, delta_z], delta_t
+                    )
+                if (
+                    frame_info["ballsSmoothed"] is None
+                    or frame_info["ballsSmoothed"]["x"] is None
+                    or frame_info["ballsSmoothed"]["y"] is None
+                    or frame_info["homePlayersSmoothed"] is None
+                    or frame_info["awayPlayersSmoothed"] is None
+                    or frame_info["frameNum"] == previous_frame
+                ):
+                    time_delta = []
+                    ball_delta = []
+                    home_players_deltas = {}
+                    away_players_deltas = {}
+                    previous_frame = frame_info["frameNum"]
                     continue
                 else:
-                    ball_pos[frame_key] = (
-                        frame_info["ballsSmoothed"]["x"],
-                        frame_info["ballsSmoothed"]["y"],
+                    if ball_velocity >= 30:
+                        time_delta = []
+                        ball_delta = []
+                        home_players_deltas = {}
+                        away_players_deltas = {}
+                    ball_delta.append(
+                        [
+                            frame_info["ballsSmoothed"]["x"],
+                            frame_info["ballsSmoothed"]["y"],
+                            frame_info["ballsSmoothed"]["z"],
+                        ]
                     )
 
-                time[frame_key] = np.round(frame_info["videoTimeMs"] / 1000, 3)
-                if frame_info["homePlayersSmoothed"] is not None:
                     for player in frame_info["homePlayersSmoothed"]:
-                        players_pos["home"][frame_key][player["jerseyNum"]] = (
-                            player["x"],
-                            player["y"],
+                        home_list = home_players_deltas.get(player["jerseyNum"], [])
+                        home_list.append(
+                            [
+                                player["x"],
+                                player["y"],
+                            ]
                         )
-                else:
-                    continue
-                if frame_info["awayPlayersSmoothed"] is not None:
+                        home_players_deltas[player["jerseyNum"]] = home_list
                     for player in frame_info["awayPlayersSmoothed"]:
-                        players_pos["away"][frame_key][player["jerseyNum"]] = (
-                            player["x"],
-                            player["y"],
+                        away_list = away_players_deltas.get(player["jerseyNum"], [])
+                        away_list.append(
+                            [
+                                player["x"],
+                                player["y"],
+                            ]
                         )
-                else:
-                    continue
-                if frame_key == "start":
-                    frame_key = "end"
-                else:
-                    frames_pair_found = True
+                        away_players_deltas[player["jerseyNum"]] = away_list
+
+                    time_delta.append(np.round(frame_info["videoTimeMs"] / 1000, 3))
+                    previous_frame = frame_info["frameNum"]
             else:
-                ball_pos = None
-                players_pos["home"] = None
-                players_pos["away"] = None
-                time["end"] = None
+                ball_delta = None
+                home_players_deltas = None
+                away_players_deltas = None
+                time_delta = None
                 break
 
-    return time, ball_pos, players_pos
+        if ball_delta is not None:
+            ball_delta = compute_deltas(ball_delta)[0]
+            for jersey_num, frames in list(home_players_deltas.items()):
+                home_players_deltas[jersey_num] = compute_deltas(frames)[0]
+            for jersey_num, frames in list(away_players_deltas.items()):
+                away_players_deltas[jersey_num] = compute_deltas(frames)[0]
+            time_delta = time_delta[1] - time_delta[0]
+
+    return time_delta, ball_delta, home_players_deltas, away_players_deltas
 
 
 def load_and_process_soccer_events(
