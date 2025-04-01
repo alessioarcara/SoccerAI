@@ -141,7 +141,7 @@ def extract_player_metastats(html: str) -> pl.DataFrame:
     return data
 
 
-def compute_shooting_stats_average(season_data, num_years_back=3, min_minutes_90s=5.0):
+def compute_shooting_stats_average(season_data: int, num_years_back: int=3, min_minutes_90s: float=5.0):
     if not season_data:
         return {}
 
@@ -182,7 +182,7 @@ def compute_shooting_stats_average(season_data, num_years_back=3, min_minutes_90
     }
 
 
-def extract_shoot_stats(html_file: str, num_years_back: int = 3, min_minute_90s: int = 5) -> dict:
+def extract_shoot_stats(html_file: str, num_years_back: int = 3, min_minute_90s: float = 5.0) -> dict:
     soup = BeautifulSoup(html_file, 'html.parser')
     div_all_stats = soup.find('div', id='all_stats_shooting')
 
@@ -233,5 +233,5 @@ def extract_shoot_stats(html_file: str, num_years_back: int = 3, min_minute_90s:
         key: averaged_stats.get(key)  
         for key in SHOOTING_STATS
     }
-
+    
     return filtered_stats
