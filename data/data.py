@@ -1,7 +1,9 @@
-import os
-from typing import Dict, Any, List, Tuple
-import polars as pl
 import json
+import os
+from typing import Any, Dict, List, Tuple
+
+import polars as pl
+
 from data.utils import offset_x, offset_y
 
 
@@ -18,14 +20,15 @@ def extract_event(event: Dict[str, Any]) -> Dict[str, Any]:
         "teamName": event["gameEvents"]["teamName"],
         "playerName": event["gameEvents"]["playerName"],
         "videoUrl": event["gameEvents"]["videoUrl"],
-        "label": None,
+        "frameTime": event["possessionEvents"]["formattedGameClock"],
     }
 
 
 def extract_players(event: Dict[str, Any]) -> List[Dict[str, Any]]:
     players = []
     game_id = event["gameId"]
-    event_id = event["gameEventId"]
+    game_event_id = event["gameEventId"]
+    possession_event_id = event["possessionEventId"]
     # players_velocities, end_time, ball_end_pos, players_end_pos = extract_tracking_data(
     #     game_id, event_id
     # )
@@ -36,11 +39,13 @@ def extract_players(event: Dict[str, Any]) -> List[Dict[str, Any]]:
     #     end_time,
     #     True,
     # )
+
     for player in event["homePlayers"]:
         players.append(
             {
                 "gameId": game_id,
-                "gameEventId": event_id,
+                "gameEventId": game_event_id,
+                "possessionEventId": possession_event_id,
                 "jerseyNum": player["jerseyNum"],
                 "x": offset_x(player["x"]),
                 "y": offset_y(player["y"]),
@@ -53,7 +58,8 @@ def extract_players(event: Dict[str, Any]) -> List[Dict[str, Any]]:
         players.append(
             {
                 "gameId": game_id,
-                "gameEventId": event_id,
+                "gameEventId": game_event_id,
+                "possessionEventId": possession_event_id,
                 "jerseyNum": player["jerseyNum"],
                 "x": offset_x(player["x"]),
                 "y": offset_y(player["y"]),
@@ -65,7 +71,8 @@ def extract_players(event: Dict[str, Any]) -> List[Dict[str, Any]]:
     players.append(
         {
             "gameId": game_id,
-            "gameEventId": event_id,
+            "gameEventId": game_event_id,
+            "possessionEventId": possession_event_id,
             "jerseyNum": None,
             "x": offset_x(ball["x"]),
             "y": offset_y(ball["y"]),
@@ -83,6 +90,8 @@ def extract_metadata(game_metadata: List[Dict[str, Any]]) -> Dict[str, Any]:
         "awayTeamColor": game_metadata[0]["awayTeamKit"]["primaryColor"],
         "homeTeamName": game_metadata[0]["homeTeam"]["name"],
         "homeTeamColor": game_metadata[0]["homeTeamKit"]["primaryColor"],
+        "homeTeamStartLeft": game_metadata[0]["homeTeamStartLeft"],
+        "startPeriod2": game_metadata[0]["startPeriod2"],
     }
 
 

@@ -1,20 +1,22 @@
 import polars as pl
+
+from data.config import SHOOTING_STATS, TEAM_ABBREVS
 from data.scraping.fbref import (
     create_webdriver,
-    get_fbref_player_id,
-    get_fbref_html,
     extract_fbref_metastats,
     extract_fbref_shoot_stats,
+    get_fbref_html,
+    get_fbref_player_id,
 )
 from data.scraping.transfermarkt import (
-    search_tm_player_id,
+    find_best_player_match,
     get_avg_market_value_pre2021,
     get_player_physical_profile,
-    find_best_player_match,
+    get_players_from_tmrooster,
+    search_tm_club_id,
+    search_tm_player_id,
 )
-from data.scraping.transfermarkt import search_tm_club_id, get_players_from_tmrooster
 from data.scraping.utils import normalize
-from data.config import SHOOTING_STATS, TEAM_ABBREVS
 
 
 def enrich_player_record(player: dict, tm_player_id: str = None) -> dict:

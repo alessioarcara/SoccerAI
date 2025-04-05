@@ -1,6 +1,7 @@
-from typing import Tuple, Union, Optional
 import os
 import subprocess
+from typing import Optional, Tuple, Union
+
 import numpy as np
 
 

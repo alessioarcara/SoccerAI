@@ -1,6 +1,7 @@
 polars
 mplsoccer
 pre-commit
-flake8[jupyter]
 nbstripout
-black[jupyter]
+ruff
+Levenshtein
+rapidfuzz

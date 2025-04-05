@@ -1,14 +1,16 @@
-from typing import Optional
-import time
 import random
 import re
+import time
+from typing import Optional
+
 import polars as pl
-from selenium import webdriver
 from bs4 import BeautifulSoup
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
+from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
-from data.config import TEAM_ABBREVS, SHOOTING_STATS
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+
+from data.config import SHOOTING_STATS, TEAM_ABBREVS
 from data.scraping.utils import normalize
 
 
