@@ -3,6 +3,8 @@ from functools import lru_cache
 from typing import Dict, Optional
 
 import requests
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 
 
 @lru_cache(maxsize=1024)
@@ -32,3 +34,15 @@ def get_api_data(url: str, headers: Optional[Dict[str, str]] = None) -> Optional
     except Exception as e:
         print(f"JSON decode error for {url}: {e}")
         return None
+
+
+def create_webdriver():
+    chrome_options = Options()
+    chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument(
+        'user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"'
+    )
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    return webdriver.Chrome(options=chrome_options)

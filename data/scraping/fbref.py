@@ -5,28 +5,14 @@ from typing import Optional
 
 import polars as pl
 from bs4 import BeautifulSoup
-from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
-from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 
 from data.config import SHOOTING_STATS, TEAM_ABBREVS
 from data.scraping.utils import normalize
 
 
-def create_webdriver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument(
-        'user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"'
-    )
-    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-    return webdriver.Chrome(options=chrome_options)
-
-
-def get_fbref_player_id(driver, player_name: str, player_team: str) -> Optional[str]:
+def get_player_id(driver, player_name: str, player_team: str) -> Optional[str]:
     country_code = TEAM_ABBREVS.get(player_team)
     if not country_code:
         print(f"Country not recognized for {player_name}")
@@ -94,7 +80,7 @@ def get_fbref_player_id(driver, player_name: str, player_team: str) -> Optional[
     return None
 
 
-def get_fbref_html(driver, player_name, player_id):
+def get_html(driver, player_name, player_id):
     url = f"https://fbref.com/en/players/{player_id}/{player_name.replace(' ', '-')}"
     print(url)
     try:
@@ -106,7 +92,7 @@ def get_fbref_html(driver, player_name, player_id):
         return None
 
 
-def extract_fbref_metastats(html: str) -> pl.DataFrame:
+def extract_metastats(html: str) -> pl.DataFrame:
     soup = BeautifulSoup(html, "html.parser")
     meta_div = soup.find("div", id="meta")
 
@@ -199,7 +185,7 @@ def compute_shooting_stats_average(
     }
 
 
-def extract_fbref_shoot_stats(
+def extract_shoot_stats(
     html_file: str, num_years_back: int = 3, min_minute_90s: float = 5.0
 ) -> dict:
     soup = BeautifulSoup(html_file, "html.parser")
