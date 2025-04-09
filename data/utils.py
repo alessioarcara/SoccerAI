@@ -1,8 +1,9 @@
-from typing import Tuple, Optional, Dict, Any, List
+import json
 import os
 import subprocess
+from typing import Any, Dict, List, Optional
+
 import numpy as np
-import json
 
 
 def offset_x(x: int):
@@ -16,7 +17,6 @@ def offset_y(y: int):
 def compute_velocity(
     space_delta: List[np.float64], time_delta: np.float64
 ) -> np.float64:
-
     velocity_x = space_delta[0] / time_delta
     velocity_y = space_delta[1] / time_delta
     if len(space_delta) > 2:
@@ -91,14 +91,14 @@ def create_event_byte_map(game_id: int) -> Dict[int, Any]:
     events_done = set()
     with open(tracking_file, "r") as tracking_data:
         current_byte_pos = tracking_data.tell()
-        previous_byte_pos = current_byte_pos
+        # previous_byte_pos = current_byte_pos
         while True:
             frame = tracking_data.readline()
             if not frame:
                 break
             frame_info = json.loads(frame)
             if frame_info["frameNum"] in events_done:
-                previous_byte_pos = current_byte_pos
+                # previous_byte_pos = current_byte_pos
                 current_byte_pos = tracking_data.tell()
                 continue
             if frame_info["frameNum"] in end_frames.values():
@@ -107,20 +107,20 @@ def create_event_byte_map(game_id: int) -> Dict[int, Any]:
                         events_done.add(k)
                         end_frames.pop(k)
                         if event_byte_map[k] == -1:
-                            event_byte_map[k] = previous_byte_pos
+                            event_byte_map[k] = current_byte_pos
             if (
                 frame_info["game_event_id"] is not None
-                and not frame_info["game_event_id"] in end_frames
-                and not frame_info["game_event_id"] in events_done
+                and frame_info["game_event_id"] not in end_frames
+                and frame_info["game_event_id"] not in events_done
             ):
                 event_id = int(frame_info["game_event_id"])
                 if frame_info["frameNum"] == frame_info["game_event"]["end_frame"]:
                     if frame_info["game_event"]["game_event_type"] != "SECONDKICKOFF":
-                        event_byte_map[event_id] = previous_byte_pos
+                        event_byte_map[event_id] = current_byte_pos
                     else:
                         event_byte_map[event_id] = current_byte_pos
                     events_done.add(frame_info["game_event_id"])
-                    previous_byte_pos = current_byte_pos
+                    # previous_byte_pos = current_byte_pos
                     current_byte_pos = tracking_data.tell()
                     continue
                 event_byte_map[event_id] = -1
@@ -128,14 +128,47 @@ def create_event_byte_map(game_id: int) -> Dict[int, Any]:
             if (
                 frame_info["possession_event_id"] is not None
                 and frame_info["game_event_id"] is not None
-                and not frame_info["game_event_id"] in events_done
+                and frame_info["game_event_id"] not in events_done
+                and frame_info["ballsSmoothed"] is not None
             ):
-                event_byte_map[int(frame_info["game_event_id"])] = previous_byte_pos
+                event_byte_map[int(frame_info["game_event_id"])] = current_byte_pos
                 events_done.add(int(frame_info["game_event_id"]))
 
-            previous_byte_pos = current_byte_pos
+            # previous_byte_pos = current_byte_pos
             current_byte_pos = tracking_data.tell()
         return event_byte_map
+
+
+def read_last_n_lines(
+    filename: str, start_pos: int, max_lines: int = 30, block_size: int = 4096
+) -> List[str]:
+    lines = []
+    with open(filename, "rb") as f:
+        f.seek(start_pos)
+        buffer = b""
+        position = f.tell()
+
+        while position > 0 and len(lines) < max_lines:
+            read_size = min(block_size, position)
+            position -= read_size
+            f.seek(position)
+            data = f.read(read_size)
+            buffer = data + buffer
+            lines_found = buffer.split(b"\n")
+
+            buffer = lines_found[0]
+            lines_from_chunk = lines_found[1:]
+
+            for line in reversed(lines_from_chunk):
+                if len(lines) >= max_lines:
+                    break
+                if line != b"":
+                    lines.append(line)
+
+        if buffer and len(lines) < max_lines:
+            lines.append(buffer)
+
+    return [line.decode(encoding="utf-8", errors="replace") for line in reversed(lines)]
 
 
 def compute_deltas(deltas: List[List[float]]) -> List[List[float]]:
