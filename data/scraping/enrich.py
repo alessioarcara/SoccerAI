@@ -75,7 +75,7 @@ class RoostersEnricher:
         team_df = pl.DataFrame(updated_rows)
         team_name = team_df.select("playerTeam").to_series()[0]
         # Check if any player has missing Transfermarkt data
-        missing_df = team_df.filter(pl.col("tm_data_found") is not False)
+        missing_df = team_df.filter(pl.col("tm_data_found") is False)
         if missing_df.height > 0:
             logger.warning(
                 f"Found {missing_df.height} players with missing TM data for team {team_name}"
