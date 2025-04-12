@@ -5,3 +5,5 @@ nbstripout
 ruff
 Levenshtein
 rapidfuzz
+loguru
+selenium
