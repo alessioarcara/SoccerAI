@@ -3,7 +3,8 @@ import os
 from typing import Any, Dict, List, Tuple
 
 import polars as pl
-from utils import offset_x, offset_y
+
+from data.utils import offset_x, offset_y
 
 
 def extract_event(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -94,6 +95,16 @@ def extract_metadata(game_metadata: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def extract_player_info(player_info: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "playerId": player_info["player"]["id"],
+        "playerNickname": player_info["player"]["nickname"],
+        "shirtNumber": player_info["shirtNumber"],
+        "playerTeam": player_info["team"]["name"],
+        "playerRole": player_info["positionGroupType"],
+    }
+
+
 def extract_tracking_data(
     game_id: int, event_id: str
 ) -> Tuple[Dict[str, Any], float, Tuple[float]]:
@@ -175,3 +186,37 @@ def load_and_process_metadata(
     metadata_df = pl.DataFrame(metadata_matches).with_row_index()
 
     return metadata_df
+
+
+def load_and_process_roosters(
+    roosters_dir_path: str,
+) -> pl.DataFrame:
+    roosters_files = [f for f in os.listdir(roosters_dir_path) if f.endswith(".json")]
+
+    roosters = []
+    teams = []
+
+    for rooster_file in roosters_files:
+        with open(os.path.join(roosters_dir_path, rooster_file), "r") as f:
+            match_roosters_data = json.load(f)
+
+        # first player is an home team player
+        home_team_name = match_roosters_data[0]["team"]["name"]
+        for i in range(len(match_roosters_data)):
+            if match_roosters_data[i]["team"]["name"] != home_team_name:
+                away_team_name = match_roosters_data[i]["team"]["name"]
+                break
+
+        for player_info in match_roosters_data:
+            player_team = player_info["team"]["name"]
+            if player_team not in teams:
+                roosters.append(extract_player_info(player_info))
+
+        if home_team_name not in teams:
+            teams.append(home_team_name)
+        if away_team_name not in teams:
+            teams.append(away_team_name)
+
+    roosters_df = pl.DataFrame(roosters)
+
+    return roosters_df

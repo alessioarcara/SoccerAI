@@ -1,11 +1,12 @@
+from typing import List
+
+import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
-from mplsoccer import Pitch
-from typing import List
-import matplotlib.image as mpimg
-from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from matplotlib.animation import FuncAnimation
+from matplotlib.offsetbox import AnnotationBbox, OffsetImage
+from mplsoccer import Pitch
 
 
 def animate_pitch(

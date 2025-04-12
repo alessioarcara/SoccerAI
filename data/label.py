@@ -1,10 +1,11 @@
 from typing import List, Optional, Tuple
 
-import config
 import polars as pl
 from IPython.display import clear_output, display
 from ipywidgets import Button, Layout, widgets
-from visualize import shot_frames_navigator
+
+from data import config
+from data.visualize import shot_frames_navigator
 
 
 def pos_labeling(
