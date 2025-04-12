@@ -5,13 +5,12 @@ import matplotlib as mpl
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import polars as pl
+from data import config
+from data.utils import download_video_frame
 from IPython.display import Image, clear_output, display
 from ipywidgets import widgets
 from matplotlib.offsetbox import AnnotationBbox, OffsetImage
 from mplsoccer import Pitch
-
-from data import config
-from data.utils import download_video_frame
 
 mpl.rcParams["animation.embed_limit"] = 50
 

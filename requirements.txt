@@ -1,9 +1,0 @@
-polars
-mplsoccer
-pre-commit
-nbstripout
-ruff
-Levenshtein
-rapidfuzz
-loguru
-selenium

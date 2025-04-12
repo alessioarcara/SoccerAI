@@ -6,10 +6,9 @@ from urllib.parse import quote
 import Levenshtein
 import requests
 from bs4 import BeautifulSoup
-from rapidfuzz import fuzz
-
 from data.config import TEAM_ABBREVS
 from data.scraping.utils import get_api_data, normalize
+from rapidfuzz import fuzz
 
 
 def search_player_id(
