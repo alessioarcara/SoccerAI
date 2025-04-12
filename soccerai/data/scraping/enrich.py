@@ -1,9 +1,10 @@
-import data.scraping.fbref as fbref
-import data.scraping.transfermarkt as tm
 import polars as pl
-from data.config import SHOOTING_STATS, TEAM_ABBREVS
-from data.scraping.utils import create_webdriver, normalize
 from loguru import logger
+
+import soccerai.data.scraping.fbref as fbref
+import soccerai.data.scraping.transfermarkt as tm
+from soccerai.data.config import SHOOTING_STATS, TEAM_ABBREVS
+from soccerai.data.scraping.utils import create_webdriver, normalize
 
 
 class RoostersEnricher:

@@ -6,9 +6,10 @@ from urllib.parse import quote
 import Levenshtein
 import requests
 from bs4 import BeautifulSoup
-from data.config import TEAM_ABBREVS
-from data.scraping.utils import get_api_data, normalize
 from rapidfuzz import fuzz
+
+from soccerai.data.config import TEAM_ABBREVS
+from soccerai.data.scraping.utils import get_api_data, normalize
 
 
 def search_player_id(

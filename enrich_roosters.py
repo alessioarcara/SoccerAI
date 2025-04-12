@@ -2,9 +2,10 @@
 
 import argparse
 
-from data.data import load_and_process_roosters
-from data.scraping.enrich import RoostersEnricher
 from loguru import logger
+
+from soccerai.data.data import load_and_process_roosters
+from soccerai.data.scraping.enrich import RoostersEnricher
 
 
 def main():

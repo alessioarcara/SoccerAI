@@ -3,7 +3,8 @@ import os
 from typing import Any, Dict, List, Tuple
 
 import polars as pl
-from data.utils import offset_x, offset_y
+
+from soccerai.data.utils import offset_x, offset_y
 
 
 def extract_event(event: Dict[str, Any]) -> Dict[str, Any]:

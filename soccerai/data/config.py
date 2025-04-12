@@ -11,7 +11,7 @@ PITCH_SETTINGS = {
     "label": True,
 }
 
-BALL_IMAGE_PATH = "data/soccer_ball_transparent.png"
+BALL_IMAGE_PATH = "soccerai/data/soccer_ball_transparent.png"
 BALL_ZOOM = 0.05
 BALL_OFFSET_X = 1
 BALL_OFFSET_Y = 1

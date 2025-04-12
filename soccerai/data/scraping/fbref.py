@@ -5,10 +5,11 @@ from typing import Optional
 
 import polars as pl
 from bs4 import BeautifulSoup
-from data.config import SHOOTING_STATS, TEAM_ABBREVS
-from data.scraping.utils import normalize
 from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.common.by import By
+
+from soccerai.data.config import SHOOTING_STATS, TEAM_ABBREVS
+from soccerai.data.scraping.utils import normalize
 
 
 def get_player_id(driver, player_name: str, player_team: str) -> Optional[str]:

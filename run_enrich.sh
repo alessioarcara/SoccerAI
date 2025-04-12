@@ -10,8 +10,7 @@ API_PORT="8000"
 
 # Path definitions
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
-SCRAPING_DIR="${PROJECT_ROOT}/data/scraping"
-API_PATH="${SCRAPING_DIR}/${API_DIR}"
+API_PATH="${PROJECT_ROOT}/${API_DIR}"
 
 echo "======================================"
 echo "Starting Transfermarkt data enrichment process"
@@ -21,14 +20,12 @@ echo "======================================"
 # Check if API repository exists
 if [ ! -d "$API_PATH" ]; then
     echo "Cloning Transfermarkt API repository..."
-    cd "$SCRAPING_DIR"
     git clone "$API_REPO"
 fi 
 
 # Install dependencies
 echo "Installing dependencies..."
-cd "$PROJECT_ROOT"
-pip install -r requirements.txt -q
+pip install -e .
 cd "$API_PATH"
 pip install -r requirements.txt -q
 
@@ -49,7 +46,7 @@ sleep 3
 # Start enrichment script in another tmux session
 echo "Starting enrich_roosters script..."
 cd "$PROJECT_ROOT"
-tmux new-session -d -s "$SESSION_NAME" "python -m data.scraping.enrich_roosters --host $API_HOST --port $API_PORT; exec bash"
+tmux new-session -d -s "$SESSION_NAME" "python enrich_roosters.py --host $API_HOST --port $API_PORT; exec bash"
 
 echo "======================================"
 echo "Process started successfully!"

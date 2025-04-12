@@ -25,4 +25,4 @@ readme = "README.md"
 dev = ["pre-commit", "nbstripout", "ruff", "mypy"]
 
 [tool.setuptools.packages.find]
-where = ["soccerai"]
+where = ["."]
