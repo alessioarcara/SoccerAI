@@ -1,3 +1,5 @@
+from typing import Dict, Optional
+
 import polars as pl
 from loguru import logger
 
@@ -15,11 +17,13 @@ class RoostersEnricher:
         self.rooster_df = rooster_df
         self._base_url = base_url
 
-    def _enrich_player_record(self, player: dict, tm_player_id: str = None) -> dict:
+    def _enrich_player_record(
+        self, player: Dict, tm_player_id: Optional[str] = None
+    ) -> Dict:
         player_name = player["playerNickname"]
         player_team = player["playerTeam"]
         player_role = player["playerRole"]
-        combined_stats = {}
+        combined_stats: Dict = {}
 
         if tm_player_id is None:
             tm_player_id = tm.search_player_id(player_name, player_team, self._base_url)
@@ -100,7 +104,7 @@ class RoostersEnricher:
         logger.info(f"Roster URL for team {team_name}: {rooster_url}")
 
         # Scrape the roster page to get the list of players
-        roster_list = tm.get_players_from_rooster(rooster_url, self._base_url)
+        roster_list = tm.get_players_from_rooster(rooster_url)
         logger.debug(
             f"Found {len(roster_list)} players in roster for team {team_name}."
         )

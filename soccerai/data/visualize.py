@@ -1,5 +1,5 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Any, List, Tuple
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from typing import Any, Dict, List, Optional, Tuple
 
 import matplotlib as mpl
 import matplotlib.image as mpimg
@@ -238,14 +238,14 @@ def shot_frames_navigator(
     if show_video:
         event_dicts = event_df.to_dicts()
         with ThreadPoolExecutor(max_workers=8) as executor:
-            futures = {
+            futures: Dict[Future, int] = {
                 executor.submit(
                     download_video_frame, f_idx, event_dicts[f_idx], output_dir
                 ): f_idx
                 for f_idx in frames
             }
             for future in as_completed(futures):
-                res = future.result()
+                res: Optional[Tuple[int, str]] = future.result()
                 if res:
                     frame_idx, filename = res
                     video_files[frame_idx] = filename

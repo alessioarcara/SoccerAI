@@ -105,41 +105,41 @@ def extract_player_info(player_info: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def extract_tracking_data(
-    game_id: int, event_id: str
-) -> Tuple[Dict[str, Any], float, Tuple[float]]:
-    pass
-    # tracking_file = f"./FIFA_WorldCup_2022/Tracking Data/{game_id}.jsonl.bz2"
-    # velocities = {"home": {}, "away": {}}
-    # players_pos = {"home": {}, "away": {}}
-    # end_frame = -1
-    # with bz2.BZ2File(tracking_file, "r") as tracking_data:
-    #     for frame in tracking_data:
-    #         frame_info = json.loads(frame.decode())
-    #         if frame_info["game_event_id"] == event_id and (
-    #             frame_info["frameNum"] == frame_info["game_event"]["end_frame"]
-    #         ):
-    #             end_frame = frame_info["frameNum"]
-    #             # for player in frame_info["homePlayers"]:
-    #             #     velocities["home"][player["jerseyNum"]] = player["speed"]
-    #             # for player in frame_info["awayPlayers"]:
-    #             #     velocities["away"][player["jerseyNum"]] = player["speed"]
-    #         elif frame_info["game_event_id"] == end_frame + 1:
-    #             ball_pos = (frame_info["balls"][0]["x"], frame_info["balls"][0]["y"])
-    #             end_time = np.round(frame_info["videoTimeMs"] / 1000, 3)
-    #             for player in frame_info["homePlayers"]:
-    #                 players_pos["home"][player["jerseyNum"]] = (
-    #                     player["x"],
-    #                     player["y"],
-    #                 )
-    #             for player in frame_info["awayPlayers"]:
-    #                 players_pos["away"][player["jerseyNum"]] = (
-    #                     player["x"],
-    #                     player["y"],
-    #                 )
-    #             break
+# def extract_tracking_data(
+#    game_id: int, event_id: str
+# ) -> Tuple[Dict[str, Any], float, Tuple[float]]:
+#    pass
+# tracking_file = f"./FIFA_WorldCup_2022/Tracking Data/{game_id}.jsonl.bz2"
+# velocities = {"home": {}, "away": {}}
+# players_pos = {"home": {}, "away": {}}
+# end_frame = -1
+# with bz2.BZ2File(tracking_file, "r") as tracking_data:
+#     for frame in tracking_data:
+#         frame_info = json.loads(frame.decode())
+#         if frame_info["game_event_id"] == event_id and (
+#             frame_info["frameNum"] == frame_info["game_event"]["end_frame"]
+#         ):
+#             end_frame = frame_info["frameNum"]
+#             # for player in frame_info["homePlayers"]:
+#             #     velocities["home"][player["jerseyNum"]] = player["speed"]
+#             # for player in frame_info["awayPlayers"]:
+#             #     velocities["away"][player["jerseyNum"]] = player["speed"]
+#         elif frame_info["game_event_id"] == end_frame + 1:
+#             ball_pos = (frame_info["balls"][0]["x"], frame_info["balls"][0]["y"])
+#             end_time = np.round(frame_info["videoTimeMs"] / 1000, 3)
+#             for player in frame_info["homePlayers"]:
+#                 players_pos["home"][player["jerseyNum"]] = (
+#                     player["x"],
+#                     player["y"],
+#                 )
+#             for player in frame_info["awayPlayers"]:
+#                 players_pos["away"][player["jerseyNum"]] = (
+#                     player["x"],
+#                     player["y"],
+#                 )
+#             break
 
-    # return velocities, end_time, ball_pos, players_pos
+# return velocities, end_time, ball_pos, players_pos
 
 
 def load_and_process_soccer_events(
