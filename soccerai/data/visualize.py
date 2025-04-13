@@ -2,10 +2,12 @@ from typing import Any, List, Tuple
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import numpy as np
 import polars as pl
 from IPython.display import Image, clear_output, display
 from ipywidgets import widgets
 from mplsoccer import Pitch
+from numpy.typing import NDArray
 
 from soccerai.data import config
 from soccerai.data.utils import download_video_frames
@@ -15,9 +17,9 @@ mpl.rcParams["animation.embed_limit"] = 50
 
 def plot_players_with_numbers(
     ax: plt.Axes,
-    x_coords: List[float],
-    y_coords: List[float],
-    jersey_numbers: List[int],
+    x_coords: NDArray[np.float64],
+    y_coords: NDArray[np.float64],
+    jersey_numbers: NDArray[np.str_],
     color: str,
     alpha: float,
     s: int,

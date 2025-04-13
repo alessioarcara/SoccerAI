@@ -2,9 +2,8 @@ import json
 import os
 import subprocess
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
 import polars as pl
 
 
@@ -16,25 +15,25 @@ def offset_y(y: int) -> float:
     return (y or 0.0) + 34.0
 
 
-def compute_velocity(
-    start_pos: Tuple[float],
-    end_pos: Tuple[float],
-    start_time: float,
-    end_time: float,
-    return_direction=False,
-) -> Union[Tuple[float], float]:
-    delta_t = end_time - start_time
-    delta_x = end_pos[0] - start_pos[0]
-    delta_y = end_pos[1] - start_pos[1]
-    velocity_y = delta_y / delta_t
-    velocity_x = delta_x / delta_t
-    velocity = np.linalg.norm([velocity_x, velocity_y])
+# def compute_velocity(
+#     start_pos: Tuple[float],
+#     end_pos: Tuple[float],
+#     start_time: float,
+#     end_time: float,
+#     return_direction=False,
+# ) -> Union[Tuple[float], float]:
+#     delta_t = end_time - start_time
+#     delta_x = end_pos[0] - start_pos[0]
+#     delta_y = end_pos[1] - start_pos[1]
+#     velocity_y = delta_y / delta_t
+#     velocity_x = delta_x / delta_t
+#     velocity = np.linalg.norm([velocity_x, velocity_y])
 
-    if return_direction:
-        direction = np.arctan2(velocity_y / velocity_x)
-        return velocity, direction
+#     if return_direction:
+#         direction = np.arctan2(velocity_y / velocity_x)
+#         return velocity, direction
 
-    return velocity
+#     return velocity
 
 
 # def compute_direction():
@@ -43,7 +42,7 @@ def compute_velocity(
 
 def download_video_frame(
     frame_index: int, event_dict: Dict[str, Any], output_dir: str
-) -> Optional[str]:
+) -> Tuple[int, Optional[str]]:
     os.makedirs(output_dir, exist_ok=True)
     output_filename = f"{output_dir}/frame_{frame_index}.jpeg"
 
