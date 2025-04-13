@@ -1,8 +1,11 @@
+import json
 import os
 import subprocess
-from typing import Optional, Tuple, Union
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import polars as pl
 
 
 def offset_x(x: int) -> float:
@@ -39,7 +42,7 @@ def compute_velocity(
 
 
 def download_video_frame(
-    frame_index, event_dict, output_dir="./frames"
+    frame_index: int, event_dict: Dict[str, Any], output_dir: str
 ) -> Optional[str]:
     os.makedirs(output_dir, exist_ok=True)
     output_filename = f"{output_dir}/frame_{frame_index}.jpeg"
@@ -91,3 +94,45 @@ def download_video_frame(
         return frame_index, output_filename
     except subprocess.CalledProcessError:
         return frame_index, None
+
+
+def download_video_frames(
+    frames: List[int],
+    event_df: pl.DataFrame,
+    output_dir: str = "./frames",
+    max_workers: int = 8,
+) -> Dict[int, str]:
+    video_files = {}
+    event_dicts = event_df.to_dicts()
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures: Dict[Future, int] = {
+            executor.submit(
+                download_video_frame, f_idx, event_dicts[f_idx], output_dir
+            ): f_idx
+            for f_idx in frames
+        }
+        for future in as_completed(futures):
+            res: Optional[Tuple[int, str]] = future.result()
+            if res:
+                frame_idx, filename = res
+                video_files[frame_idx] = filename
+    return video_files
+
+
+def save_accepted_chains(
+    accepted_chains: List[List[int]], dst_dir: str, are_positive: bool
+) -> None:
+    output_file = os.path.join(
+        dst_dir, f"accepted_{'pos' if are_positive else 'neg'}_chains.json"
+    )
+    all_accepted = []
+
+    if os.path.exists(output_file):
+        with open(output_file, "r") as f:
+            all_accepted = json.load(f)
+
+    all_accepted.extend(accepted_chains)
+
+    with open(output_file, "w") as f:
+        json.dump(all_accepted, f)
