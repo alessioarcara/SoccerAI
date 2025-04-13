@@ -5,12 +5,12 @@ from typing import Optional, Tuple, Union
 import numpy as np
 
 
-def offset_x(x: int):
-    return (x or 0) + 52.5
+def offset_x(x: int) -> float:
+    return (x or 0.0) + 52.5
 
 
-def offset_y(y: int):
-    return (y or 0) + 34
+def offset_y(y: int) -> float:
+    return (y or 0.0) + 34.0
 
 
 def compute_velocity(
@@ -34,8 +34,8 @@ def compute_velocity(
     return velocity
 
 
-def compute_direction():
-    pass
+# def compute_direction():
+#     pass
 
 
 def download_video_frame(

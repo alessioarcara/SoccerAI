@@ -1,15 +1,14 @@
 import random
 import re
 import time
-from typing import Optional
+from typing import Dict, Optional
 
-import polars as pl
 from bs4 import BeautifulSoup
 from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.common.by import By
 
-from data.config import SHOOTING_STATS, TEAM_ABBREVS
-from data.scraping.utils import normalize
+from soccerai.data.config import SHOOTING_STATS, TEAM_ABBREVS
+from soccerai.data.scraping.utils import normalize
 
 
 def get_player_id(driver, player_name: str, player_team: str) -> Optional[str]:
@@ -92,7 +91,7 @@ def get_html(driver, player_name, player_id):
         return None
 
 
-def extract_metastats(html: str) -> pl.DataFrame:
+def extract_metastats(html: str) -> Dict:
     soup = BeautifulSoup(html, "html.parser")
     meta_div = soup.find("div", id="meta")
 
