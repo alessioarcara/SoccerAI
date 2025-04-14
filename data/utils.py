@@ -4,6 +4,7 @@ import subprocess
 from typing import Any, Dict, List, Optional
 
 import numpy as np
+import numpy.typing as npt
 
 
 def offset_x(x: int):
@@ -91,14 +92,12 @@ def create_event_byte_map(game_id: int) -> Dict[int, Any]:
     events_done = set()
     with open(tracking_file, "r") as tracking_data:
         current_byte_pos = tracking_data.tell()
-        # previous_byte_pos = current_byte_pos
         while True:
             frame = tracking_data.readline()
             if not frame:
                 break
             frame_info = json.loads(frame)
             if frame_info["frameNum"] in events_done:
-                # previous_byte_pos = current_byte_pos
                 current_byte_pos = tracking_data.tell()
                 continue
             if frame_info["frameNum"] in end_frames.values():
@@ -115,12 +114,8 @@ def create_event_byte_map(game_id: int) -> Dict[int, Any]:
             ):
                 event_id = int(frame_info["game_event_id"])
                 if frame_info["frameNum"] == frame_info["game_event"]["end_frame"]:
-                    if frame_info["game_event"]["game_event_type"] != "SECONDKICKOFF":
-                        event_byte_map[event_id] = current_byte_pos
-                    else:
-                        event_byte_map[event_id] = current_byte_pos
+                    event_byte_map[event_id] = current_byte_pos
                     events_done.add(frame_info["game_event_id"])
-                    # previous_byte_pos = current_byte_pos
                     current_byte_pos = tracking_data.tell()
                     continue
                 event_byte_map[event_id] = -1
@@ -134,17 +129,17 @@ def create_event_byte_map(game_id: int) -> Dict[int, Any]:
                 event_byte_map[int(frame_info["game_event_id"])] = current_byte_pos
                 events_done.add(int(frame_info["game_event_id"]))
 
-            # previous_byte_pos = current_byte_pos
             current_byte_pos = tracking_data.tell()
         return event_byte_map
 
 
 def read_last_n_lines(
-    filename: str, start_pos: int, max_lines: int = 30, block_size: int = 4096
+    filename: str, start_pos: int, max_lines: int, block_size: int = 4096
 ) -> List[str]:
     lines = []
     with open(filename, "rb") as f:
         f.seek(start_pos)
+        f.readline()
         buffer = b""
         position = f.tell()
 
@@ -171,9 +166,8 @@ def read_last_n_lines(
     return [line.decode(encoding="utf-8", errors="replace") for line in reversed(lines)]
 
 
-def compute_deltas(deltas: List[List[float]]) -> List[List[float]]:
-    for i in range(len(deltas.copy()) // 2):
-        for j in range(len(deltas[i])):
-            deltas[i][j] = deltas[i + 1][j] - deltas[i][j]
-        deltas.pop(i + 1)
-    return deltas
+def compute_deltas(values: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    deltas = []
+    for i in range(0, len(values) - 1, 2):
+        deltas.append(values[i + 1] - values[i])
+    return np.array(deltas)

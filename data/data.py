@@ -3,6 +3,7 @@ import os
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+import numpy.typing as npt
 import polars as pl
 from utils import (
     compute_deltas,
@@ -135,7 +136,12 @@ def extract_metadata(game_metadata: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 def extract_tracking_data(
     game_id: int, byte_pos: int
-) -> Tuple[Dict[str, Any], float, Tuple[float]]:
+) -> Tuple[
+    npt.NDArray[np.float64],
+    npt.NDArray[np.float64],
+    Dict[str, npt.NDArray[np.float64]],
+    Dict[str, npt.NDArray[np.float64]],
+]:
     tracking_file = f"/home/soccerdata/FIFA_WorldCup_2022/Tracking Data/{game_id}.jsonl"
     time_delta = []
     ball_delta = []
@@ -148,7 +154,8 @@ def extract_tracking_data(
         last_frame_info = json.loads(frames[-1])
     if len(frames) >= 2 and (
         last_frame_info["game_event"] is None
-        or last_frame_info["game_event"]["game_event_type"] != "SECONDKICKOFF"
+        or last_frame_info["game_event"]["game_event_type"]
+        not in {"SUB", "SECONDKICKOFF", "THIRDKICKOFF", "FOURTHKICKOFF"}
     ):
         for frame in frames:
             frame_info = json.loads(frame)
@@ -192,7 +199,7 @@ def extract_tracking_data(
                 time_delta.append([np.round(frame_info["videoTimeMs"] / 1000, 3)])
                 previous_frame = frame_info["frameNum"]
 
-    if ball_delta is not None and len(ball_delta) < 2:
+    if len(ball_delta) < 2:
         if len(ball_delta) == 1:
             ball_delta = []
             home_players_deltas = {}
@@ -203,63 +210,65 @@ def extract_tracking_data(
             file.seek(byte_pos)
             for _ in range(4):
                 line = file.readline()
-                if line:
-                    frame_info = json.loads(line)
-                    if (
-                        frame_info["frameNum"] == previous_frame
-                        or frame_info["ballsSmoothed"] is None
-                        or frame_info["ballsSmoothed"]["x"] is None
-                        or frame_info["ballsSmoothed"]["y"] is None
-                        or frame_info["homePlayersSmoothed"] is None
-                        or frame_info["awayPlayersSmoothed"] is None
-                    ):
-                        previous_frame = frame_info["frameNum"]
-                        continue
-                    ball_delta.append(
+                if not line:
+                    break
+                frame_info = json.loads(line)
+                if (
+                    frame_info["frameNum"] == previous_frame
+                    or frame_info["ballsSmoothed"] is None
+                    or frame_info["ballsSmoothed"]["x"] is None
+                    or frame_info["ballsSmoothed"]["y"] is None
+                    or frame_info["homePlayersSmoothed"] is None
+                    or frame_info["awayPlayersSmoothed"] is None
+                ):
+                    previous_frame = frame_info["frameNum"]
+                    continue
+                ball_delta.append(
+                    [
+                        frame_info["ballsSmoothed"]["x"],
+                        frame_info["ballsSmoothed"]["y"],
+                        frame_info["ballsSmoothed"]["z"],
+                    ]
+                )
+                for player in frame_info["homePlayersSmoothed"]:
+                    home_list = home_players_deltas.get(player["jerseyNum"], [])
+                    home_list.append(
                         [
-                            frame_info["ballsSmoothed"]["x"],
-                            frame_info["ballsSmoothed"]["y"],
-                            frame_info["ballsSmoothed"]["z"],
+                            player["x"],
+                            player["y"],
                         ]
                     )
-                    for player in frame_info["homePlayersSmoothed"]:
-                        home_list = home_players_deltas.get(player["jerseyNum"], [])
-                        home_list.append(
-                            [
-                                player["x"],
-                                player["y"],
-                            ]
-                        )
-                        home_players_deltas[player["jerseyNum"]] = home_list
-                    for player in frame_info["awayPlayersSmoothed"]:
-                        away_list = away_players_deltas.get(player["jerseyNum"], [])
-                        away_list.append(
-                            [
-                                player["x"],
-                                player["y"],
-                            ]
-                        )
-                        away_players_deltas[player["jerseyNum"]] = away_list
+                    home_players_deltas[player["jerseyNum"]] = home_list
+                for player in frame_info["awayPlayersSmoothed"]:
+                    away_list = away_players_deltas.get(player["jerseyNum"], [])
+                    away_list.append(
+                        [
+                            player["x"],
+                            player["y"],
+                        ]
+                    )
+                    away_players_deltas[player["jerseyNum"]] = away_list
 
-                    time_delta.append([np.round(frame_info["videoTimeMs"] / 1000, 3)])
-                    previous_frame = frame_info["frameNum"]
-                else:
-                    break
-    if ball_delta is not None and len(ball_delta) < 2:
+                time_delta.append([np.round(frame_info["videoTimeMs"] / 1000, 3)])
+                previous_frame = frame_info["frameNum"]
+    if len(ball_delta) < 2:
         ball_delta = None
         time_delta = None
         home_players_deltas = None
         away_players_deltas = None
-
-    if ball_delta is not None:
+    else:
         if len(ball_delta) % 2 == 1:
             ball_delta.pop(-1)
-        ball_delta = np.median(compute_deltas(ball_delta), axis=0)
+        ball_delta = np.median(compute_deltas(np.array(ball_delta)), axis=0)
         for jersey_num, frames in list(home_players_deltas.items()):
-            home_players_deltas[jersey_num] = np.median(compute_deltas(frames), axis=0)
+            home_players_deltas[jersey_num] = np.median(
+                compute_deltas(np.array(frames)), axis=0
+            )
         for jersey_num, frames in list(away_players_deltas.items()):
-            away_players_deltas[jersey_num] = np.median(compute_deltas(frames), axis=0)
-        time_delta = np.median(compute_deltas(time_delta))
+            away_players_deltas[jersey_num] = np.median(
+                compute_deltas(np.array(frames)), axis=0
+            )
+        time_delta = np.median(compute_deltas(np.array(time_delta)))
     return time_delta, ball_delta, home_players_deltas, away_players_deltas
 
 
