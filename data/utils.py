@@ -1,7 +1,7 @@
 import json
 import os
 import subprocess
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import numpy.typing as npt
@@ -171,3 +171,54 @@ def compute_deltas(values: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
     for i in range(0, len(values) - 1, 2):
         deltas.append(values[i + 1] - values[i])
     return np.array(deltas)
+
+
+def extract_frame_info(
+    ball_delta: List[List[float]],
+    home_players_deltas: Dict[str, List[float]],
+    away_players_deltas: Dict[str, List[float]],
+    time_delta: List[float],
+    frame_info: Dict[str, Any],
+) -> Tuple[
+    List[List[float]], Dict[str, List[float]], Dict[str, List[float]], List[float]
+]:
+    ball_delta.append(
+        [
+            frame_info["ballsSmoothed"]["x"],
+            frame_info["ballsSmoothed"]["y"],
+            frame_info["ballsSmoothed"]["z"],
+        ]
+    )
+    for player in frame_info["homePlayersSmoothed"]:
+        home_list = home_players_deltas.get(player["jerseyNum"], [])
+        home_list.append(
+            [
+                player["x"],
+                player["y"],
+            ]
+        )
+        home_players_deltas[player["jerseyNum"]] = home_list
+    for player in frame_info["awayPlayersSmoothed"]:
+        away_list = away_players_deltas.get(player["jerseyNum"], [])
+        away_list.append(
+            [
+                player["x"],
+                player["y"],
+            ]
+        )
+        away_players_deltas[player["jerseyNum"]] = away_list
+
+    time_delta.append([np.round(frame_info["videoTimeMs"] / 1000, 3)])
+
+    return ball_delta, home_players_deltas, away_players_deltas, time_delta
+
+
+def is_valid_frame(frame_info: Dict[str, Any], previous_frame: int) -> bool:
+    return (
+        frame_info["frameNum"] != previous_frame
+        and frame_info["ballsSmoothed"] is not None
+        and frame_info["ballsSmoothed"]["x"] is not None
+        and frame_info["ballsSmoothed"]["y"] is not None
+        and frame_info["homePlayersSmoothed"] is not None
+        and frame_info["awayPlayersSmoothed"] is not None
+    )

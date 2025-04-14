@@ -9,6 +9,8 @@ from utils import (
     compute_deltas,
     compute_velocity,
     create_event_byte_map,
+    extract_frame_info,
+    is_valid_frame,
     offset_x,
     offset_y,
     read_last_n_lines,
@@ -153,51 +155,18 @@ def extract_tracking_data(
     if len(frames) > 0:
         last_frame_info = json.loads(frames[-1])
     if len(frames) >= 2 and (
-        last_frame_info["game_event"] is None
-        or last_frame_info["game_event"]["game_event_type"]
+        last_frame_info["game_event"]["game_event_type"]
         not in {"SUB", "SECONDKICKOFF", "THIRDKICKOFF", "FOURTHKICKOFF"}
     ):
         for frame in frames:
             frame_info = json.loads(frame)
-            if (
-                frame_info["frameNum"] == previous_frame
-                or frame_info["ballsSmoothed"] is None
-                or frame_info["ballsSmoothed"]["x"] is None
-                or frame_info["ballsSmoothed"]["y"] is None
-                or frame_info["homePlayersSmoothed"] is None
-                or frame_info["awayPlayersSmoothed"] is None
-            ):
-                previous_frame = frame_info["frameNum"]
-                continue
-            else:
-                ball_delta.append(
-                    [
-                        frame_info["ballsSmoothed"]["x"],
-                        frame_info["ballsSmoothed"]["y"],
-                        frame_info["ballsSmoothed"]["z"],
-                    ]
+            if is_valid_frame(frame_info, previous_frame):
+                ball_delta, home_players_deltas, away_players_deltas, time_delta = (
+                    extract_frame_info(
+                        ball_delta, home_players_deltas, away_players_deltas, time_delta
+                    )
                 )
-                for player in frame_info["homePlayersSmoothed"]:
-                    home_list = home_players_deltas.get(player["jerseyNum"], [])
-                    home_list.append(
-                        [
-                            player["x"],
-                            player["y"],
-                        ]
-                    )
-                    home_players_deltas[player["jerseyNum"]] = home_list
-                for player in frame_info["awayPlayersSmoothed"]:
-                    away_list = away_players_deltas.get(player["jerseyNum"], [])
-                    away_list.append(
-                        [
-                            player["x"],
-                            player["y"],
-                        ]
-                    )
-                    away_players_deltas[player["jerseyNum"]] = away_list
-
-                time_delta.append([np.round(frame_info["videoTimeMs"] / 1000, 3)])
-                previous_frame = frame_info["frameNum"]
+            previous_frame = frame_info["frameNum"]
 
     if len(ball_delta) < 2:
         if len(ball_delta) == 1:
@@ -213,52 +182,20 @@ def extract_tracking_data(
                 if not line:
                     break
                 frame_info = json.loads(line)
-                if (
-                    frame_info["frameNum"] == previous_frame
-                    or frame_info["ballsSmoothed"] is None
-                    or frame_info["ballsSmoothed"]["x"] is None
-                    or frame_info["ballsSmoothed"]["y"] is None
-                    or frame_info["homePlayersSmoothed"] is None
-                    or frame_info["awayPlayersSmoothed"] is None
-                ):
-                    previous_frame = frame_info["frameNum"]
-                    continue
-                ball_delta.append(
-                    [
-                        frame_info["ballsSmoothed"]["x"],
-                        frame_info["ballsSmoothed"]["y"],
-                        frame_info["ballsSmoothed"]["z"],
-                    ]
-                )
-                for player in frame_info["homePlayersSmoothed"]:
-                    home_list = home_players_deltas.get(player["jerseyNum"], [])
-                    home_list.append(
-                        [
-                            player["x"],
-                            player["y"],
-                        ]
+                if is_valid_frame(frame_info, previous_frame):
+                    ball_delta, home_players_deltas, away_players_deltas, time_delta = (
+                        extract_frame_info(
+                            ball_delta,
+                            home_players_deltas,
+                            away_players_deltas,
+                            time_delta,
+                        )
                     )
-                    home_players_deltas[player["jerseyNum"]] = home_list
-                for player in frame_info["awayPlayersSmoothed"]:
-                    away_list = away_players_deltas.get(player["jerseyNum"], [])
-                    away_list.append(
-                        [
-                            player["x"],
-                            player["y"],
-                        ]
-                    )
-                    away_players_deltas[player["jerseyNum"]] = away_list
-
-                time_delta.append([np.round(frame_info["videoTimeMs"] / 1000, 3)])
                 previous_frame = frame_info["frameNum"]
+
     if len(ball_delta) < 2:
-        ball_delta = None
-        time_delta = None
-        home_players_deltas = None
-        away_players_deltas = None
+        ball_delta = time_delta = home_players_deltas = away_players_deltas = None
     else:
-        if len(ball_delta) % 2 == 1:
-            ball_delta.pop(-1)
         ball_delta = np.median(compute_deltas(np.array(ball_delta)), axis=0)
         for jersey_num, frames in list(home_players_deltas.items()):
             home_players_deltas[jersey_num] = np.median(
@@ -269,6 +206,7 @@ def extract_tracking_data(
                 compute_deltas(np.array(frames)), axis=0
             )
         time_delta = np.median(compute_deltas(np.array(time_delta)))
+
     return time_delta, ball_delta, home_players_deltas, away_players_deltas
 
 
