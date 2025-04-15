@@ -1,26 +1,25 @@
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Tuple
 
 import matplotlib as mpl
-import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
+import numpy as np
 import polars as pl
 from IPython.display import Image, clear_output, display
 from ipywidgets import widgets
-from matplotlib.offsetbox import AnnotationBbox, OffsetImage
 from mplsoccer import Pitch
+from numpy.typing import NDArray
 
 from soccerai.data import config
-from soccerai.data.utils import download_video_frame
+from soccerai.data.utils import download_video_frames
 
 mpl.rcParams["animation.embed_limit"] = 50
 
 
 def plot_players_with_numbers(
     ax: plt.Axes,
-    x_coords: List[float],
-    y_coords: List[float],
-    jersey_numbers: List[int],
+    x_coords: NDArray[np.float64],
+    y_coords: NDArray[np.float64],
+    jersey_numbers: NDArray[np.str_],
     color: str,
     alpha: float,
     s: int,
@@ -172,18 +171,18 @@ def visualize_frame(
     )
 
     # Draw the ball using the ball sprite
-    ball_df = frame_df.filter(pl.col("team").is_null())
-    ball_row = ball_df.row(0, named=True)
-    ball_img = mpimg.imread(config.BALL_IMAGE_PATH)
-    ball_image = OffsetImage(ball_img, zoom=config.BALL_ZOOM)
-    ball_ab = AnnotationBbox(
-        ball_image,
-        (ball_row["x"] + config.BALL_OFFSET_X, ball_row["y"] + config.BALL_OFFSET_Y),
-        xycoords="data",
-        frameon=False,
-        zorder=5,
-    )
-    ax.add_artist(ball_ab)
+    # ball_df = frame_df.filter(pl.col("team").is_null())
+    # ball_row = ball_df.row(0, named=True)
+    # ball_img = mpimg.imread(config.BALL_IMAGE_PATH)
+    # ball_image = OffsetImage(ball_img, zoom=config.BALL_ZOOM)
+    # ball_ab = AnnotationBbox(
+    #    ball_image,
+    #    (ball_row["x"] + config.BALL_OFFSET_X, ball_row["y"] + config.BALL_OFFSET_Y),
+    #    xycoords="data",
+    #    frameon=False,
+    #    zorder=5,
+    # )
+    # ax.add_artist(ball_ab)
 
     # Draw ball trajectory
     if len(ball_trajectory) > 1:
@@ -236,19 +235,7 @@ def shot_frames_navigator(
     # Pre-download video files if show_video is True
     video_files = {}
     if show_video:
-        event_dicts = event_df.to_dicts()
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            futures: Dict[Future, int] = {
-                executor.submit(
-                    download_video_frame, f_idx, event_dicts[f_idx], output_dir
-                ): f_idx
-                for f_idx in frames
-            }
-            for future in as_completed(futures):
-                res: Optional[Tuple[int, str]] = future.result()
-                if res:
-                    frame_idx, filename = res
-                    video_files[frame_idx] = filename
+        video_files = download_video_frames(frames, event_df, output_dir)
 
     # Collect ball coordinates to draw trajectory
     frames_df = event_df.filter(pl.col("index").is_in(frames)).join(

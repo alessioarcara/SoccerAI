@@ -127,7 +127,7 @@ def neg_labeling(
 
     neg_chains = []
     neg_chain = []
-    curr_team_name = None
+    curr_team_name = negatives_df[0, "teamName"]
 
     for row in negatives_df.iter_rows(named=True):
         idx = row["index"]

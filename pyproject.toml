@@ -15,6 +15,9 @@ dependencies = [
   "rapidfuzz",
   "loguru",
   "selenium",
+  "tqdm",
+  "IPython",
+  "ipywidgets",
 ]
 name = "soccerai"
 version = "0.1.0"
@@ -22,7 +25,10 @@ requires-python = ">= 3.11"
 readme = "README.md"
 
 [project.optional-dependencies]
-dev = ["pre-commit", "nbstripout", "ruff", "mypy"]
+dev = ["pre-commit", "nbstripout", "ruff", "mypy", "types-requests", "pytest"]
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.mypy]
+ignore_missing_imports = true
