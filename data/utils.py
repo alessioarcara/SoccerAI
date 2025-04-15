@@ -16,8 +16,8 @@ def offset_y(y: int):
 
 
 def compute_velocity(
-    space_delta: List[np.float64], time_delta: np.float64
-) -> np.float64:
+    space_delta: npt.NDArray[np.float64], time_delta: np.floating
+) -> Tuple[np.floating, np.floating]:
     velocity_x = space_delta[0] / time_delta
     velocity_y = space_delta[1] / time_delta
     if len(space_delta) > 2:
@@ -85,11 +85,12 @@ def download_video_frame(
         return frame_index, None
 
 
-def create_event_byte_map(game_id: int) -> Dict[int, Any]:
-    event_byte_map = {}
-    end_frames = {}
-    tracking_file = f"/home/soccerdata/FIFA_WorldCup_2022/Tracking Data/{game_id}.jsonl"
-    events_done = set()
+def create_event_byte_map(game_id: int) -> Dict[int, int]:
+    event_byte_map: Dict[int, int] = {}
+    pending_events: Dict[int, int] = {}
+    tracking_file = (
+        f"/home/soccerdata/FIFA_WorldCup_2022/Event Data/Tracking Data/{game_id}.jsonl"
+    )
     with open(tracking_file, "r") as tracking_data:
         current_byte_pos = tracking_data.tell()
         while True:
@@ -97,37 +98,28 @@ def create_event_byte_map(game_id: int) -> Dict[int, Any]:
             if not frame:
                 break
             frame_info = json.loads(frame)
-            if frame_info["frameNum"] in events_done:
-                current_byte_pos = tracking_data.tell()
-                continue
-            if frame_info["frameNum"] in end_frames.values():
-                for k, v in list(end_frames.items()):
-                    if frame_info["frameNum"] == v:
-                        events_done.add(k)
-                        end_frames.pop(k)
-                        if event_byte_map[k] == -1:
-                            event_byte_map[k] = current_byte_pos
-            if (
-                frame_info["game_event_id"] is not None
-                and frame_info["game_event_id"] not in end_frames
-                and frame_info["game_event_id"] not in events_done
-            ):
-                event_id = int(frame_info["game_event_id"])
-                if frame_info["frameNum"] == frame_info["game_event"]["end_frame"]:
-                    event_byte_map[event_id] = current_byte_pos
-                    events_done.add(frame_info["game_event_id"])
-                    current_byte_pos = tracking_data.tell()
-                    continue
-                event_byte_map[event_id] = -1
-                end_frames[event_id] = frame_info["game_event"]["end_frame"]
-            if (
-                frame_info["possession_event_id"] is not None
-                and frame_info["game_event_id"] is not None
-                and frame_info["game_event_id"] not in events_done
-                and frame_info["ballsSmoothed"] is not None
-            ):
-                event_byte_map[int(frame_info["game_event_id"])] = current_byte_pos
-                events_done.add(int(frame_info["game_event_id"]))
+            frame_num = frame_info["frameNum"]
+            current_event_id = frame_info["game_event_id"]
+            if current_event_id not in event_byte_map:
+                if frame_num in pending_events.values():
+                    for pending_id, pending_frame in list(pending_events.items()):
+                        if frame_num == pending_frame:
+                            event_byte_map[pending_id] = current_byte_pos
+                            del pending_events[pending_id]
+                elif current_event_id is not None:
+                    current_event_id = int(current_event_id)
+                    if current_event_id not in pending_events:
+                        end_frame = frame_info["game_event"]["end_frame"]
+                        if frame_num != end_frame:
+                            pending_events[current_event_id] = end_frame
+                        else:
+                            event_byte_map[current_event_id] = current_byte_pos
+                    elif (
+                        frame_info["possession_event_id"] is not None
+                        and frame_info["ballsSmoothed"] is not None
+                    ):
+                        event_byte_map[current_event_id] = current_byte_pos
+                        del pending_events[current_event_id]
 
             current_byte_pos = tracking_data.tell()
         return event_byte_map
@@ -136,7 +128,7 @@ def create_event_byte_map(game_id: int) -> Dict[int, Any]:
 def read_last_n_lines(
     filename: str, start_pos: int, max_lines: int, block_size: int = 4096
 ) -> List[str]:
-    lines = []
+    lines: List[bytes] = []
     with open(filename, "rb") as f:
         f.seek(start_pos)
         f.readline()
@@ -175,12 +167,15 @@ def compute_deltas(values: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
 
 def extract_frame_info(
     ball_delta: List[List[float]],
-    home_players_deltas: Dict[str, List[float]],
-    away_players_deltas: Dict[str, List[float]],
-    time_delta: List[float],
+    home_players_deltas: Dict[str, List[List[float]]],
+    away_players_deltas: Dict[str, List[List[float]]],
+    time_delta: List[List[float]],
     frame_info: Dict[str, Any],
 ) -> Tuple[
-    List[List[float]], Dict[str, List[float]], Dict[str, List[float]], List[float]
+    List[List[float]],
+    Dict[str, List[List[float]]],
+    Dict[str, List[List[float]]],
+    List[List[float]],
 ]:
     ball_delta.append(
         [

@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -54,6 +54,7 @@ def extract_players(
     for player in event["homePlayers"]:
         if (
             home_players_deltas is not None
+            and time_delta is not None
             and player["jerseyNum"] in home_players_deltas
         ):
             player_velocity, player_direction = compute_velocity(
@@ -81,6 +82,7 @@ def extract_players(
     for player in event["awayPlayers"]:
         if (
             away_players_deltas is not None
+            and time_delta is not None
             and player["jerseyNum"] in away_players_deltas
         ):
             player_velocity, player_direction = compute_velocity(
@@ -104,7 +106,7 @@ def extract_players(
             }
         )
     ball = event["ball"]
-    if ball_delta is not None:
+    if ball_delta is not None and time_delta is not None:
         ball_velocity, ball_direction = compute_velocity(ball_delta, time_delta)
     else:
         ball_velocity = None
@@ -138,17 +140,22 @@ def extract_metadata(game_metadata: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 def extract_tracking_data(
     game_id: int, byte_pos: int
-) -> Tuple[
-    npt.NDArray[np.float64],
-    npt.NDArray[np.float64],
-    Dict[str, npt.NDArray[np.float64]],
-    Dict[str, npt.NDArray[np.float64]],
+) -> Union[
+    Tuple[
+        np.floating,
+        npt.NDArray[np.float64],
+        Dict[str, npt.NDArray[np.float64]],
+        Dict[str, npt.NDArray[np.float64]],
+    ],
+    Tuple[None, ...],
 ]:
-    tracking_file = f"/home/soccerdata/FIFA_WorldCup_2022/Tracking Data/{game_id}.jsonl"
-    time_delta = []
-    ball_delta = []
-    home_players_deltas = {}
-    away_players_deltas = {}
+    tracking_file = (
+        f"/home/soccerdata/FIFA_WorldCup_2022/Event Data/Tracking Data/{game_id}.jsonl"
+    )
+    time_deltas: List[List[float]] = []
+    ball_deltas: List[List[float]] = []
+    home_players_deltas: Dict[str, List[List[float]]] = {}
+    away_players_deltas: Dict[str, List[List[float]]] = {}
     previous_frame = -1
 
     frames = read_last_n_lines(tracking_file, byte_pos, max_lines=60)
@@ -161,19 +168,23 @@ def extract_tracking_data(
         for frame in frames:
             frame_info = json.loads(frame)
             if is_valid_frame(frame_info, previous_frame):
-                ball_delta, home_players_deltas, away_players_deltas, time_delta = (
+                ball_deltas, home_players_deltas, away_players_deltas, time_deltas = (
                     extract_frame_info(
-                        ball_delta, home_players_deltas, away_players_deltas, time_delta
+                        ball_deltas,
+                        home_players_deltas,
+                        away_players_deltas,
+                        time_deltas,
+                        frame_info,
                     )
                 )
             previous_frame = frame_info["frameNum"]
 
-    if len(ball_delta) < 2:
-        if len(ball_delta) == 1:
-            ball_delta = []
+    if len(ball_deltas) < 2:
+        if len(ball_deltas) == 1:
+            ball_deltas = []
             home_players_deltas = {}
             away_players_deltas = {}
-            time_delta = []
+            time_deltas = []
         previous_frame = -1
         with open(tracking_file, "r") as file:
             file.seek(byte_pos)
@@ -183,31 +194,37 @@ def extract_tracking_data(
                     break
                 frame_info = json.loads(line)
                 if is_valid_frame(frame_info, previous_frame):
-                    ball_delta, home_players_deltas, away_players_deltas, time_delta = (
-                        extract_frame_info(
-                            ball_delta,
-                            home_players_deltas,
-                            away_players_deltas,
-                            time_delta,
-                        )
+                    (
+                        ball_deltas,
+                        home_players_deltas,
+                        away_players_deltas,
+                        time_deltas,
+                    ) = extract_frame_info(
+                        ball_deltas,
+                        home_players_deltas,
+                        away_players_deltas,
+                        time_deltas,
+                        frame_info,
                     )
                 previous_frame = frame_info["frameNum"]
 
-    if len(ball_delta) < 2:
-        ball_delta = time_delta = home_players_deltas = away_players_deltas = None
-    else:
-        ball_delta = np.median(compute_deltas(np.array(ball_delta)), axis=0)
-        for jersey_num, frames in list(home_players_deltas.items()):
-            home_players_deltas[jersey_num] = np.median(
-                compute_deltas(np.array(frames)), axis=0
-            )
-        for jersey_num, frames in list(away_players_deltas.items()):
-            away_players_deltas[jersey_num] = np.median(
-                compute_deltas(np.array(frames)), axis=0
-            )
-        time_delta = np.median(compute_deltas(np.array(time_delta)))
+    if len(ball_deltas) < 2:
+        return None, None, None, None
 
-    return time_delta, ball_delta, home_players_deltas, away_players_deltas
+    ball_delta = np.median(compute_deltas(np.array(ball_deltas)), axis=0)
+    home_players_delta: Dict[str, npt.NDArray[np.float64]] = {}
+    for jersey_num, player_frames in list(home_players_deltas.items()):
+        home_players_delta[jersey_num] = np.median(
+            compute_deltas(np.array(player_frames)), axis=0
+        )
+    away_players_delta: Dict[str, npt.NDArray[np.float64]] = {}
+    for jersey_num, player_frames in list(away_players_deltas.items()):
+        away_players_delta[jersey_num] = np.median(
+            compute_deltas(np.array(player_frames)), axis=0
+        )
+    time_delta = np.median(compute_deltas(np.array(time_deltas)))
+
+    return time_delta, ball_delta, home_players_delta, away_players_delta
 
 
 def load_and_process_soccer_events(
