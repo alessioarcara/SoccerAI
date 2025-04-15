@@ -25,7 +25,7 @@ requires-python = ">= 3.11"
 readme = "README.md"
 
 [project.optional-dependencies]
-dev = ["pre-commit", "nbstripout", "ruff", "mypy", "types-requests"]
+dev = ["pre-commit", "nbstripout", "ruff", "mypy", "types-requests", "pytest"]
 
 [tool.setuptools.packages.find]
 where = ["."]

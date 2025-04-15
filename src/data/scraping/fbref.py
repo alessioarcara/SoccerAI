@@ -6,7 +6,6 @@ from typing import Dict, List, Optional, Tuple
 from bs4 import BeautifulSoup
 from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.common.by import By
-
 from soccerai.data.config import SHOOTING_STATS, TEAM_ABBREVS
 from soccerai.data.scraping.utils import normalize
 
