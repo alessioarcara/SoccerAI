@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+authors = [
+  { name = "Alessio Arcara", email = "alessio.arcara@studio.unibo.it" },
+  { name = "Francesco Baiocchi", email = "francesco.baiocchi2@studio.unibo.it" },
+  { name = "Leonardo Petrilli", email = "leonardo.petrilli@studio.unibo.it" },
+]
+dependencies = [
+  "polars",
+  "mplsoccer",
+  "Levenshtein",
+  "rapidfuzz",
+  "loguru",
+  "selenium",
+]
+name = "soccerai"
+version = "0.1.0"
+requires-python = ">= 3.11"
+readme = "README.md"
+
+[project.optional-dependencies]
+dev = ["pre-commit", "nbstripout", "ruff", "mypy"]
+
+[tool.setuptools.packages.find]
+where = ["."]

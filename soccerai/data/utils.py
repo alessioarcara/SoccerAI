@@ -7,12 +7,12 @@ import numpy as np
 import numpy.typing as npt
 
 
-def offset_x(x: int):
-    return (x or 0) + 52.5
+def offset_x(x: int) -> float:
+    return (x or 0.0) + 52.5
 
 
-def offset_y(y: int):
-    return (y or 0) + 34
+def offset_y(y: int) -> float:
+    return (y or 0.0) + 34.0
 
 
 def compute_velocity(
