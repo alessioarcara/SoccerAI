@@ -1,10 +1,12 @@
 import json
 import os
 import subprocess
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-import numpy.typing as npt
+import polars as pl
+from numpy.typing import NDArray
 
 
 def offset_x(x: int) -> float:
@@ -16,7 +18,7 @@ def offset_y(y: int) -> float:
 
 
 def compute_velocity(
-    space_delta: npt.NDArray[np.float64], time_delta: np.floating
+    space_delta: NDArray[np.float64], time_delta: np.floating
 ) -> Tuple[np.floating, np.floating]:
     velocity_x = space_delta[0] / time_delta
     velocity_y = space_delta[1] / time_delta
@@ -31,9 +33,8 @@ def compute_velocity(
 
 
 def download_video_frame(
-    frame_index, event_dict, output_dir="./frames"
-) -> Optional[str]:
-    os.makedirs(output_dir, exist_ok=True)
+    frame_index: int, event_dict: Dict[str, Any], output_dir: str
+) -> Tuple[int, Optional[str]]:
     output_filename = f"{output_dir}/frame_{frame_index}.jpeg"
 
     if os.path.exists(output_filename):
@@ -83,6 +84,49 @@ def download_video_frame(
         return frame_index, output_filename
     except subprocess.CalledProcessError:
         return frame_index, None
+
+
+def download_video_frames(
+    frames: List[int],
+    event_df: pl.DataFrame,
+    output_dir: str = "./frames",
+    max_workers: int = 8,
+) -> Dict[int, str]:
+    video_files = {}
+    event_dicts = event_df.to_dicts()
+
+    os.makedirs(output_dir, exist_ok=True)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures: Dict[Future, int] = {
+            executor.submit(
+                download_video_frame, f_idx, event_dicts[f_idx], output_dir
+            ): f_idx
+            for f_idx in frames
+        }
+        for future in as_completed(futures):
+            res: Tuple[int, Optional[str]] = future.result()
+            frame_idx, filename = res
+            if filename is not None:
+                video_files[frame_idx] = filename
+    return video_files
+
+
+def save_accepted_chains(
+    accepted_chains: List[List[int]], dst_dir: str, are_positive: bool
+) -> None:
+    output_file = os.path.join(
+        dst_dir, f"accepted_{'pos' if are_positive else 'neg'}_chains.json"
+    )
+    all_accepted = []
+
+    if os.path.exists(output_file):
+        with open(output_file, "r") as f:
+            all_accepted = json.load(f)
+
+    all_accepted.extend(accepted_chains)
+
+    with open(output_file, "w") as f:
+        json.dump(all_accepted, f)
 
 
 def create_event_byte_map(game_id: int) -> Dict[int, int]:
@@ -158,7 +202,7 @@ def read_last_n_lines(
     return [line.decode(encoding="utf-8", errors="replace") for line in reversed(lines)]
 
 
-def compute_deltas(values: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+def compute_deltas(values: NDArray[np.float64]) -> NDArray[np.float64]:
     deltas = []
     for i in range(0, len(values) - 1, 2):
         deltas.append(values[i + 1] - values[i])

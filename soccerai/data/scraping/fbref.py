@@ -1,7 +1,7 @@
 import random
 import re
 import time
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Tuple
 
 from bs4 import BeautifulSoup
 from selenium.common.exceptions import WebDriverException
@@ -140,7 +140,9 @@ def extract_metastats(html: str) -> Dict:
 
 
 def compute_shooting_stats_average(
-    season_data: int, num_years_back: int = 3, min_minutes_90s: float = 5.0
+    season_data: List[Tuple[str, Dict]],
+    num_years_back: int = 3,
+    min_minutes_90s: float = 5.0,
 ):
     if not season_data:
         return {}
@@ -156,8 +158,8 @@ def compute_shooting_stats_average(
     selected_seasons = season_data[
         max(0, reference_index - num_years_back) : reference_index + 1
     ]
-    stats_sum = {}
-    stats_count = {}
+    stats_sum: Dict[str, float] = {}
+    stats_count: Dict[str, int] = {}
     skip_keys = {"age", "team", "country", "comp_level", "lg_finish", "matches"}
 
     for _, stats in selected_seasons:

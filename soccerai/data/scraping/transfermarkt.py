@@ -74,7 +74,7 @@ def get_avg_market_value_pre2021(mv_url: str, num_years_back: int = 3) -> Option
 
 def get_player_physical_profile(
     player_id: str, base_url: str
-) -> Dict[str, Optional[Union[str, int]]]:
+) -> Optional[Dict[str, Optional[Union[str, int]]]]:
     url = f"{base_url}/players/{player_id}/profile"
     data = get_api_data(url)
     if data is None:
@@ -159,9 +159,9 @@ def find_best_player_match(input_name: str, players: List[Dict]) -> Optional[Dic
     return best_match
 
 
-def standardize_nationality(input_nat: str, standard_nats: List[str]) -> str:
+def standardize_nationality(input_nat: str, standard_nats: Dict[str, str]) -> str:
     norm_input = normalize(input_nat)
-    normalized = {nat: normalize(nat) for nat in standard_nats}
+    normalized = {nat: normalize(nat) for nat in standard_nats.keys()}
     best_nat = max(
         standard_nats,
         key=lambda nat: fuzz.token_sort_ratio(norm_input, normalized[nat]),
