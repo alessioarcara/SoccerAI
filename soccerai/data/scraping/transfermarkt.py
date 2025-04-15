@@ -7,6 +7,7 @@ import Levenshtein
 import requests
 from bs4 import BeautifulSoup
 from rapidfuzz import fuzz
+
 from soccerai.data.config import TEAM_ABBREVS
 from soccerai.data.scraping.utils import get_api_data, normalize
 

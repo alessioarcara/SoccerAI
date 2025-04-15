@@ -8,6 +8,7 @@ from IPython.display import Image, clear_output, display
 from ipywidgets import widgets
 from mplsoccer import Pitch
 from numpy.typing import NDArray
+
 from soccerai.data import config
 from soccerai.data.utils import download_video_frames
 

@@ -3,6 +3,7 @@ import os
 from typing import Any, Dict, List, Tuple
 
 import polars as pl
+
 from soccerai.data.utils import offset_x, offset_y
 
 

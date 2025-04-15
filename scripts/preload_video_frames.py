@@ -23,9 +23,8 @@ if __name__ == "__main__":
     logger.info(f"Generated {len(neg_chains)} negative chains")
 
     all_chains = pos_chains + neg_chains
-    total_chains = len(all_chains)
 
-    logger.info(f"Downloading video frames for {total_chains} chains...")
+    logger.info(f"Downloading video frames for {len(all_chains)} chains...")
 
     for chain in tqdm(all_chains, desc="Downloading"):
         try:

@@ -43,7 +43,6 @@ def offset_y(y: int) -> float:
 def download_video_frame(
     frame_index: int, event_dict: Dict[str, Any], output_dir: str
 ) -> Tuple[int, Optional[str]]:
-    os.makedirs(output_dir, exist_ok=True)
     output_filename = f"{output_dir}/frame_{frame_index}.jpeg"
 
     if os.path.exists(output_filename):
@@ -104,6 +103,7 @@ def download_video_frames(
     video_files = {}
     event_dicts = event_df.to_dicts()
 
+    os.makedirs(output_dir, exist_ok=True)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures: Dict[Future, int] = {
             executor.submit(
@@ -112,9 +112,9 @@ def download_video_frames(
             for f_idx in frames
         }
         for future in as_completed(futures):
-            res: Optional[Tuple[int, str]] = future.result()
-            if res:
-                frame_idx, filename = res
+            res: Tuple[int, Optional[str]] = future.result()
+            frame_idx, filename = res
+            if filename is not None:
                 video_files[frame_idx] = filename
     return video_files
 

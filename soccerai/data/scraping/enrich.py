@@ -1,9 +1,10 @@
 from typing import Dict, Optional
 
 import polars as pl
+from loguru import logger
+
 import soccerai.data.scraping.fbref as fbref
 import soccerai.data.scraping.transfermarkt as tm
-from loguru import logger
 from soccerai.data.config import SHOOTING_STATS, TEAM_ABBREVS
 from soccerai.data.scraping.utils import create_webdriver, normalize
 
