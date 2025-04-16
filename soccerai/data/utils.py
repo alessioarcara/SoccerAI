@@ -18,17 +18,14 @@ def offset_y(y: int) -> float:
 
 
 def compute_velocity(
-    space_delta: NDArray[np.float64], time_delta: np.floating
+    positions_delta: NDArray[np.float64], time_elapsed: np.floating
 ) -> Tuple[np.floating, np.floating]:
-    velocity_x = space_delta[0] / time_delta
-    velocity_y = space_delta[1] / time_delta
-    if len(space_delta) > 2:
-        velocity_z = space_delta[2] / time_delta
-        velocity = np.linalg.norm([velocity_x, velocity_y, velocity_z])
-    else:
-        velocity = np.linalg.norm([velocity_x, velocity_y])
-    direction = np.arctan2(velocity_y, velocity_x)
-    direction = np.rad2deg(direction)
+    """
+    space_delta: Array of position differences [x, y] or [x, y, z]
+    """
+    velocity_vector = positions_delta / time_elapsed
+    velocity = np.linalg.norm(velocity_vector)
+    direction = np.rad2deg(np.arctan2(*velocity_vector))
     return velocity, direction
 
 
@@ -129,47 +126,54 @@ def save_accepted_chains(
         json.dump(all_accepted, f)
 
 
-def create_event_byte_map(game_id: int) -> Dict[int, int]:
+def create_event_byte_map(tracking_file: str) -> Dict[int, int]:
     event_byte_map: Dict[int, int] = {}
     pending_events: Dict[int, int] = {}
-    tracking_file = (
-        f"/home/soccerdata/FIFA_WorldCup_2022/Event Data/Tracking Data/{game_id}.jsonl"
-    )
+
     with open(tracking_file, "r") as tracking_data:
-        current_byte_pos = tracking_data.tell()
+        byte_pos = tracking_data.tell()
+
         while True:
             frame = tracking_data.readline()
             if not frame:
                 break
+
             frame_info = json.loads(frame)
             frame_num = frame_info["frameNum"]
-            current_event_id = frame_info["game_event_id"]
-            if current_event_id not in event_byte_map:
+            game_event_id = frame_info["game_event_id"]
+
+            if game_event_id not in event_byte_map:
+                # pending events
                 if frame_num in pending_events.values():
                     for pending_id, pending_frame in list(pending_events.items()):
                         if frame_num == pending_frame:
-                            event_byte_map[pending_id] = current_byte_pos
+                            event_byte_map[pending_id] = byte_pos
                             del pending_events[pending_id]
-                elif current_event_id is not None:
-                    current_event_id = int(current_event_id)
-                    if current_event_id not in pending_events:
+
+                # current event
+                elif game_event_id is not None:
+                    game_event_id = int(game_event_id)
+
+                    if game_event_id not in pending_events:
+                        # new event
                         end_frame = frame_info["game_event"]["end_frame"]
-                        if frame_num != end_frame:
-                            pending_events[current_event_id] = end_frame
+                        if frame_num == end_frame:
+                            event_byte_map[game_event_id] = byte_pos
                         else:
-                            event_byte_map[current_event_id] = current_byte_pos
+                            pending_events[game_event_id] = end_frame
                     elif (
                         frame_info["possession_event_id"] is not None
                         and frame_info["ballsSmoothed"] is not None
                     ):
-                        event_byte_map[current_event_id] = current_byte_pos
-                        del pending_events[current_event_id]
+                        event_byte_map[game_event_id] = byte_pos
+                        del pending_events[game_event_id]
 
-            current_byte_pos = tracking_data.tell()
-        return event_byte_map
+            byte_pos = tracking_data.tell()
+
+    return event_byte_map
 
 
-def read_last_n_lines(
+def read_lines_backwards_from_offset(
     filename: str, start_pos: int, max_lines: int, block_size: int = 4096
 ) -> List[str]:
     lines: List[bytes] = []
@@ -202,10 +206,10 @@ def read_last_n_lines(
     return [line.decode(encoding="utf-8", errors="replace") for line in reversed(lines)]
 
 
-def compute_deltas(values: NDArray[np.float64]) -> NDArray[np.float64]:
+def compute_deltas(x: NDArray[np.float64]) -> NDArray[np.float64]:
     deltas = []
-    for i in range(0, len(values) - 1, 2):
-        deltas.append(values[i + 1] - values[i])
+    for i in range(0, len(x) - 1, 2):
+        deltas.append(x[i + 1] - x[i])
     return np.array(deltas)
 
 
