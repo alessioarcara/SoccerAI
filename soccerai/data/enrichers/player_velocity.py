@@ -9,18 +9,18 @@ from numpy.typing import NDArray
 
 @dataclass
 class FrameData:
-    ball_deltas: List[List[float]]
-    home_players_deltas: Dict[str, List[List[float]]]
-    away_players_deltas: Dict[str, List[List[float]]]
+    ball_positions: List[List[float]]
+    home_players_positions: Dict[str, List[List[float]]]
+    away_players_positions: Dict[str, List[List[float]]]
     timestamps: List[List[float]]
 
     def has_sufficient_data(self) -> bool:
-        return len(self.ball_deltas) >= 2
+        return len(self.ball_positions) >= 2
 
     def reset(self) -> None:
-        self.ball_deltas = []
-        self.home_players_deltas = {}
-        self.away_players_deltas = {}
+        self.ball_positions = []
+        self.home_players_positions = {}
+        self.away_players_positions = {}
         self.timestamps = []
 
 
@@ -228,13 +228,13 @@ class PlayerVelocityEnricher:
         frame_info: Dict[str, Any],
     ) -> None:
         ball = frame_info["ballsSmoothed"]
-        frame_data.ball_deltas.append([ball["x"], ball["y"], ball["z"]])
+        frame_data.ball_positions.append([ball["x"], ball["y"], ball["z"]])
 
         self._extract_players_data(
-            frame_info["homePlayersSmoothed"], frame_data.home_players_deltas
+            frame_info["homePlayersSmoothed"], frame_data.home_players_positions
         )
         self._extract_players_data(
-            frame_info["awayPlayersSmoothed"], frame_data.away_players_deltas
+            frame_info["awayPlayersSmoothed"], frame_data.away_players_positions
         )
 
         frame_data.timestamps.append([np.round(frame_info["videoTimeMs"] / 1000, 3)])
@@ -251,21 +251,21 @@ class PlayerVelocityEnricher:
             return np.array([x[i + 1] - x[i] for i in range(0, len(x) - 1, 2)])
 
         ball_delta = np.median(
-            compute_pairwise_differences(np.array(frame_data.ball_deltas)), axis=0
+            compute_pairwise_differences(np.array(frame_data.ball_positions)), axis=0
         )
 
         home_players_delta = {
             jersey_num: np.median(
                 compute_pairwise_differences(np.array(positions)), axis=0
             )
-            for jersey_num, positions in frame_data.home_players_deltas.items()
+            for jersey_num, positions in frame_data.home_players_positions.items()
         }
 
         away_players_delta = {
             jersey_num: np.median(
                 compute_pairwise_differences(np.array(positions)), axis=0
             )
-            for jersey_num, positions in frame_data.away_players_deltas.items()
+            for jersey_num, positions in frame_data.away_players_positions.items()
         }
 
         time_delta = np.median(
