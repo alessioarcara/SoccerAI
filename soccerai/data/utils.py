@@ -110,36 +110,3 @@ def save_accepted_chains(
 
     with open(output_file, "w") as f:
         json.dump(all_accepted, f)
-
-
-def read_lines_backwards_from_offset(
-    filename: str, start_pos: int, max_lines: int, block_size: int = 4096
-) -> List[str]:
-    lines: List[bytes] = []
-    with open(filename, "rb") as f:
-        f.seek(start_pos)
-        f.readline()
-        buffer = b""
-        position = f.tell()
-
-        while position > 0 and len(lines) < max_lines:
-            read_size = min(block_size, position)
-            position -= read_size
-            f.seek(position)
-            data = f.read(read_size)
-            buffer = data + buffer
-            lines_found = buffer.split(b"\n")
-
-            buffer = lines_found[0]
-            lines_from_chunk = lines_found[1:]
-
-            for line in reversed(lines_from_chunk):
-                if len(lines) >= max_lines:
-                    break
-                if line != b"":
-                    lines.append(line)
-
-        if buffer and len(lines) < max_lines:
-            lines.append(buffer)
-
-    return [line.decode(encoding="utf-8", errors="replace") for line in reversed(lines)]
