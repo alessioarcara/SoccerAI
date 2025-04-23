@@ -99,7 +99,7 @@ class PlayerVelocityEnricher:
 
     def _create_event_byte_map(self, tracking_file: str) -> Dict[int, int]:
         """
-        Create a mapping of game event IDs to byte positions in the tracking file.;w
+        Create a mapping of game event IDs to byte positions in the tracking file.
         """
         event_byte_map: Dict[int, int] = {}
         pending_events: Dict[int, int] = {}
