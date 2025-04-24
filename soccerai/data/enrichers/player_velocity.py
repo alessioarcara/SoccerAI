@@ -37,7 +37,6 @@ class PlayerVelocityEnricher:
         Add velocity and direction columns to the players dataframe.
         """
         gameIds = np.unique(players_df.select(pl.col("gameId")).to_numpy())
-        gameEventIds = np.unique(players_df.select(pl.col("gameEventId")).to_numpy())
 
         velocities: List[Optional[np.floating]] = []
         directions: List[Optional[np.floating]] = []
@@ -45,7 +44,10 @@ class PlayerVelocityEnricher:
         for gameId in gameIds:
             tracking_file = f"{self.tracking_dir_path}/{gameId}.jsonl"
             event_byte_map = self._create_event_byte_map(tracking_file)
-
+            players_per_game = players_df.filter(pl.col("gameId") == gameId)
+            gameEventIds = np.unique(
+                players_per_game.select(pl.col("gameEventId")).to_numpy()
+            )
             for gameEventId in gameEventIds:
                 byte_pos = event_byte_map.get(gameEventId)
                 players_per_event = players_df.filter(
