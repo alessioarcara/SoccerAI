@@ -117,11 +117,11 @@ def neg_labeling(
     event_df: pl.DataFrame,
     players_df: pl.DataFrame,
     metadata_df: pl.DataFrame,
-    pos_chains: List[List[int]],
     chain_len: int,
     outer_distance: float,
     inner_distance: float = 0.0,
 ) -> List[List[int]]:
+    pos_chains = pos_labeling(event_df, 1)
     pos_indices = [idx for chain in pos_chains for idx in chain]
     negatives_df = event_df.filter(~pl.col("index").is_in(pos_indices))
 

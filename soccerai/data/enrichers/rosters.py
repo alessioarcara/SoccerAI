@@ -9,12 +9,12 @@ from soccerai.data.config import SHOOTING_STATS, TEAM_ABBREVS
 from soccerai.data.scraping.utils import create_webdriver, normalize
 
 
-class RoostersEnricher:
+class RostersEnricher:
     def __init__(
-        self, rooster_df: pl.DataFrame, base_url: str = "http://localhost:8000"
+        self, roster_df: pl.DataFrame, base_url: str = "http://localhost:8000"
     ):
         self._driver = create_webdriver()
-        self.rooster_df = rooster_df
+        self.roster_df = roster_df
         self._base_url = base_url
 
     def _enrich_player_record(
@@ -60,18 +60,18 @@ class RoostersEnricher:
     def __call__(self):
         all_updated_rows = []
         for team_name in list(TEAM_ABBREVS.keys()):
-            rooster_team_df = self.rooster_df.filter(pl.col("playerTeam") == team_name)
-            enriched_team_rooster = self._enrich_team_rooster(rooster_team_df)
-            enriched_team_rooster = enriched_team_rooster.drop("tm_data_found")
-            enriched_team_rooster.write_csv(f"teams/{team_name}.csv")
-            all_updated_rows.extend(enriched_team_rooster.to_dicts())
-        enriched_roosters = pl.DataFrame(all_updated_rows)
-        enriched_roosters.write_csv("enrich_roosters_final.csv")
+            roster_team_df = self.roster_df.filter(pl.col("playerTeam") == team_name)
+            enriched_team_roster = self._enrich_team_roster(roster_team_df)
+            enriched_team_roster = enriched_team_roster.drop("tm_data_found")
+            enriched_team_roster.write_csv(f"teams/{team_name}.csv")
+            all_updated_rows.extend(enriched_team_roster.to_dicts())
+        enriched_rosters = pl.DataFrame(all_updated_rows)
+        enriched_rosters.write_csv("enrich_rosters_final.csv")
         self._driver.quit()
 
-    def _enrich_team_rooster(self, rooster_team_df: pl.DataFrame) -> pl.DataFrame:
+    def _enrich_team_roster(self, roster_team_df: pl.DataFrame) -> pl.DataFrame:
         # Enrichment initial for every player in the team
-        team_rows = rooster_team_df.to_dicts()
+        team_rows = roster_team_df.to_dicts()
         updated_rows = []
         for player in team_rows:
             enriched_player = self._enrich_player_record(player)
@@ -100,11 +100,11 @@ class RoostersEnricher:
             return team_df
 
         team_slug = normalize(team_name).replace(" ", "-")
-        rooster_url = f"https://www.transfermarkt.it/{team_slug}/kader/verein/{team_id}/plus/0/galerie/0?saison_id={season_id}"
-        logger.info(f"Roster URL for team {team_name}: {rooster_url}")
+        roster_url = f"https://www.transfermarkt.it/{team_slug}/kader/verein/{team_id}/plus/0/galerie/0?saison_id={season_id}"
+        logger.info(f"Roster URL for team {team_name}: {roster_url}")
 
         # Scrape the roster page to get the list of players
-        roster_list = tm.get_players_from_rooster(rooster_url)
+        roster_list = tm.get_players_from_roster(roster_url)
         logger.debug(
             f"Found {len(roster_list)} players in roster for team {team_name}."
         )

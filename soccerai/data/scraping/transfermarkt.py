@@ -114,12 +114,12 @@ def search_club_id(club_name: str, base_url: str) -> Optional[str]:
     return club_id
 
 
-def get_players_from_rooster(rooster_url: str) -> list:
+def get_players_from_roster(roster_url: str) -> list:
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
     }
-    response = requests.get(rooster_url, headers=headers)
+    response = requests.get(roster_url, headers=headers)
     if response.status_code != 200:
         print(f"Error fetching roster page: {response.status_code}")
         return []

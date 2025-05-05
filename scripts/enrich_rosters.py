@@ -4,13 +4,13 @@ import argparse
 
 from loguru import logger
 
-from soccerai.data.data import load_and_process_roosters
-from soccerai.data.enrichers.roosters import RoostersEnricher
+from soccerai.data.data import load_and_process_rosters
+from soccerai.data.enrichers.rosters import RostersEnricher
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Script for roosters enrichment",
+        description="Script for rosters enrichment",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--host", required=True, help="Server host address")
@@ -18,18 +18,16 @@ def main():
 
     args = parser.parse_args()
 
-    rooster_df = load_and_process_roosters(
-        "/home/soccerdata/FIFA_WorldCup_2022/Rosters"
-    )
+    roster_df = load_and_process_rosters("/home/soccerdata/FIFA_WorldCup_2022/Rosters")
 
-    enricher = RoostersEnricher(rooster_df, f"http://{args.host}:{args.port}")
+    enricher = RostersEnricher(roster_df, f"http://{args.host}:{args.port}")
     try:
         enricher()
     except Exception as e:
         logger.error("Error during enrichment: {}", str(e))
         exit(1)
 
-    print("Enrichment complete. Output saved to enriched_roosters.csv")
+    print("Enrichment complete. Output saved to enriched_rosters.csv")
 
 
 if __name__ == "__main__":

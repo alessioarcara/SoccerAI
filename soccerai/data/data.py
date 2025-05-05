@@ -140,35 +140,35 @@ def load_and_process_metadata(
     return metadata_df
 
 
-def load_and_process_roosters(
-    roosters_dir_path: str,
+def load_and_process_rosters(
+    rosters_dir_path: str,
 ) -> pl.DataFrame:
-    roosters_files = [f for f in os.listdir(roosters_dir_path) if f.endswith(".json")]
+    rosters_files = [f for f in os.listdir(rosters_dir_path) if f.endswith(".json")]
 
-    roosters = []
+    rosters = []
     teams = []
 
-    for rooster_file in roosters_files:
-        with open(os.path.join(roosters_dir_path, rooster_file), "r") as f:
-            match_roosters_data = json.load(f)
+    for roster_file in rosters_files:
+        with open(os.path.join(rosters_dir_path, roster_file), "r") as f:
+            match_rosters_data = json.load(f)
 
         # first player is an home team player
-        home_team_name = match_roosters_data[0]["team"]["name"]
-        for i in range(len(match_roosters_data)):
-            if match_roosters_data[i]["team"]["name"] != home_team_name:
-                away_team_name = match_roosters_data[i]["team"]["name"]
+        home_team_name = match_rosters_data[0]["team"]["name"]
+        for i in range(len(match_rosters_data)):
+            if match_rosters_data[i]["team"]["name"] != home_team_name:
+                away_team_name = match_rosters_data[i]["team"]["name"]
                 break
 
-        for player_info in match_roosters_data:
+        for player_info in match_rosters_data:
             player_team = player_info["team"]["name"]
             if player_team not in teams:
-                roosters.append(extract_player_info(player_info))
+                rosters.append(extract_player_info(player_info))
 
         if home_team_name not in teams:
             teams.append(home_team_name)
         if away_team_name not in teams:
             teams.append(away_team_name)
 
-    roosters_df = pl.DataFrame(roosters)
+    rosters_df = pl.DataFrame(rosters)
 
-    return roosters_df
+    return rosters_df
