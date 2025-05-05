@@ -5,7 +5,7 @@ import argparse
 from loguru import logger
 
 from soccerai.data.data import load_and_process_roosters
-from soccerai.data.scraping.enrich import RoostersEnricher
+from soccerai.data.enrichers.roosters import RoostersEnricher
 
 
 def main():

@@ -7,37 +7,12 @@ from typing import Any, Dict, List, Optional, Tuple
 import polars as pl
 
 
-def offset_x(x: int) -> float:
+def offset_x(x: float) -> float:
     return (x or 0.0) + 52.5
 
 
-def offset_y(y: int) -> float:
+def offset_y(y: float) -> float:
     return (y or 0.0) + 34.0
-
-
-# def compute_velocity(
-#     start_pos: Tuple[float],
-#     end_pos: Tuple[float],
-#     start_time: float,
-#     end_time: float,
-#     return_direction=False,
-# ) -> Union[Tuple[float], float]:
-#     delta_t = end_time - start_time
-#     delta_x = end_pos[0] - start_pos[0]
-#     delta_y = end_pos[1] - start_pos[1]
-#     velocity_y = delta_y / delta_t
-#     velocity_x = delta_x / delta_t
-#     velocity = np.linalg.norm([velocity_x, velocity_y])
-
-#     if return_direction:
-#         direction = np.arctan2(velocity_y / velocity_x)
-#         return velocity, direction
-
-#     return velocity
-
-
-# def compute_direction():
-#     pass
 
 
 def download_video_frame(

@@ -4,7 +4,10 @@ from typing import Any, Dict, List, Tuple
 
 import polars as pl
 
-from soccerai.data.utils import offset_x, offset_y
+from soccerai.data.utils import (
+    offset_x,
+    offset_y,
+)
 
 
 def extract_event(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -24,61 +27,49 @@ def extract_event(event: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def extract_players(event: Dict[str, Any]) -> List[Dict[str, Any]]:
+def extract_players(
+    event: Dict[str, Any],
+) -> List[Dict[str, Any]]:
     players = []
     game_id = event["gameId"]
     game_event_id = event["gameEventId"]
     possession_event_id = event["possessionEventId"]
-    # players_velocities, end_time, ball_end_pos, players_end_pos = extract_tracking_data(
-    #     game_id, event_id
-    # )
-    # ball_velocity, ball_direction = compute_velocity(
-    #     (event["ball"]["x"], event["ball"]["y"]),
-    #     ball_end_pos,
-    #     event["end_time"],
-    #     end_time,
-    #     True,
-    # )
 
-    for player in event["homePlayers"]:
-        players.append(
-            {
-                "gameId": game_id,
-                "gameEventId": game_event_id,
-                "possessionEventId": possession_event_id,
-                "jerseyNum": player["jerseyNum"],
-                "x": offset_x(player["x"]),
-                "y": offset_y(player["y"]),
-                "z": 0.0,
-                "velocity": 0.0,
-                "team": "home",
-            }
-        )
-    for player in event["awayPlayers"]:
-        players.append(
-            {
-                "gameId": game_id,
-                "gameEventId": game_event_id,
-                "possessionEventId": possession_event_id,
-                "jerseyNum": player["jerseyNum"],
-                "x": offset_x(player["x"]),
-                "y": offset_y(player["y"]),
-                "z": 0.0,
-                "team": "away",
-            }
-        )
-    ball = event["ball"]
-    players.append(
-        {
+    def extract_entity(
+        team: str | None,
+        x: float,
+        y: float,
+        z: float,
+        jerseyNum: str | None,
+        visibility: str | None,
+    ) -> Dict[str, Any]:
+        return {
             "gameId": game_id,
             "gameEventId": game_event_id,
             "possessionEventId": possession_event_id,
-            "jerseyNum": None,
-            "x": offset_x(ball["x"]),
-            "y": offset_y(ball["y"]),
-            "z": ball["z"],
-            "team": None,
+            "team": team,
+            "x": offset_x(x),
+            "y": offset_y(y),
+            "z": z,
+            "jerseyNum": jerseyNum,
+            "visibility": visibility,
         }
+
+    for player in event["homePlayers"]:
+        players.append(
+            extract_entity(
+                "home", player["x"], player["y"], 0.0, player["jerseyNum"], None
+            )
+        )
+    for player in event["awayPlayers"]:
+        players.append(
+            extract_entity(
+                "away", player["x"], player["y"], 0.0, player["jerseyNum"], None
+            )
+        )
+    ball = event["ball"]
+    players.append(
+        extract_entity(None, ball["x"], ball["y"], ball["z"], None, ball["visibility"])
     )
     return players
 
@@ -105,43 +96,6 @@ def extract_player_info(player_info: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-# def extract_tracking_data(
-#    game_id: int, event_id: str
-# ) -> Tuple[Dict[str, Any], float, Tuple[float]]:
-#    pass
-# tracking_file = f"./FIFA_WorldCup_2022/Tracking Data/{game_id}.jsonl.bz2"
-# velocities = {"home": {}, "away": {}}
-# players_pos = {"home": {}, "away": {}}
-# end_frame = -1
-# with bz2.BZ2File(tracking_file, "r") as tracking_data:
-#     for frame in tracking_data:
-#         frame_info = json.loads(frame.decode())
-#         if frame_info["game_event_id"] == event_id and (
-#             frame_info["frameNum"] == frame_info["game_event"]["end_frame"]
-#         ):
-#             end_frame = frame_info["frameNum"]
-#             # for player in frame_info["homePlayers"]:
-#             #     velocities["home"][player["jerseyNum"]] = player["speed"]
-#             # for player in frame_info["awayPlayers"]:
-#             #     velocities["away"][player["jerseyNum"]] = player["speed"]
-#         elif frame_info["game_event_id"] == end_frame + 1:
-#             ball_pos = (frame_info["balls"][0]["x"], frame_info["balls"][0]["y"])
-#             end_time = np.round(frame_info["videoTimeMs"] / 1000, 3)
-#             for player in frame_info["homePlayers"]:
-#                 players_pos["home"][player["jerseyNum"]] = (
-#                     player["x"],
-#                     player["y"],
-#                 )
-#             for player in frame_info["awayPlayers"]:
-#                 players_pos["away"][player["jerseyNum"]] = (
-#                     player["x"],
-#                     player["y"],
-#                 )
-#             break
-
-# return velocities, end_time, ball_pos, players_pos
-
-
 def load_and_process_soccer_events(
     event_dir_path: str,
 ) -> Tuple[pl.DataFrame, pl.DataFrame]:
@@ -152,7 +106,6 @@ def load_and_process_soccer_events(
     for event_file in event_files:
         with open(os.path.join(event_dir_path, event_file), "r") as f:
             data = json.load(f)
-
         for e in data:
             if (
                 e["homePlayers"] is None
@@ -163,7 +116,6 @@ def load_and_process_soccer_events(
 
             all_events.append(extract_event(e))
             all_players.extend(extract_players(e))
-
     event_df = pl.DataFrame(all_events).with_row_index()
     players_df = pl.DataFrame(all_players).with_row_index()
 
