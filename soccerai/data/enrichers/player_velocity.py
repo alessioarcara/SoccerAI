@@ -36,7 +36,12 @@ class PlayerVelocityEnricher:
         """
         Add velocity and direction columns to the players dataframe.
         """
-        gameIds = np.unique(players_df.select(pl.col("gameId")).to_numpy())
+        gameIds = (
+            players_df.select(pl.col("gameId"))
+            .unique(maintain_order=True)
+            .to_series()
+            .to_list()
+        )
 
         velocities: List[Optional[np.floating]] = []
         directions: List[Optional[np.floating]] = []
@@ -45,8 +50,11 @@ class PlayerVelocityEnricher:
             tracking_file = f"{self.tracking_dir_path}/{gameId}.jsonl"
             event_byte_map = self._create_event_byte_map(tracking_file)
             players_per_game = players_df.filter(pl.col("gameId") == gameId)
-            gameEventIds = np.unique(
-                players_per_game.select(pl.col("gameEventId")).to_numpy()
+            gameEventIds = (
+                players_per_game.select(pl.col("gameEventId"))
+                .unique(maintain_order=True)
+                .to_series()
+                .to_list()
             )
             for gameEventId in gameEventIds:
                 byte_pos = event_byte_map.get(gameEventId)
@@ -108,7 +116,6 @@ class PlayerVelocityEnricher:
 
         with open(tracking_file, "r") as tracking_data:
             byte_pos = tracking_data.tell()
-
             while True:
                 frame = tracking_data.readline()
                 if not frame:
@@ -117,7 +124,6 @@ class PlayerVelocityEnricher:
                 frame_info = json.loads(frame)
                 frame_num = frame_info["frameNum"]
                 game_event_id = frame_info["game_event_id"]
-
                 if game_event_id not in event_byte_map:
                     # pending events
                     if frame_num in pending_events.values():
@@ -129,7 +135,6 @@ class PlayerVelocityEnricher:
                     # current event
                     elif game_event_id is not None:
                         game_event_id = int(game_event_id)
-
                         if game_event_id not in pending_events:
                             # new event
                             end_frame = frame_info["game_event"]["end_frame"]
