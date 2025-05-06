@@ -6,6 +6,8 @@ import numpy as np
 import polars as pl
 from IPython.display import Image, clear_output, display
 from ipywidgets import widgets
+from matplotlib import image as mpimg
+from matplotlib.offsetbox import AnnotationBbox, OffsetImage
 from mplsoccer import Pitch
 from numpy.typing import NDArray
 
@@ -171,18 +173,18 @@ def visualize_frame(
     )
 
     # Draw the ball using the ball sprite
-    # ball_df = frame_df.filter(pl.col("team").is_null())
-    # ball_row = ball_df.row(0, named=True)
-    # ball_img = mpimg.imread(config.BALL_IMAGE_PATH)
-    # ball_image = OffsetImage(ball_img, zoom=config.BALL_ZOOM)
-    # ball_ab = AnnotationBbox(
-    #    ball_image,
-    #    (ball_row["x"] + config.BALL_OFFSET_X, ball_row["y"] + config.BALL_OFFSET_Y),
-    #    xycoords="data",
-    #    frameon=False,
-    #    zorder=5,
-    # )
-    # ax.add_artist(ball_ab)
+    ball_df = frame_df.filter(pl.col("team").is_null())
+    ball_row = ball_df.row(0, named=True)
+    ball_img = mpimg.imread(config.BALL_IMAGE_PATH)
+    ball_image = OffsetImage(ball_img, zoom=config.BALL_ZOOM)
+    ball_ab = AnnotationBbox(
+        ball_image,
+        (ball_row["x"] + config.BALL_OFFSET_X, ball_row["y"] + config.BALL_OFFSET_Y),
+        xycoords="data",
+        frameon=False,
+        zorder=5,
+    )
+    ax.add_artist(ball_ab)
 
     # Draw ball trajectory
     if len(ball_trajectory) > 1:
