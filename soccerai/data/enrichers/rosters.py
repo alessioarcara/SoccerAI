@@ -20,7 +20,7 @@ class RostersEnricher:
     def _enrich_player_record(
         self, player: Dict, tm_player_id: Optional[str] = None
     ) -> Dict:
-        player_name = player["playerNickname"]
+        player_name = player["playerName"]
         player_team = player["playerTeam"]
         player_role = player["playerRole"]
         combined_stats: Dict = {}
@@ -112,11 +112,11 @@ class RostersEnricher:
         updated_rows = []
         for row in team_df.to_dicts():
             if not row.get("tm_data_found", False):
-                input_name = row["playerNickname"]
+                input_name = row["playerName"]
                 best_match = tm.find_best_player_match(input_name, roster_list)
                 if best_match:
                     logger.debug(f"Correcting '{input_name}' to '{best_match['name']}'")
-                    row["playerNickname"] = best_match["name"]
+                    row["playerName"] = best_match["name"]
                     transfermarkt_id = best_match["id"]
                     row = self._enrich_player_record(row, transfermarkt_id)
                 else:
