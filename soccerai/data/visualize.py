@@ -175,7 +175,7 @@ def visualize_frame(
     # Draw the ball using the ball sprite
     ball_df = frame_df.filter(pl.col("team").is_null())
     ball_row = ball_df.row(0, named=True)
-    ball_img = mpimg.imread(config.BALL_IMAGE_PATH)
+    ball_img = mpimg.imread(str(config.BALL_IMAGE_PATH))
     ball_image = OffsetImage(ball_img, zoom=config.BALL_ZOOM)
     ball_ab = AnnotationBbox(
         ball_image,

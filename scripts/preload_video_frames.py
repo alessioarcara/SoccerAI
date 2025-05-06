@@ -17,9 +17,7 @@ if __name__ == "__main__":
     pos_chains = pos_labeling(event_df, chain_len)
     logger.info(f"Generated {len(pos_chains)} positive chains")
 
-    neg_chains = neg_labeling(
-        event_df, players_df, metadata_df, pos_chains, chain_len, 25.0
-    )
+    neg_chains = neg_labeling(event_df, players_df, metadata_df, chain_len, 25.0)
     logger.info(f"Generated {len(neg_chains)} negative chains")
 
     all_chains = pos_chains + neg_chains
