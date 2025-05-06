@@ -10,9 +10,10 @@ from soccerai.data.visualize import shot_frames_navigator
 
 def pos_labeling(
     event_df: pl.DataFrame, chain_len: Optional[int] = None
-) -> List[List[int]]:
+) -> Tuple[List[List[int]], ...]:
     shots_df = event_df.filter(event_df["possessionEventType"] == "SH")
-    pos_chains = []
+    pos_chains_long = []
+    pos_chains_short = []
 
     for shot in shots_df.iter_rows(named=True):
         shot_idx = shot["index"]
@@ -34,11 +35,13 @@ def pos_labeling(
             prev_idx -= 1
 
         pos_chain = pos_chain[::-1]
+        if len(pos_chain) > 1:
+            if chain_len is None or len(pos_chain) < chain_len:
+                pos_chains_short.append(pos_chain)
+            else:
+                pos_chains_long.append(pos_chain)
 
-        if chain_len is None or len(pos_chain) >= chain_len:
-            pos_chains.append(pos_chain)
-
-    return pos_chains
+    return pos_chains_short, pos_chains_long
 
 
 def is_within_range(
@@ -120,12 +123,13 @@ def neg_labeling(
     chain_len: int,
     outer_distance: float,
     inner_distance: float = 0.0,
-) -> List[List[int]]:
-    pos_chains = pos_labeling(event_df, 1)
+) -> Tuple[List[List[int]], ...]:
+    pos_chains, _ = pos_labeling(event_df)
     pos_indices = [idx for chain in pos_chains for idx in chain]
     negatives_df = event_df.filter(~pl.col("index").is_in(pos_indices))
 
-    neg_chains = []
+    neg_chains_short = []
+    neg_chains_long = []
     neg_chain = []
     curr_team_name = negatives_df[0, "teamName"]
 
@@ -136,21 +140,27 @@ def neg_labeling(
         if curr_team_name == team_name:
             neg_chain.append(idx)
         else:
-            if len(neg_chain) >= chain_len and is_within_range(
-                event_df,
-                players_df,
-                metadata_df,
-                neg_chain[-1],
-                curr_team_name,
-                outer_distance,
-                inner_distance,
+            if (
+                is_within_range(
+                    event_df,
+                    players_df,
+                    metadata_df,
+                    neg_chain[-1],
+                    curr_team_name,
+                    outer_distance,
+                    inner_distance,
+                )
+                and len(neg_chain) > 1
             ):
-                neg_chains.append(neg_chain)
+                if len(neg_chain) >= chain_len:
+                    neg_chains_long.append(neg_chain)
+                else:
+                    neg_chains_short.append(neg_chain)
 
             neg_chain = [idx]
             curr_team_name = team_name
 
-    return neg_chains
+    return neg_chains_short, neg_chains_long
 
 
 def filter_shot_chains(
