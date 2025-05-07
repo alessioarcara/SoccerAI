@@ -15,16 +15,20 @@ def get_chains(
     event_df: pl.DataFrame,
     players_df: pl.DataFrame,
     metadata_df: pl.DataFrame,
-    rosters_df: pl.DataFrame,
     chain_len: int = 6,
     outer_distance: float = 25.0,
     inner_distance: float = 0.0,
+    skip_challenge_events: bool = True,
 ) -> Dict[str, List[List[int]]]:
     """
-    TODO: documentation
+    Categorizes event sequences in soccer matches into chains. Extracts
+    positive chains (those leading to shots) and negative chains (those not
+    leading to shots), and further classifies them as long or short based on a
+    defined chain_len threshold.
+    Returns a dictionary containing all categorized chains.
     """
-    all_pos_chains = _pos_labeling(event_df, 2)
-    pos_long_chains, pos_short_chains = split_into_long_short_chains(
+    all_pos_chains = _pos_labeling(event_df, 2, skip_challenge_events)
+    pos_long_chains, pos_short_chains = _split_into_long_short_chains(
         all_pos_chains, chain_len
     )
     logger.success(
@@ -38,13 +42,14 @@ def get_chains(
         event_df,
         players_df,
         metadata_df,
-        rosters_df,
         all_pos_chains,
         2,
         outer_distance,
         inner_distance,
     )
-    neg_long_chains, neg_short_chains = split_into_long_short_chains(all_neg_chains)
+    neg_long_chains, neg_short_chains = _split_into_long_short_chains(
+        all_neg_chains, chain_len
+    )
     logger.success(
         "Negative chains: total={}, long={}, short={}",
         len(all_neg_chains),
@@ -66,20 +71,21 @@ def get_chains(
     }
 
 
-def split_into_long_short_chains(all_chains: List[List[int]], chain_len: int):
+def _split_into_long_short_chains(
+    all_chains: List[List[int]], chain_len: int
+) -> Tuple[List[List[int]], List[List[int]]]:
     long_chains = []
     short_chains = []
 
     for chain in all_chains:
-        if len(chain) < chain_len:
-            short_chains.append(chain)
-        else:
-            long_chains.append(chain)
+        (long_chains if len(chain) >= chain_len else short_chains).append(chain)
 
     return long_chains, short_chains
 
 
-def _pos_labeling(event_df: pl.DataFrame, chain_len: int = 1) -> List[List[int]]:
+def _pos_labeling(
+    event_df: pl.DataFrame, chain_len: int, skip_challenge_events: bool
+) -> List[List[int]]:
     shots_df = event_df.filter(event_df["possessionEventType"] == "SH")
     pos_chains = []
 
@@ -99,6 +105,13 @@ def _pos_labeling(event_df: pl.DataFrame, chain_len: int = 1) -> List[List[int]]
             prev_idx >= 0
             and event_df.row(prev_idx, named=True)["teamName"] == team_name
         ):
+            if (
+                skip_challenge_events
+                and event_df.row(prev_idx, named=True)["possessionEventType"] == "CH"
+            ):
+                prev_idx -= 1
+                continue
+
             pos_chain.append(prev_idx)
             prev_idx -= 1
 
@@ -114,33 +127,24 @@ def _is_within_range(
     event_df: pl.DataFrame,
     players_df: pl.DataFrame,
     metadata_df: pl.DataFrame,
-    rosters_df: pl.DataFrame,
     last_action_idx: int,
     team_name: str,
     outer_distance: float,
     inner_distance: float,
 ) -> bool:
-    last_action_event_df = event_df.filter(pl.col("index") == last_action_idx).join(
-        rosters_df, ["playerName"], coalesce=True
-    )
-    try:
-        game_id = last_action_event_df.select("gameId").item()
-        jersey_num = last_action_event_df.select("shirtNumber").item()
-    except Exception:
-        print("NOT OK")
+    last_action_event_df = event_df.filter(pl.col("index") == last_action_idx)
+    game_id = last_action_event_df.select("gameId").item()
 
     try:
         metadata_event = metadata_df.filter(pl.col("gameId").cast(int) == game_id).row(
             0, named=True
         )
 
-        player_with_ball = (
+        ball = (
             last_action_event_df.join(
                 players_df, on=["gameEventId", "possessionEventId"]
             )
-            .filter(
-                (pl.col("jerseyNum") == jersey_num) & (pl.col("teamName") == team_name)
-            )
+            .filter(pl.col("team").is_null())
             .row(0, named=True)
         )
     except Exception:
@@ -149,8 +153,8 @@ def _is_within_range(
     home_team_name = metadata_event["homeTeamName"]
     home_team_start_left = metadata_event["homeTeamStartLeft"]
     second_half_start = metadata_event["startPeriod2"]
-    frame_time = player_with_ball["frameTime"]
-    x_position = player_with_ball["x"]
+    frame_time = ball["frameTime"]
+    x_position = ball["x"]
 
     try:
         minutes, seconds = map(int, frame_time.split(":"))
@@ -195,17 +199,13 @@ def _neg_labeling(
     event_df: pl.DataFrame,
     players_df: pl.DataFrame,
     metadata_df: pl.DataFrame,
-    rosters_df: pl.DataFrame,
     pos_chains: List[List[int]],
     chain_len: int,
     outer_distance: float,
     inner_distance: float = 0.0,
 ) -> List[List[int]]:
     pos_indices = [idx for chain in pos_chains for idx in chain]
-    negatives_df = event_df.filter(
-        (~pl.col("index").is_in(pos_indices))
-        & (pl.col("possessionEventType").is_not_null())
-    )
+    negatives_df = event_df.filter((~pl.col("index").is_in(pos_indices)))
 
     neg_chains = []
     neg_chain = []
@@ -224,10 +224,9 @@ def _neg_labeling(
             neg_chain.append(idx)
         else:
             if len(neg_chain) >= chain_len and _is_within_range(
-                event_df,  # <- perchè passo event_df
+                event_df,
                 players_df,
                 metadata_df,
-                rosters_df,
                 neg_chain[-1],
                 curr_team_name,
                 outer_distance,
