@@ -73,9 +73,9 @@ def get_chains(
 
 def _split_into_long_short_chains(
     all_chains: List[List[int]], chain_len: int
-) -> Tuple[List[List[int]], List[List[int]]]:
-    long_chains = []
-    short_chains = []
+) -> Tuple[List[List[int]], ...]:
+    long_chains: List[List[int]] = []
+    short_chains: List[List[int]] = []
 
     for chain in all_chains:
         (long_chains if len(chain) >= chain_len else short_chains).append(chain)
