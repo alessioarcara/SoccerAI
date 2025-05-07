@@ -1,3 +1,9 @@
+from importlib.resources import files
+
+BALL_IMAGE_PATH = files("soccerai.data.resources").joinpath(
+    "soccer_ball_transparent.png"
+)
+
 PITCH_FIGSIZE = figsize = (12, 6.75)
 
 PITCH_SETTINGS = {
@@ -11,7 +17,6 @@ PITCH_SETTINGS = {
     "label": True,
 }
 
-BALL_IMAGE_PATH = "soccerai/data/soccer_ball_transparent.png"
 BALL_ZOOM = 0.05
 BALL_OFFSET_X = 1
 BALL_OFFSET_Y = 1
