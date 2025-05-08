@@ -3,7 +3,14 @@ import os
 from typing import Any, Dict, List, Tuple
 
 import polars as pl
+from loguru import logger
 
+from soccerai.data.config import (
+    ACCEPTED_POS_CHAINS_PATH,
+    NEGATIVE_POS_CHAINS_PATH,
+    PLAYER_STATS_PATH,
+)
+from soccerai.data.enrichers import PlayerVelocityEnricher
 from soccerai.data.utils import (
     offset_x,
     offset_y,
@@ -172,3 +179,72 @@ def load_and_process_rosters(
     rosters_df = pl.DataFrame(rosters)
 
     return rosters_df
+
+
+def _load_chains(chain_path: str) -> List[List[int]]:
+    with open(chain_path, "r") as f:
+        chains = json.load(f)
+        return chains
+
+
+def _flatten_chains(chains: List[List[int]]) -> List[int]:
+    return [idx for chain in chains for idx in chain]
+
+
+def create_dataset(
+    output_path: str,
+    event_data_path: str = "/home/soccerdata/FIFA_WorldCup_2022/Event Data",
+    tracking_data_path: str = "/home/soccerdata/FIFA_WorldCup_2022/Tracking Data",
+    skip_velocity: bool = False,
+    skip_player_stats: bool = False,
+) -> None:
+    logger.info("Loading event and player data from {}", event_data_path)
+    event_df, players_df = load_and_process_soccer_events(event_data_path)
+
+    pos_indices = _flatten_chains(_load_chains(ACCEPTED_POS_CHAINS_PATH))
+    neg_indices = _flatten_chains(_load_chains(NEGATIVE_POS_CHAINS_PATH))
+
+    logger.info(
+        "Labeled data stats: {} positive events, {} negative events",
+        len(pos_indices),
+        len(neg_indices),
+    )
+
+    labeled_events_df = event_df.with_columns(
+        pl.when(pl.col("index").is_in(pos_indices))
+        .then(1)
+        .when(pl.col("index").is_in(neg_indices))
+        .then(0)
+        .otherwise(None)
+        .alias("label")
+    ).filter(pl.col("label").is_not_null())
+
+    result_df = labeled_events_df
+
+    if not skip_velocity:
+        logger.info("Adding player velocities from {}", tracking_data_path)
+        enricher = PlayerVelocityEnricher(tracking_data_path)
+        players_df = enricher.add_velocity_per_player(players_df)
+
+    result_df = labeled_events_df.join(
+        players_df,
+        on=["gameEventId", "possessionEventId"],
+        coalesce=True,
+    )
+
+    if not skip_player_stats:
+        logger.info("Adding player statistics")
+        player_stats_df = pl.read_csv(PLAYER_STATS_PATH).rename(
+            {
+                "playerNickname": "playerName",
+                "playerTeam": "teamName",
+                "shirtNumber": "jerseyNum",
+            }
+        )
+
+        result_df = result_df.join(
+            player_stats_df, on=["teamName", "jerseyNum"], coalesce=True
+        )
+
+    logger.info("Saving dataset to {}", output_path)
+    result_df.write_parquet(output_path)

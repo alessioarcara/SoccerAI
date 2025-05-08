@@ -8,6 +8,7 @@ from loguru import logger
 from tqdm.notebook import tqdm
 
 from soccerai.data import config
+from soccerai.data.data import _flatten_chains
 from soccerai.data.visualize import shot_frames_navigator
 
 
@@ -204,7 +205,7 @@ def _neg_labeling(
     outer_distance: float,
     inner_distance: float = 0.0,
 ) -> List[List[int]]:
-    pos_indices = [idx for chain in pos_chains for idx in chain]
+    pos_indices = _flatten_chains(pos_chains)
     negatives_df = event_df.filter((~pl.col("index").is_in(pos_indices)))
 
     neg_chains = []
