@@ -89,7 +89,7 @@ def extract_metadata(game_metadata: List[Dict[str, Any]]) -> Dict[str, Any]:
 def extract_player_info(player_info: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "playerId": player_info["player"]["id"],
-        "playerNickname": player_info["player"]["nickname"],
+        "playerName": player_info["player"]["nickname"],
         "shirtNumber": player_info["shirtNumber"],
         "playerTeam": player_info["team"]["name"],
         "playerRole": player_info["positionGroupType"],

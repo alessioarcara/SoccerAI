@@ -2,7 +2,7 @@ from loguru import logger
 from tqdm import tqdm
 
 from soccerai.data.data import load_and_process_metadata, load_and_process_soccer_events
-from soccerai.data.label import neg_labeling, pos_labeling
+from soccerai.data.label import _neg_labeling, _pos_labeling
 from soccerai.data.utils import download_video_frames
 
 if __name__ == "__main__":
@@ -14,10 +14,12 @@ if __name__ == "__main__":
     )
 
     chain_len = 1
-    pos_chains = pos_labeling(event_df, chain_len)
+    pos_chains = _pos_labeling(event_df, chain_len, True)
     logger.info(f"Generated {len(pos_chains)} positive chains")
 
-    neg_chains = neg_labeling(event_df, players_df, metadata_df, chain_len, 25.0)
+    neg_chains = _neg_labeling(
+        event_df, players_df, metadata_df, pos_chains, chain_len, 25.0
+    )
     logger.info(f"Generated {len(neg_chains)} negative chains")
 
     all_chains = pos_chains + neg_chains
