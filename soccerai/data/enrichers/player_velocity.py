@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import polars as pl
 from numpy.typing import NDArray
+from tqdm.notebook import tqdm
 
 
 @dataclass
@@ -46,7 +47,9 @@ class PlayerVelocityEnricher:
         velocities: List[Optional[np.floating]] = []
         directions: List[Optional[np.floating]] = []
 
-        for gameId in gameIds:
+        for gameId in tqdm(
+            gameIds, total=len(gameIds), desc="Processing games", colour="blue"
+        ):
             tracking_file = f"{self.tracking_dir_path}/{gameId}.jsonl"
             event_byte_map = self._create_event_byte_map(tracking_file)
             players_per_game = players_df.filter(pl.col("gameId") == gameId)
@@ -56,7 +59,13 @@ class PlayerVelocityEnricher:
                 .to_series()
                 .to_list()
             )
-            for gameEventId in gameEventIds:
+            for gameEventId in tqdm(
+                gameEventIds,
+                total=len(gameEventIds),
+                desc=f"Game {gameId}",
+                leave=False,
+                colour="green",
+            ):
                 byte_pos = event_byte_map.get(gameEventId)
                 players_per_event = players_df.filter(
                     pl.col("gameEventId") == gameEventId

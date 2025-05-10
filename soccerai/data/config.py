@@ -1,11 +1,20 @@
-from importlib.resources import files
+from importlib.resources import as_file, files
 
-BALL_IMAGE_PATH = files("soccerai.data.resources").joinpath(
-    "soccer_ball_transparent.png"
-)
 
+# ================= RESOURCE PATHS =================
+def get_resource_path(filename: str, package: str = "soccerai.data.resources") -> str:
+    resource = files(package).joinpath(filename)
+    with as_file(resource) as path:
+        return str(path)
+
+
+BALL_IMAGE_PATH = get_resource_path("soccer_ball_transparent.png")
+PLAYER_STATS_PATH = get_resource_path("rosters.csv")
+ACCEPTED_POS_CHAINS_PATH = get_resource_path("accepted_pos_chains.json")
+NEGATIVE_POS_CHAINS_PATH = get_resource_path("accepted_neg_chains.json")
+
+# ================= PITCH SETTINGS =================
 PITCH_FIGSIZE = figsize = (12, 6.75)
-
 PITCH_SETTINGS = {
     "pitch_type": "custom",
     "pitch_width": 68,
@@ -17,10 +26,12 @@ PITCH_SETTINGS = {
     "label": True,
 }
 
+# ================= BALL SETTINGS =================
 BALL_ZOOM = 0.05
 BALL_OFFSET_X = 1
 BALL_OFFSET_Y = 1
 
+# ================= UI LAYOUTS =================
 # Button styling
 BUTTON_STYLE = {
     "width": "200px",
