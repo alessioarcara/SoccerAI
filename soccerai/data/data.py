@@ -219,8 +219,6 @@ def create_dataset(
         .alias("label")
     ).filter(pl.col("label").is_not_null())
 
-    result_df = labeled_events_df
-
     if not skip_velocity:
         logger.info("Adding player velocities from {}", tracking_data_path)
         enricher = PlayerVelocityEnricher(tracking_data_path)
@@ -234,7 +232,9 @@ def create_dataset(
 
     if not skip_player_stats:
         logger.info("Adding player statistics")
-        player_stats_df = pl.read_csv(PLAYER_STATS_PATH).rename(
+        player_stats_df = pl.read_csv(
+            PLAYER_STATS_PATH, schema_overrides={"shirtNumber": pl.String}
+        ).rename(
             {
                 "playerNickname": "playerName",
                 "playerTeam": "teamName",
@@ -243,7 +243,7 @@ def create_dataset(
         )
 
         result_df = result_df.join(
-            player_stats_df, on=["teamName", "jerseyNum"], coalesce=True
+            player_stats_df, on=["teamName", "jerseyNum"], coalesce=True, how="left"
         )
 
     logger.info("Saving dataset to {}", output_path)

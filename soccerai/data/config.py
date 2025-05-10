@@ -1,11 +1,17 @@
-from importlib.resources import files
+from importlib.resources import as_file, files
+
 
 # ================= RESOURCE PATHS =================
-RESOURCE_BASE = "soccerai.data.resources"
-BALL_IMAGE_PATH = files(RESOURCE_BASE).joinpath("soccer_ball_transparent.png")
-PLAYER_STATS_PATH = files(RESOURCE_BASE).joinpath("rosters.csv")
-ACCEPTED_POS_CHAINS_PATH = files(RESOURCE_BASE).joinpath("accepted_pos_chains.json")
-NEGATIVE_POS_CHAINS_PATH = files(RESOURCE_BASE).joinpath("accepted_neg_chains.json")
+def get_resource_path(filename: str, package: str = "soccerai.data.resources") -> str:
+    resource = files(package).joinpath(filename)
+    with as_file(resource) as path:
+        return str(path)
+
+
+BALL_IMAGE_PATH = get_resource_path("soccer_ball_transparent.png")
+PLAYER_STATS_PATH = get_resource_path("rosters.csv")
+ACCEPTED_POS_CHAINS_PATH = get_resource_path("accepted_pos_chains.json")
+NEGATIVE_POS_CHAINS_PATH = get_resource_path("accepted_neg_chains.json")
 
 # ================= PITCH SETTINGS =================
 PITCH_FIGSIZE = figsize = (12, 6.75)
