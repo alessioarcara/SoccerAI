@@ -126,6 +126,17 @@ def load_and_process_soccer_events(
     event_df = pl.DataFrame(all_events).with_row_index()
     players_df = pl.DataFrame(all_players).with_row_index()
 
+    # # Filter out events where 'teamName' is null and 'possessionEventType' is 'CH',
+    # # as these may incorrectly split sequences that should be treated as a single chain.
+    # invalid_events = event_df.filter(
+    #     (pl.col("teamName").is_null()) & (pl.col("possessionEventType") == "CH")
+    # )
+    # event_df = (
+    #     event_df.join(invalid_events, on="index", how="anti")
+    #     .drop("index")
+    #     .with_row_index()
+    # )
+
     return event_df, players_df
 
 

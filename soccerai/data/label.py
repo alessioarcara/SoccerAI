@@ -16,6 +16,7 @@ def get_chains(
     event_df: pl.DataFrame,
     players_df: pl.DataFrame,
     metadata_df: pl.DataFrame,
+    rosters_df: pl.DataFrame,
     chain_len: int = 6,
     outer_distance: float = 25.0,
     inner_distance: float = 0.0,
@@ -206,8 +207,7 @@ def _neg_labeling(
     inner_distance: float = 0.0,
 ) -> List[List[int]]:
     pos_indices = _flatten_chains(pos_chains)
-    negatives_df = event_df.filter((~pl.col("index").is_in(pos_indices)))
-
+    negatives_df = event_df.filter(~pl.col("index").is_in(pos_indices))
     neg_chains = []
     neg_chain = []
     curr_team_name = negatives_df[0, "teamName"]
