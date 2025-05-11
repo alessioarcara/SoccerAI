@@ -21,6 +21,7 @@ def get_chains(
     outer_distance: float = 25.0,
     inner_distance: float = 0.0,
     skip_challenge_events: bool = True,
+    use_player_pos: bool = False,
 ) -> Dict[str, List[List[int]]]:
     """
     Categorizes event sequences in soccer matches into chains. Extracts
@@ -44,10 +45,12 @@ def get_chains(
         event_df,
         players_df,
         metadata_df,
+        rosters_df,
         all_pos_chains,
         2,
         outer_distance,
         inner_distance,
+        use_player_pos,
     )
     neg_long_chains, neg_short_chains = _split_into_long_short_chains(
         all_neg_chains, chain_len
@@ -129,39 +132,57 @@ def _is_within_range(
     event_df: pl.DataFrame,
     players_df: pl.DataFrame,
     metadata_df: pl.DataFrame,
+    rosters_df: pl.DataFrame,
     last_action_idx: int,
     team_name: str,
     outer_distance: float,
     inner_distance: float,
+    use_player_pos: bool,
 ) -> bool:
     last_action_event_df = event_df.filter(pl.col("index") == last_action_idx)
     game_id = last_action_event_df.select("gameId").item()
-
     try:
         metadata_event = metadata_df.filter(pl.col("gameId").cast(int) == game_id).row(
             0, named=True
         )
+        home_team_name = metadata_event["homeTeamName"]
+        away_team_name = metadata_event["awayTeamName"]
+        home_team_start_left = metadata_event["homeTeamStartLeft"]
+        second_half_start = metadata_event["startPeriod2"]
 
-        ball = (
-            last_action_event_df.join(
-                players_df, on=["gameEventId", "possessionEventId"]
-            )
-            .filter(pl.col("team").is_null())
-            .row(0, named=True)
+        joined_df = last_action_event_df.join(
+            players_df, on=["gameEventId", "possessionEventId"]
         )
-    except Exception:
-        return False
 
-    home_team_name = metadata_event["homeTeamName"]
-    home_team_start_left = metadata_event["homeTeamStartLeft"]
-    second_half_start = metadata_event["startPeriod2"]
-    frame_time = ball["frameTime"]
-    x_position = ball["x"]
+        if use_player_pos:
+            player_with_ball = (
+                joined_df.with_columns(
+                    pl.when(pl.col("team") == "home")
+                    .then(pl.lit(home_team_name))
+                    .when(pl.col("team") == "away")
+                    .then(pl.lit(away_team_name))
+                    .otherwise(None)
+                    .alias("team_name_mapped")
+                )
+                .join(
+                    rosters_df,
+                    left_on=["team_name_mapped", "jerseyNum"],
+                    right_on=["playerTeam", "shirtNumber"],
+                    how="left",
+                )
+                .filter(pl.col("playerName") == pl.col("playerName_right"))
+            ).row(0, named=True)
+            frame_time = player_with_ball["frameTime"]
+            x_position = player_with_ball["x"]
+        else:
+            ball = joined_df.filter(pl.col("team").is_null()).row(0, named=True)
+            frame_time = ball["frameTime"]
+            x_position = ball["x"]
 
-    try:
         minutes, seconds = map(int, frame_time.split(":"))
         current_time_seconds = minutes * 60 + seconds
         is_second_half = current_time_seconds >= second_half_start
+
     except Exception:
         return False
 
@@ -201,10 +222,12 @@ def _neg_labeling(
     event_df: pl.DataFrame,
     players_df: pl.DataFrame,
     metadata_df: pl.DataFrame,
+    rosters_df: pl.DataFrame,
     pos_chains: List[List[int]],
     chain_len: int,
     outer_distance: float,
     inner_distance: float = 0.0,
+    use_player_pos: bool = False,
 ) -> List[List[int]]:
     pos_indices = _flatten_chains(pos_chains)
     negatives_df = event_df.filter(~pl.col("index").is_in(pos_indices))
@@ -228,10 +251,12 @@ def _neg_labeling(
                 event_df,
                 players_df,
                 metadata_df,
+                rosters_df,
                 neg_chain[-1],
                 curr_team_name,
                 outer_distance,
                 inner_distance,
+                use_player_pos,
             ):
                 neg_chains.append(neg_chain)
 
