@@ -11,7 +11,7 @@ from soccerai.data.utils import download_video_frames
 
 if __name__ == "__main__":
     event_df, players_df = load_and_process_soccer_events(
-        "/home/soccerdata/FIFA_WorldCup_2022/Event Data"
+        "/home/soccerdata/FIFA_WorldCup_2022/Event Data", True
     )
     metadata_df = load_and_process_metadata(
         "/home/soccerdata/FIFA_WorldCup_2022/Metadata"
