@@ -11,7 +11,7 @@ def get_resource_path(filename: str, package: str = "soccerai.data.resources") -
 BALL_IMAGE_PATH = get_resource_path("soccer_ball_transparent.png")
 PLAYER_STATS_PATH = get_resource_path("rosters.csv")
 ACCEPTED_POS_CHAINS_PATH = get_resource_path("accepted_pos_chains.json")
-NEGATIVE_POS_CHAINS_PATH = get_resource_path("accepted_neg_chains.json")
+ACCEPTED_NEG_CHAINS_PATH = get_resource_path("accepted_neg_chains.json")
 
 # ================= PITCH SETTINGS =================
 PITCH_FIGSIZE = figsize = (12, 6.75)

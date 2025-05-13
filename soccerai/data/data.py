@@ -6,8 +6,8 @@ import polars as pl
 from loguru import logger
 
 from soccerai.data.config import (
+    ACCEPTED_NEG_CHAINS_PATH,
     ACCEPTED_POS_CHAINS_PATH,
-    NEGATIVE_POS_CHAINS_PATH,
     PLAYER_STATS_PATH,
 )
 from soccerai.data.enrichers import PlayerVelocityEnricher
@@ -215,7 +215,7 @@ def create_dataset(
     event_df, players_df = load_and_process_soccer_events(event_data_path)
 
     pos_indices = _flatten_chains(_load_chains(ACCEPTED_POS_CHAINS_PATH))
-    neg_indices = _flatten_chains(_load_chains(NEGATIVE_POS_CHAINS_PATH))
+    neg_indices = _flatten_chains(_load_chains(ACCEPTED_NEG_CHAINS_PATH))
 
     logger.info(
         "Labeled data stats: {} positive events, {} negative events",
