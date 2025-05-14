@@ -12,6 +12,7 @@ BALL_IMAGE_PATH = get_resource_path("soccer_ball_transparent.png")
 PLAYER_STATS_PATH = get_resource_path("rosters.csv")
 ACCEPTED_POS_CHAINS_PATH = get_resource_path("accepted_pos_chains.json")
 ACCEPTED_NEG_CHAINS_PATH = get_resource_path("accepted_neg_chains.json")
+DATASET_PATH = get_resource_path("dataset.parquet")
 
 # ================= PITCH SETTINGS =================
 PITCH_FIGSIZE = figsize = (12, 6.75)
@@ -61,7 +62,7 @@ PLAY_LAYOUT = {"width": "120px", "margin": "0 10px 0 20px"}
 
 SLIDER_LAYOUT = {"width": "300px", "margin": "10px 10px 10px 20px"}
 
-# Layout for boxe
+# Layout for boxes
 TOP_BOX_LAYOUT = {
     "justify_content": "center",
     "align_items": "stretch",

@@ -208,11 +208,13 @@ def create_dataset(
     output_path: str,
     event_data_path: str = "/home/soccerdata/FIFA_WorldCup_2022/Event Data",
     tracking_data_path: str = "/home/soccerdata/FIFA_WorldCup_2022/Tracking Data",
+    meta_data_path: str = "/home/soccerdata/FIFA_WorldCup_2022/Metadata",
     skip_velocity: bool = False,
     skip_player_stats: bool = False,
 ) -> None:
     logger.info("Loading event and player data from {}", event_data_path)
     event_df, players_df = load_and_process_soccer_events(event_data_path)
+    metadata_df = load_and_process_metadata(meta_data_path)
 
     pos_indices = _flatten_chains(_load_chains(ACCEPTED_POS_CHAINS_PATH))
     neg_indices = _flatten_chains(_load_chains(ACCEPTED_NEG_CHAINS_PATH))
@@ -253,6 +255,21 @@ def create_dataset(
                 "playerTeam": "teamName",
                 "shirtNumber": "jerseyNum",
             }
+        )
+
+        metadata_df = metadata_df.with_columns(pl.col("gameId").cast(pl.Int64))
+
+        result_df = result_df.join(
+            metadata_df.select(["gameId", "homeTeamName", "awayTeamName"]),
+            on="gameId",
+            how="left",
+        ).with_columns(
+            pl.when(pl.col("team") == "home")
+            .then(pl.col("homeTeamName"))
+            .when(pl.col("team") == "away")
+            .then(pl.col("awayTeamName"))
+            .otherwise(None)
+            .alias("teamName")
         )
 
         result_df = result_df.join(
