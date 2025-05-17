@@ -18,6 +18,7 @@ dependencies = [
   "tqdm",
   "IPython",
   "ipywidgets",
+  "wandb",
 ]
 name = "soccerai"
 version = "0.2.0"

@@ -1,0 +1,5 @@
+project_name: "soccerai"
+bs: 128
+n_epochs: 1000
+lr: 1e-3
+wd: 0.01
