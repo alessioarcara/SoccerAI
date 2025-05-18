@@ -6,12 +6,14 @@ from pydantic import BaseModel
 
 class TrainerConfig(BaseModel):
     project_name: str
+    seed: int
     bs: int
     lr: float
     wd: float
     n_epochs: int
     eval_rate: int
     val_ratio: float
+    dim: int
 
 
 def _load_yaml(path: str | Path):

@@ -3,6 +3,7 @@ import os
 
 from loguru import logger
 from torch_geometric.loader import DataLoader, PrefetchLoader
+from torch_geometric.seed import seed_everything
 
 from soccerai.data.converters import ConnectionMode, ShotPredictionGraphConverter
 from soccerai.data.dataset import WorldCup2022Dataset, split_dataset
@@ -24,6 +25,7 @@ common_loader_kwargs = dict(
 
 
 def main(args):
+    seed_everything(cfg.seed)
     converter = ShotPredictionGraphConverter(ConnectionMode.FULLY_CONNECTED)
 
     dataset = WorldCup2022Dataset(
@@ -49,7 +51,7 @@ def main(args):
             **common_loader_kwargs,
         ),
     )
-    model = GCN(dataset.num_node_features, 256, 1)
+    model = GCN(dataset.num_node_features, cfg.dim, 1)
 
     trainer = Trainer(
         cfg=cfg,

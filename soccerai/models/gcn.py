@@ -23,7 +23,7 @@ class GCN(torch.nn.Module):
         x = self.conv2(x, edge_index)
         x = F.relu(x)
 
-        x = pyg_nn.global_add_pool(x, batch, size=batch_size)
+        x = pyg_nn.global_mean_pool(x, batch, size=batch_size)
 
         x = self.lin(x)
 

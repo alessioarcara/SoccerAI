@@ -66,9 +66,24 @@ class ShotPredictionGraphConverter(GraphConverter):
         )
 
         df = df.drop(["playerName", "playerName_right"])
-        df = df.to_dummies(["possessionEventType", "team", "playerRole"])
+        categorical_cols = ["possessionEventType", "team", "playerRole"]
+        exclude_from_norm = set(
+            categorical_cols + ["gameEventId", "possessionEventaid", "label"]
+        )
 
-        df = df.fill_null(strategy="mean")
+        cols_to_norm = [c for c in df.columns if c not in exclude_from_norm]
+
+        df = df.with_columns(
+            [
+                (
+                    (pl.col(c).fill_null(strategy="mean") - pl.col(c).mean())
+                    / pl.col(c).std()
+                ).alias(c)
+                for c in cols_to_norm
+            ]
+        )
+
+        df = df.to_dummies(categorical_cols)
 
         return df
 

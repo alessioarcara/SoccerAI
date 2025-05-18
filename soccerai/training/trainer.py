@@ -1,5 +1,8 @@
 from typing import List, Optional
 
+import matplotlib.pyplot as plt
+import polars as pl
+import seaborn as sns
 import torch
 import torch.nn as nn
 from torch.optim import AdamW
@@ -77,6 +80,7 @@ class Trainer:
         total_loss = 0.0
         for metric in self.metrics:
             metric.reset()
+        conf_matrix = torch.zeros(2, 2, dtype=torch.int, device="cpu")
 
         batch: Batch
         for batch in tqdm(
@@ -91,8 +95,16 @@ class Trainer:
             total_loss += batch_loss
 
             preds_probs = torch.sigmoid(out)
+            preds_labels = (preds_probs.cpu() > 0.5).long()
+            true_labels = batch.y.cpu().long()
+
             for metric in self.metrics:
                 metric.update(preds_probs, batch.y)
+
+            true_labels_flat = true_labels.view(-1)
+            preds_labels_flat = preds_labels.view(-1)
+            for i in range(true_labels_flat.shape[0]):
+                conf_matrix[true_labels_flat[i], preds_labels_flat[i]] += 1
 
         mean_loss = total_loss / len(loader)
 
@@ -100,5 +112,21 @@ class Trainer:
         for metric in self.metrics:
             metric_name = metric.__class__.__name__
             log_dict[f"{split}/{metric_name}"] = metric.compute()
+
+        if split == "val":
+            conf_matrix_df = pl.DataFrame(conf_matrix.numpy())
+            fig, ax = plt.subplots(figsize=(8, 6))
+            heatmap = sns.heatmap(
+                conf_matrix_df,
+                annot=True,
+                fmt="d",
+                cmap="Blues",
+                ax=ax,
+            )
+            plt.title(f"{split.capitalize()} Confusion Matrix")
+            ax.set_xlabel("Predicted Label")
+            ax.set_ylabel("True Label")
+            log_dict[f"{split}/confusion_matrix"] = wandb.Image(heatmap.get_figure())
+            plt.close(fig)
 
         wandb.log(log_dict)
