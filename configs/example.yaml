@@ -1,5 +1,6 @@
 project_name: "soccerai"
-bs: 128
-n_epochs: 1000
+bs: 512
+n_epochs: 500
 lr: 1e-3
 wd: 0.01
+eval_rate: 5

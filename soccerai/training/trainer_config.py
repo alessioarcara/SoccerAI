@@ -10,6 +10,7 @@ class TrainerConfig(BaseModel):
     lr: float
     wd: float
     n_epochs: int
+    eval_rate: int
 
 
 def _load_yaml(path: str | Path):
