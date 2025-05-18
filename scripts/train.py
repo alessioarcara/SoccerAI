@@ -5,12 +5,21 @@ from loguru import logger
 from torch_geometric.loader import DataLoader, PrefetchLoader
 
 from soccerai.data.converters import ConnectionMode, ShotPredictionGraphConverter
-from soccerai.data.dataset import WorldCup2022Dataset
+from soccerai.data.dataset import WorldCup2022Dataset, split_dataset
 from soccerai.models import GCN
 from soccerai.training.trainer import Trainer
 from soccerai.training.trainer_config import build_cfg
 
+NUM_WORKERS = max(os.cpu_count() - 1, 1)
 CONFIG_PATH = "configs/example.yaml"
+
+cfg = build_cfg(CONFIG_PATH)
+common_loader_kwargs = dict(
+    batch_size=cfg.bs,
+    num_workers=NUM_WORKERS,
+    pin_memory=True,
+    persistent_workers=True,
+)
 
 
 def main(args):
@@ -23,21 +32,31 @@ def main(args):
     )
     logger.success(f"Dataset loaded successfully. Number of graphs: {len(dataset)}")
 
-    cfg = build_cfg(CONFIG_PATH)
+    train_dataset, val_dataset = split_dataset(dataset, cfg.val_ratio)
 
-    loader = PrefetchLoader(
+    train_loader = PrefetchLoader(
         DataLoader(
-            dataset,
-            cfg.bs,
-            num_workers=os.cpu_count() - 1,
+            train_dataset,
             shuffle=True,
-            pin_memory=True,
-            persistent_workers=True,
+            **common_loader_kwargs,
+        ),
+    )
+    val_loader = PrefetchLoader(
+        DataLoader(
+            val_dataset,
+            shuffle=False,
+            **common_loader_kwargs,
         ),
     )
     model = GCN(dataset.num_node_features, 256, 1)
 
-    trainer = Trainer(cfg, model, loader, "cuda")
+    trainer = Trainer(
+        cfg=cfg,
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        device="cuda",
+    )
     trainer.train("debug")
 
 

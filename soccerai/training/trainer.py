@@ -27,7 +27,6 @@ class Trainer:
         self.device = device
 
         self.optim = AdamW(self.model.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
-
         self.criterion = nn.BCEWithLogitsLoss()
 
     def train(self, run_name: str):
@@ -58,9 +57,8 @@ class Trainer:
 
     def _train_step(self, batch: Batch) -> float:
         self.optim.zero_grad(set_to_none=True)
-        batch.to(self.device, non_blocking=True)
         out = self.model(batch)
-        loss = self.criterion(out, batch.y.float().unsqueeze(1))
+        loss = self.criterion(out, batch.y)
         loss.backward()
         self.optim.step()
         return loss

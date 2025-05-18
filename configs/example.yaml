@@ -4,3 +4,4 @@ n_epochs: 500
 lr: 1e-3
 wd: 0.01
 eval_rate: 5
+val_ratio: 0.2

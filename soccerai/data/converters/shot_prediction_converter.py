@@ -84,8 +84,8 @@ class ShotPredictionGraphConverter(GraphConverter):
             event_df_x = event_df.drop("gameEventId", "possessionEventId", "label")
             edge_idx = self._create_edge_index()
 
-            x = torch.tensor(event_df_x.rows(), dtype=torch.float)
-            y = torch.tensor(event_df["label"][0], dtype=torch.long)
+            x = torch.tensor(event_df_x.to_numpy(), dtype=torch.float32)
+            y = torch.tensor(event_df["label"][0], dtype=torch.float32).view(1, 1)
 
             data_list.append(
                 Data(
