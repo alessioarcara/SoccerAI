@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import matplotlib.pyplot as plt
 import polars as pl
@@ -108,7 +108,7 @@ class Trainer:
 
         mean_loss = total_loss / len(loader)
 
-        log_dict = {f"{split}/total_loss": mean_loss}
+        log_dict: Dict[str, Any] = {f"{split}/total_loss": mean_loss}
         for metric in self.metrics:
             metric_name = metric.__class__.__name__
             log_dict[f"{split}/{metric_name}"] = metric.compute()
