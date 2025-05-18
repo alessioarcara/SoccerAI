@@ -21,11 +21,11 @@ class WorldCup2022Dataset(InMemoryDataset):
 
     @property
     def raw_file_names(self):
-        return "dataset.parquet"
+        return ["dataset.parquet"]
 
     @property
     def processed_file_names(self):
-        return "data.pt"
+        return ["data.pt"]
 
     def process(self):
         df = pl.read_parquet(self.raw_paths[0])

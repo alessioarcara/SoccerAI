@@ -11,7 +11,7 @@ from soccerai.training.metrics import BinaryAccuracy
 from soccerai.training.trainer import Trainer
 from soccerai.training.trainer_config import build_cfg
 
-NUM_WORKERS = max(os.cpu_count() - 1, 1)
+NUM_WORKERS = (os.cpu_count() or 1) - 1
 CONFIG_PATH = "configs/example.yaml"
 
 cfg = build_cfg(CONFIG_PATH)

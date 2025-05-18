@@ -16,11 +16,11 @@ class GraphConverter(ABC):
         self.mode = mode
 
     @abstractmethod
-    def _create_edge_index(self) -> torch.tensor:
+    def _create_edge_index(self) -> torch.Tensor:
         pass
 
     @abstractmethod
-    def _preprocess_dataframe(self, df: pl.DataFrame) -> List[Data]:
+    def _preprocess_dataframe(self, df: pl.DataFrame) -> pl.DataFrame:
         pass
 
     @abstractmethod
