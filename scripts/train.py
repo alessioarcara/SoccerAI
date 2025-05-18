@@ -7,6 +7,7 @@ from torch_geometric.loader import DataLoader, PrefetchLoader
 from soccerai.data.converters import ConnectionMode, ShotPredictionGraphConverter
 from soccerai.data.dataset import WorldCup2022Dataset, split_dataset
 from soccerai.models import GCN
+from soccerai.training.metrics import BinaryAccuracy
 from soccerai.training.trainer import Trainer
 from soccerai.training.trainer_config import build_cfg
 
@@ -56,6 +57,7 @@ def main(args):
         train_loader=train_loader,
         val_loader=val_loader,
         device="cuda",
+        metrics=[BinaryAccuracy()],
     )
     trainer.train("debug")
 

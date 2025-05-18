@@ -11,14 +11,19 @@ class GCN(torch.nn.Module):
         self.lin = pyg_nn.Linear(dmid, dout)
 
     def forward(self, data):
-        x, edge_index, batch = data.x, data.edge_index, data.batch
+        x, edge_index, batch, batch_size = (
+            data.x,
+            data.edge_index,
+            data.batch,
+            data.batch_size,
+        )
 
         x = self.conv1(x, edge_index)
         x = F.relu(x)
         x = self.conv2(x, edge_index)
         x = F.relu(x)
 
-        x = pyg_nn.global_add_pool(x, batch)
+        x = pyg_nn.global_add_pool(x, batch, size=batch_size)
 
         x = self.lin(x)
 
