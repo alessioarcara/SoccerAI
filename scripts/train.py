@@ -6,7 +6,7 @@ from torch_geometric.loader import DataLoader, PrefetchLoader
 from torch_geometric.seed import seed_everything
 
 from soccerai.data.converters import ConnectionMode, ShotPredictionGraphConverter
-from soccerai.data.dataset import WorldCup2022Dataset, split_dataset
+from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.models import GCN
 from soccerai.training.metrics import BinaryAccuracy
 from soccerai.training.trainer import Trainer
@@ -28,14 +28,26 @@ def main(args):
     seed_everything(cfg.seed)
     converter = ShotPredictionGraphConverter(ConnectionMode.FULLY_CONNECTED)
 
-    dataset = WorldCup2022Dataset(
+    train_dataset = WorldCup2022Dataset(
         root="soccerai/data/resources",
         converter=converter,
         force_reload=args.reload,
+        split="train",
+        val_ratio=cfg.val_ratio,
     )
-    logger.success(f"Dataset loaded successfully. Number of graphs: {len(dataset)}")
+    val_dataset = WorldCup2022Dataset(
+        root="soccerai/data/resources",
+        converter=converter,
+        force_reload=args.reload,
+        split="val",
+        val_ratio=cfg.val_ratio,
+    )
 
-    train_dataset, val_dataset = split_dataset(dataset, cfg.val_ratio)
+    logger.success(
+        "Datasets loaded successfully → train graphs: {}, val graphs: {}",
+        len(train_dataset),
+        len(val_dataset),
+    )
 
     train_loader = PrefetchLoader(
         DataLoader(
@@ -51,7 +63,7 @@ def main(args):
             **common_loader_kwargs,
         ),
     )
-    model = GCN(dataset.num_node_features, cfg.dim, 1)
+    model = GCN(train_dataset.num_node_features, cfg.dim, 1)
 
     trainer = Trainer(
         cfg=cfg,

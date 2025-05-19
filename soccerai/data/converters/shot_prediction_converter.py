@@ -68,7 +68,8 @@ class ShotPredictionGraphConverter(GraphConverter):
         df = df.drop(["playerName", "playerName_right"])
         categorical_cols = ["possessionEventType", "team", "playerRole"]
         exclude_from_norm = set(
-            categorical_cols + ["gameEventId", "possessionEventaid", "label"]
+            categorical_cols
+            + ["gameEventId", "possessionEventId", "label", "ballPossession"]
         )
 
         cols_to_norm = [c for c in df.columns if c not in exclude_from_norm]
