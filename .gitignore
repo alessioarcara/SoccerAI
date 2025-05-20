@@ -172,3 +172,5 @@ pyrightconfig.json
 
 data/FIFA_WorldCup_2022
 data/frames
+
+wandb
