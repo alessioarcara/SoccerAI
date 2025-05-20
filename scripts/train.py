@@ -1,9 +1,9 @@
 import argparse
 import os
 
+import torch
 from loguru import logger
 from torch_geometric.loader import DataLoader, PrefetchLoader
-from torch_geometric.seed import seed_everything
 
 from soccerai.data.converters import ConnectionMode, ShotPredictionGraphConverter
 from soccerai.data.dataset import WorldCup2022Dataset
@@ -11,21 +11,16 @@ from soccerai.models import GCN
 from soccerai.training.metrics import BinaryAccuracy
 from soccerai.training.trainer import Trainer
 from soccerai.training.trainer_config import build_cfg
+from soccerai.training.utils import fix_random
 
 NUM_WORKERS = (os.cpu_count() or 1) - 1
 CONFIG_PATH = "configs/example.yaml"
-
-cfg = build_cfg(CONFIG_PATH)
-common_loader_kwargs = dict(
-    batch_size=cfg.bs,
-    num_workers=NUM_WORKERS,
-    pin_memory=True,
-    persistent_workers=True,
-)
+torch.set_float32_matmul_precision("high")
 
 
 def main(args):
-    seed_everything(cfg.seed)
+    cfg = build_cfg(CONFIG_PATH)
+    fix_random(cfg.seed)
     converter = ShotPredictionGraphConverter(ConnectionMode.FULLY_CONNECTED)
 
     train_dataset = WorldCup2022Dataset(
@@ -49,10 +44,17 @@ def main(args):
         len(val_dataset),
     )
 
+    common_loader_kwargs = dict(
+        batch_size=cfg.bs,
+        num_workers=NUM_WORKERS,
+        pin_memory=True,
+        persistent_workers=True,
+    )
+
     train_loader = PrefetchLoader(
         DataLoader(
             train_dataset,
-            shuffle=True,
+            shuffle=False,
             **common_loader_kwargs,
         ),
     )

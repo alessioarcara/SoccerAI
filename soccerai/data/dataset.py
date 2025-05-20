@@ -37,7 +37,7 @@ class WorldCup2022Dataset(InMemoryDataset):
         df: pl.DataFrame,
         key_cols: list[str] = ["gameEventId", "possessionEventId"],
     ) -> tuple[pl.DataFrame, pl.DataFrame]:
-        event_keys_df = df.select(key_cols).unique()
+        event_keys_df = df.select(key_cols).sort(key_cols)
         num_events = event_keys_df.height
 
         train_end_idx = int((1.0 - self.val_ratio) * num_events)
