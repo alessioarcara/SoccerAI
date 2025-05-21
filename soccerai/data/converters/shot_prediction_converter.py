@@ -86,6 +86,8 @@ class ShotPredictionGraphConverter(GraphConverter):
 
         df = df.to_dummies(categorical_cols)
 
+        df = df.select(pl.col("x"), pl.col("y"), pl.all().exclude(["x", "y"]))
+
         return df
 
     def convert_dataframe_to_data_list(self, df: pl.DataFrame) -> List[Data]:
