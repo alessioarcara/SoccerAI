@@ -58,7 +58,6 @@ class ConfusionMatrix(Metric):
 
     def reset(self) -> None:
         self.cm = torch.zeros((2, 2), dtype=torch.int64)
-        return super().reset()
 
     def plot(self) -> Optional[Tuple[str, plt.Figure]]:
         cm_np = self.cm.cpu().numpy()
