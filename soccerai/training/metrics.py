@@ -62,8 +62,17 @@ class ConfusionMatrix(Metric):
     def plot(self) -> Optional[Tuple[str, plt.Figure]]:
         cm_np = self.cm.cpu().numpy()
         fig, ax = plt.subplots(figsize=(8, 6))
-        sns.heatmap(cm_np, annot=True, fmt="d", cmap="Blues", ax=ax, cbar=False)
-        ax.set_xlabel("Predicted Label")
-        ax.set_ylabel("True Label")
+        sns.heatmap(
+            cm_np,
+            annot=True,
+            fmt="d",
+            cmap="Blues",
+            ax=ax,
+            cbar=False,
+            annot_kws={"fontsize": 14},
+        )
+        ax.set_xlabel("Predicted Label", fontsize=16)
+        ax.set_ylabel("True Label", fontsize=16)
+        ax.tick_params(axis="both", which="major", labelsize=12)
         plt.tight_layout()
         return "confusion_matrix", fig
