@@ -8,8 +8,8 @@ from torch_geometric.transforms import Compose
 
 from soccerai.data.converters import ConnectionMode, ShotPredictionGraphConverter
 from soccerai.data.dataset import WorldCup2022Dataset
-from soccerai.models import GCN
-from soccerai.training.metrics import BinaryAccuracy
+from soccerai.models import GIN
+from soccerai.training.metrics import ConfusionMatrix
 from soccerai.training.trainer import Trainer
 from soccerai.training.trainer_config import build_cfg
 from soccerai.training.transforms import RandomHorizontalFlip, RandomVerticalFlip
@@ -68,7 +68,7 @@ def main(args):
             **common_loader_kwargs,
         ),
     )
-    model = GCN(train_dataset.num_node_features, cfg.dim, 1)
+    model = GIN(train_dataset.num_node_features, cfg.dim, 1)
 
     trainer = Trainer(
         cfg=cfg,
@@ -76,7 +76,7 @@ def main(args):
         train_loader=train_loader,
         val_loader=val_loader,
         device="cuda",
-        metrics=[BinaryAccuracy()],
+        metrics=[ConfusionMatrix()],
     )
     trainer.train("debug")
 
