@@ -19,6 +19,7 @@ dependencies = [
   "IPython",
   "ipywidgets",
   "wandb",
+  "torchmetrics",
 ]
 name = "soccerai"
 version = "0.2.0"

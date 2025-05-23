@@ -9,7 +9,7 @@ from torch_geometric.transforms import Compose
 from soccerai.data.converters import ConnectionMode, ShotPredictionGraphConverter
 from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.models import GIN
-from soccerai.training.metrics import ConfusionMatrix
+from soccerai.training.metrics import BinaryConfusionMatrix, BinaryPrecisionRecallCurve
 from soccerai.training.trainer import Trainer
 from soccerai.training.trainer_config import build_cfg
 from soccerai.training.transforms import RandomHorizontalFlip, RandomVerticalFlip
@@ -76,9 +76,9 @@ def main(args):
         train_loader=train_loader,
         val_loader=val_loader,
         device="cuda",
-        metrics=[ConfusionMatrix()],
+        metrics=[BinaryConfusionMatrix(), BinaryPrecisionRecallCurve()],
     )
-    trainer.train("debug")
+    trainer.train("test_pr_curve")
 
 
 if __name__ == "__main__":
