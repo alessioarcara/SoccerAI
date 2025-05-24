@@ -78,15 +78,17 @@ def main(args):
         device="cuda",
         metrics=[BinaryConfusionMatrix(), BinaryPrecisionRecallCurve()],
     )
-    trainer.train("test_pr_curve")
+
+    trainer.train(args.name)
 
 
-if __name__ == "__main__":
+if __name__ == "main":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--reload",
         action="store_true",
         help="If set, forces the dataset to be re-created",
     )
-    args = parser.parse_args()
-    main(args)
+    parser.add_argument(
+        "--name", type=str, help="The name of the W&B run", default="debug"
+    )
