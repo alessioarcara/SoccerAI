@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import matplotlib.pyplot as plt
 import torch
@@ -76,8 +76,8 @@ class Trainer:
         assert loader is not None
 
         total_loss = 0.0
-        for metric in self.metrics:
-            metric.reset()
+        for m in self.metrics:
+            m.reset()
 
         batch: Batch
         for batch in tqdm(
@@ -94,22 +94,23 @@ class Trainer:
             preds_probs = torch.sigmoid(out)
             true_labels = batch.y.cpu().long()
 
-            for metric in self.metrics:
-                metric.update(preds_probs, true_labels)
+            for m in self.metrics:
+                m.update(preds_probs, true_labels)
 
         mean_loss = total_loss / len(loader)
 
+        # Log metrics and plots to  W&B
         log_dict: Dict[str, Any] = {f"{split}/loss": mean_loss}
 
-        for metric in self.metrics:
-            metric_results: List[Tuple[str, float]] = metric.compute()
-            for metric_result_name, metric_result_value in metric_results:
-                log_dict[f"{split}/{metric_result_name}"] = metric_result_value
+        for m in self.metrics:
+            results = m.compute()
+            for name, value in results:
+                log_dict[f"{split}/{name}"] = value
 
-            plot_result = metric.plot()
-            if plot_result is not None:
-                plot_name, fig = plot_result
-                log_dict[f"{split}/{plot_name}"] = wandb.Image(fig)
+            plot_result = m.plot()
+            if plot_result:
+                name, fig = plot_result
+                log_dict[f"{split}/{name}"] = wandb.Image(fig)
                 plt.close(fig)
 
         wandb.log(log_dict)
