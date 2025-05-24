@@ -2,11 +2,26 @@ import polars as pl
 
 
 def add_goal_features(df: pl.DataFrame) -> pl.DataFrame:
-    df = add_goal_positions(df)
-    pass
+    df = get_goal_positions(df)
+    df = df.with_columns(
+        (
+            (
+                (pl.col("x") - pl.col("x_goal")) ** 2
+                + (pl.col("y") - pl.col("y_goal")) ** 2
+            )
+            ** 0.5
+        ).alias("goal_distance")
+    )
+    df = df.with_columns(
+        pl.arctan2(pl.col("y_goal") - pl.col("y"), pl.col("x_goal") - pl.col("x"))
+        .degrees()
+        .alias("goal_angle")
+    )
+
+    return df.drop("x_goal", "y_goal")
 
 
-def add_goal_positions(df: pl.DataFrame) -> pl.DataFrame:
+def get_goal_positions(df: pl.DataFrame) -> pl.DataFrame:
     is_home_team = df["team"] == "home"
     is_second_half = df["frameTime"] > df["startPeriod2"]
     is_goal_right = (
@@ -25,6 +40,6 @@ def add_goal_positions(df: pl.DataFrame) -> pl.DataFrame:
     )
 
     return df.with_columns(
-        pl.when(is_goal_right).then(105.0).otherwise(0).alias("x_goal"),
+        pl.when(is_goal_right).then(105.0).otherwise(0.0).alias("x_goal"),
         pl.lit(34.0).alias("y_goal"),
     )

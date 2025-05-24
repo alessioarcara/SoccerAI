@@ -82,7 +82,7 @@ def main(args):
     trainer.train(args.name)
 
 
-if __name__ == "main":
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--reload",
@@ -92,3 +92,6 @@ if __name__ == "main":
     parser.add_argument(
         "--name", type=str, help="The name of the W&B run", default="debug"
     )
+
+    args = parser.parse_args()
+    main(args)

@@ -6,6 +6,7 @@ from torch_geometric.data import Data
 from typing_extensions import assert_never
 
 from soccerai.data.converters import ConnectionMode, GraphConverter
+from soccerai.data.converters.utils import add_goal_features
 
 
 class ShotPredictionGraphConverter(GraphConverter):
@@ -65,6 +66,8 @@ class ShotPredictionGraphConverter(GraphConverter):
             ]
         )
 
+        df = add_goal_features(df)
+
         df = df.drop(["playerName", "playerName_right"])
         categorical_cols = ["possessionEventType", "team", "playerRole"]
         exclude_from_norm = set(
@@ -112,5 +115,4 @@ class ShotPredictionGraphConverter(GraphConverter):
                     y=y,
                 )
             )
-
         return data_list
