@@ -6,12 +6,19 @@ import numpy as np
 import seaborn as sns
 import torch
 from matplotlib.collections import LineCollection
+from mplsoccer import Pitch
+from mplsoccer.dimensions import center_scale_dims
+from torch_geometric.data import Batch
 from torchmetrics.functional.classification import binary_precision_recall_curve
+
+from soccerai.training.utils import TopKStorage
 
 
 class Metric(ABC):
     @abstractmethod
-    def update(self, preds_probs: torch.Tensor, true_labels: torch.Tensor) -> None:
+    def update(
+        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
+    ) -> None:
         pass
 
     @abstractmethod
@@ -33,7 +40,9 @@ class BinaryConfusionMatrix(Metric):
         self.beta = beta
         self.reset()
 
-    def update(self, preds_probs: torch.Tensor, true_labels: torch.Tensor) -> None:
+    def update(
+        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
+    ) -> None:
         preds_labels_flat = (preds_probs >= self.thr).view(-1).long()
         true_labels_flat = true_labels.view(-1).long()
 
@@ -85,7 +94,9 @@ class BinaryPrecisionRecallCurve(Metric):
     def __init__(self):
         self.reset()
 
-    def update(self, preds_probs: torch.Tensor, true_labels: torch.Tensor) -> None:
+    def update(
+        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
+    ) -> None:
         self.all_preds_probs.append(preds_probs.detach().view(-1).cpu())
         self.all_true_labels.append(true_labels.detach().view(-1).cpu())
 
@@ -126,3 +137,62 @@ class BinaryPrecisionRecallCurve(Metric):
         ax.set_ylim(0, 1)
         plt.tight_layout()
         return "Precision-Recall Curve", fig
+
+
+class PositiveFrameCollector(Metric):
+    def __init__(self, thr: float = 0.5, max_samples: int = 12):
+        self.thr = thr
+        self.storage = TopKStorage(max_samples)
+
+    def update(
+        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
+    ) -> None:
+        probs_np = preds_probs.detach().cpu().numpy()
+        labels_np = true_labels.detach().cpu().numpy()
+        graphs = batch.to_data_list()
+
+        pos_indices = np.where((probs_np > self.thr) & (labels_np == 1))[0]
+
+        for idx in pos_indices:
+            self.storage.add((probs_np[idx], graphs[idx].x))
+
+    def compute(self) -> List[Tuple[str, float]]:
+        return []
+
+    def reset(self) -> None:
+        self.storage.clear()
+
+    def plot(self) -> Optional[Tuple[str, plt.Figure]]:
+        dim = center_scale_dims(
+            pitch_width=68, pitch_length=105, width=2, length=2, invert_y=False
+        )
+        pitch = Pitch(
+            pitch_type=dim,
+            pitch_color="grass",
+            line_color="white",
+            stripe=True,
+            linewidth=4,
+        )
+        fig, axs = pitch.grid(
+            nrows=3,
+            ncols=4,
+            figheight=25,  # the figure height in inches
+            bottom=0.025,  # starts 2.5% in from the figure bottom
+            # increased the grid_height as no title/ endnote
+            # now it takes up 95% of the figheight
+            grid_height=0.95,
+            grid_width=0.95,  # the grid takes up 95% of the figwidth
+            # 6% of the grid_height is the space between pitches.
+            space=0.06,
+            # set the endnote/title height to zero so
+            # they are not plotted. note this automatically
+            # sets the endnote/title space to zero
+            # so the grid starts at the bottom/left location
+            endnote_height=0,
+            title_height=0,
+        )
+        for entry in self.storage.get_all_entries():
+            score, node_features = entry
+            print(node_features)
+
+        return "positive_frames", fig

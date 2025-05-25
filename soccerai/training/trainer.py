@@ -24,7 +24,8 @@ class Trainer:
         metrics: List[Metric] = [],
     ):
         self.cfg = cfg
-        self.model: nn.Module = torch.compile(model.to(device))  # type: ignore
+        # self.model: nn.Module = torch.compile(model.to(device))  # type: ignore
+        self.model = model.to(device)
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.device = device
@@ -89,13 +90,13 @@ class Trainer:
         ):
             out = self.model(batch)
             batch_loss = self.criterion(out, batch.y)
-            total_loss += batch_loss
+            total_loss += batch_loss.item()
 
             preds_probs = torch.sigmoid(out)
             true_labels = batch.y.cpu().long()
 
             for m in self.metrics:
-                m.update(preds_probs, true_labels)
+                m.update(preds_probs, true_labels, batch)
 
         mean_loss = total_loss / len(loader)
 
