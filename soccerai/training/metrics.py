@@ -142,19 +142,19 @@ class BinaryPrecisionRecallCurve(Metric):
 class PositiveFrameCollector(Metric):
     def __init__(self, thr: float = 0.5, max_samples: int = 12):
         self.thr = thr
-        self.storage = TopKStorage(max_samples)
+        self.storage: TopKStorage[np.ndarray] = TopKStorage(max_samples)
 
     def update(
         self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
     ) -> None:
         probs_np = preds_probs.detach().cpu().numpy()
         labels_np = true_labels.detach().cpu().numpy()
-        graphs = batch.to_data_list()
 
         pos_indices = np.where((probs_np > self.thr) & (labels_np == 1))[0]
 
-        for idx in pos_indices:
-            self.storage.add((probs_np[idx], graphs[idx].x))
+        for i in pos_indices:
+            node_feats = batch[i].x.detach().cpu().numpy()
+            self.storage.add((probs_np[i], node_feats))
 
     def compute(self) -> List[Tuple[str, float]]:
         return []
@@ -167,32 +167,36 @@ class PositiveFrameCollector(Metric):
             pitch_width=68, pitch_length=105, width=2, length=2, invert_y=False
         )
         pitch = Pitch(
-            pitch_type=dim,
-            pitch_color="grass",
-            line_color="white",
-            stripe=True,
-            linewidth=4,
+            pitch_type=dim, pitch_color="grass", line_color="white", linewidth=2
         )
+
         fig, axs = pitch.grid(
             nrows=3,
             ncols=4,
-            figheight=25,  # the figure height in inches
-            bottom=0.025,  # starts 2.5% in from the figure bottom
-            # increased the grid_height as no title/ endnote
-            # now it takes up 95% of the figheight
+            figheight=12,
             grid_height=0.95,
-            grid_width=0.95,  # the grid takes up 95% of the figwidth
-            # 6% of the grid_height is the space between pitches.
-            space=0.06,
-            # set the endnote/title height to zero so
-            # they are not plotted. note this automatically
-            # sets the endnote/title space to zero
-            # so the grid starts at the bottom/left location
+            grid_width=0.95,
+            bottom=0.025,
             endnote_height=0,
             title_height=0,
         )
-        for entry in self.storage.get_all_entries():
-            score, node_features = entry
-            print(node_features)
+
+        axes = axs.flatten()
+        entries = self.storage.get_all_entries()
+
+        for ax, (score, node_features) in zip(axes, entries):
+            coords = node_features[:, :2]
+            teams = node_features[:, 2].astype(int)
+            has_ball = node_features[:, 3].astype(bool)
+
+            face_colours = np.where(teams == 0, "red", "blue")
+            edge_colours = np.where(has_ball, "white", face_colours)
+
+            ax.scatter(*coords.T, c=face_colours, ec=edge_colours, s=150)
+            ax.set_title(f"Prob: {float(score):.3f}", fontsize=14, pad=5)
+            ax.axis("off")
+
+        for ax in axes[len(entries) :]:
+            ax.set_visible(False)
 
         return "positive_frames", fig

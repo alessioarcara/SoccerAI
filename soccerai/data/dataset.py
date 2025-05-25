@@ -110,13 +110,11 @@ class WorldCup2022Dataset(InMemoryDataset):
         exclude_cols = set(
             cat_cols + coord_cols + ["gameEventId", "possessionEventId", "label"]
         )
-
         num_cols = [c for c in df.columns if c not in exclude_cols]
 
         num_pipe = Pipeline(
             [("imputer", SimpleImputer(strategy="mean")), ("scaler", StandardScaler())]
         )
-
         cat_pipe = Pipeline(
             [
                 ("imputer", SimpleImputer(strategy="constant", fill_value="unknown")),

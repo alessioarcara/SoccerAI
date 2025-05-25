@@ -1,4 +1,4 @@
-from typing import List, Tuple, TypeVar
+from typing import Generic, List, Tuple, TypeVar
 
 import torch
 from torch_geometric.seed import seed_everything
@@ -12,10 +12,10 @@ def fix_random(seed: int):
     torch.backends.cudnn.benchmark = False
 
 
-class TopKStorage:
+class TopKStorage(Generic[T]):
     def __init__(self, k: int) -> None:
         self.k = k
-        self._items = []
+        self._items: List[Tuple[float, T]] = []
 
     def add(self, entry: Tuple[float, T]) -> None:
         self._items.append(entry)
