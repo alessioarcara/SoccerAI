@@ -114,9 +114,9 @@ class BinaryPrecisionRecallCurve(Metric):
             all_preds_probs_flat, all_true_labels_flat
         )
         points = np.stack([r, p], axis=1)
-        segments = np.stack([points[:-1], points[1:]], axis=1)
+        segments_list = np.stack([points[:-1], points[1:]], axis=1).tolist()
         lc = LineCollection(
-            segments,
+            segments_list,
             cmap="rainbow",
             norm=plt.Normalize(
                 vmin=thresholds.min().item(),
