@@ -20,9 +20,5 @@ class GraphConverter(ABC):
         pass
 
     @abstractmethod
-    def _preprocess_dataframe(self, df: pl.DataFrame) -> pl.DataFrame:
-        pass
-
-    @abstractmethod
     def convert_dataframe_to_data_list(self, df: pl.DataFrame) -> List[Data]:
         pass
