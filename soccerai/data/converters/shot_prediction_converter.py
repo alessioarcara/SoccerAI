@@ -10,6 +10,10 @@ from soccerai.data.converters.utils import add_goal_features
 
 
 class ShotPredictionGraphConverter(GraphConverter):
+    def __init__(self, mode: ConnectionMode, use_goal_features: bool = True):
+        super().__init__(mode)
+        self.use_goal_features = use_goal_features
+
     def _create_edge_index(self) -> torch.Tensor:
         if self.mode == ConnectionMode.FULLY_CONNECTED:
             src = []
@@ -65,8 +69,8 @@ class ShotPredictionGraphConverter(GraphConverter):
                 (pl.col("height_cm").cast(pl.UInt8)),
             ]
         )
-
-        df = add_goal_features(df)
+        if self.use_goal_features:
+            df = add_goal_features(df)
 
         df = df.drop(["playerName", "playerName_right"])
         categorical_cols = ["possessionEventType", "team", "playerRole"]
