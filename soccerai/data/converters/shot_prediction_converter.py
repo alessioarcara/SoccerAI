@@ -10,7 +10,7 @@ from soccerai.data.converters.utils import add_goal_features
 
 
 class ShotPredictionGraphConverter(GraphConverter):
-    def __init__(self, mode: ConnectionMode, use_goal_features: bool = True):
+    def __init__(self, mode: ConnectionMode, use_goal_features: bool):
         super().__init__(mode)
         self.use_goal_features = use_goal_features
 
