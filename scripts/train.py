@@ -9,7 +9,11 @@ from torch_geometric.transforms import Compose
 from soccerai.data.converters import ConnectionMode, ShotPredictionGraphConverter
 from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.models import GIN
-from soccerai.training.metrics import BinaryConfusionMatrix, BinaryPrecisionRecallCurve
+from soccerai.training.metrics import (
+    BinaryConfusionMatrix,
+    BinaryPrecisionRecallCurve,
+    PositiveFrameCollector,
+)
 from soccerai.training.trainer import Trainer
 from soccerai.training.trainer_config import build_cfg
 from soccerai.training.transforms import RandomHorizontalFlip, RandomVerticalFlip
@@ -76,9 +80,13 @@ def main(args):
         train_loader=train_loader,
         val_loader=val_loader,
         device="cuda",
-        metrics=[BinaryConfusionMatrix(), BinaryPrecisionRecallCurve()],
+        metrics=[
+            BinaryConfusionMatrix(),
+            BinaryPrecisionRecallCurve(),
+            PositiveFrameCollector(),
+        ],
     )
-    trainer.train("test_pr_curve")
+    trainer.train(args.name)
 
 
 if __name__ == "__main__":
@@ -87,6 +95,9 @@ if __name__ == "__main__":
         "--reload",
         action="store_true",
         help="If set, forces the dataset to be re-created",
+    )
+    parser.add_argument(
+        "--name", type=str, help="The name of the W&B run", default="debug"
     )
     args = parser.parse_args()
     main(args)

@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric.nn as pyg_nn
-from torch_geometric.utils import dropout_edge
 
 
 class GIN(nn.Module):
@@ -45,10 +44,6 @@ class GIN(nn.Module):
             data.batch_size,
         )
 
-        edge_index, _ = dropout_edge(
-            edge_index, p=0.5, force_undirected=True, training=self.training
-        )
-
         h1 = self.conv1(x, edge_index)
         h2 = self.conv2(h1, edge_index)
         h3 = self.conv3(h2, edge_index)
@@ -59,7 +54,7 @@ class GIN(nn.Module):
 
         h = torch.cat([g1, g2, g3], dim=1)
         h = F.relu(self.lin1(h))
-        h = F.dropout(h, p=0.7, training=self.training)
+        h = F.dropout(h, p=0.5, training=self.training)
         h = self.lin2(h)
 
         return h
