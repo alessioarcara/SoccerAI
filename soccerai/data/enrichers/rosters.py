@@ -61,7 +61,7 @@ class RostersEnricher:
 
     def __call__(self):
         all_updated_rows = []
-        TEMP_TEAMS_DIR = "soccerai/data/resources/tmp_teams"
+        TEMP_TEAMS_DIR = os.path.join("soccerai", "data", "resources", "tmp_teams")
 
         os.makedirs(TEMP_TEAMS_DIR, exist_ok=True)
 
@@ -78,7 +78,10 @@ class RostersEnricher:
                 all_updated_rows.extend(enriched_team_roster.to_dicts())
 
             enriched_rosters = pl.DataFrame(all_updated_rows)
-            enriched_rosters.write_csv("soccerai/data/resources/rosters.csv")
+            enriched_rosters.write_csv(
+                os.path.join("soccerai", "data", "resources", "rosters.csv")
+            )
+
         finally:
             shutil.rmtree(TEMP_TEAMS_DIR, ignore_errors=True)
             self._driver.quit()

@@ -46,7 +46,7 @@ sleep 3
 # Start enrichment script in another tmux session
 echo "Starting enrich_roosters script..."
 cd "$PROJECT_ROOT"
-tmux new-session -d -s "$SESSION_NAME" "python ./scripts/enrich_roosters.py --host $API_HOST --port $API_PORT; exec bash"
+tmux new-session -d -s "$SESSION_NAME" "python ./scripts/enrich_rosters.py --host $API_HOST --port $API_PORT; exec bash"
 
 echo "======================================"
 echo "Process started successfully!"
