@@ -104,8 +104,8 @@ class BinaryPrecisionRecallCurve(Metric):
         return []
 
     def reset(self):
-        self.all_preds_probs: List[torch.Tensor] = []
-        self.all_true_labels: List[torch.Tensor] = []
+        self.all_preds_probs = []
+        self.all_true_labels = []
 
     def plot(self) -> Optional[Tuple[str, plt.Figure]]:
         all_preds_probs_flat = torch.cat(self.all_preds_probs)

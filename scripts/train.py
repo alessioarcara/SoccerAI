@@ -3,6 +3,7 @@ import os
 
 import torch
 from loguru import logger
+from torch_geometric.explain import Explainer, GNNExplainer
 from torch_geometric.loader import DataLoader, PrefetchLoader
 from torch_geometric.transforms import Compose
 
@@ -73,13 +74,14 @@ def main(args):
         ),
     )
     model = GIN(train_dataset.num_node_features, cfg.dim, 1)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     trainer = Trainer(
         cfg=cfg,
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
-        device="cuda",
+        device=device,
         metrics=[
             BinaryConfusionMatrix(),
             BinaryPrecisionRecallCurve(),
@@ -87,6 +89,32 @@ def main(args):
         ],
     )
     trainer.train(args.name)
+
+    explainer = Explainer(
+        model=model,
+        algorithm=GNNExplainer(),
+        explanation_type="model",
+        node_mask_type="attributes",
+        edge_mask_type="object",
+        model_config=dict(
+            mode="binary_classification",
+            task_level="graph",
+            return_type="raw",
+        ),
+    )
+
+    sample = val_dataset[0].to(device)
+
+    explanation = explainer(x=sample.x, edge_index=sample.edge_index)
+
+    torch.set_printoptions(profile="full", linewidth=200)
+
+    # Supponendo che edge_mask e node_mask siano i tuoi tensori:
+    print("Edge mask:\n", explanation.edge_mask)
+    print("\nNode mask:\n", explanation.node_mask)
+
+    # (facoltativo) Torna alle impostazioni di default dopo la stampa
+    torch.set_printoptions(profile="default")
 
 
 if __name__ == "__main__":

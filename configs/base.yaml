@@ -1,7 +1,7 @@
 project_name: "soccerai"
 seed: 42
 bs: 32 
-n_epochs: 100
+n_epochs: 1
 lr: 5e-5
 wd: 0.01
 eval_rate: 2

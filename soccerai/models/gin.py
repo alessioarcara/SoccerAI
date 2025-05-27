@@ -7,31 +7,19 @@ import torch_geometric.nn as pyg_nn
 class GIN(nn.Module):
     def __init__(self, din: int, dmid: int, dout: int):
         super(GIN, self).__init__()
-        mlp1 = nn.Sequential(
-            nn.Linear(din, dmid),
-            nn.BatchNorm1d(dmid),
-            nn.ReLU(),
-            nn.Linear(dmid, dmid),
-            nn.ReLU(),
-        )
-        mlp2 = nn.Sequential(
-            nn.Linear(dmid, dmid),
-            nn.BatchNorm1d(dmid),
-            nn.ReLU(),
-            nn.Linear(dmid, dmid),
-            nn.ReLU(),
-        )
-        mlp3 = nn.Sequential(
-            nn.Linear(dmid, dmid),
-            nn.BatchNorm1d(dmid),
-            nn.ReLU(),
-            nn.Linear(dmid, dmid),
-            nn.ReLU(),
-        )
 
-        self.conv1 = pyg_nn.GINConv(mlp1)
-        self.conv2 = pyg_nn.GINConv(mlp2)
-        self.conv3 = pyg_nn.GINConv(mlp3)
+        def mlp(din: int, dout: int) -> nn.Sequential:
+            return nn.Sequential(
+                nn.Linear(din, dout),
+                nn.BatchNorm1d(dout),
+                nn.ReLU(),
+                nn.Linear(dout, dout),
+                nn.ReLU(),
+            )
+
+        self.conv1 = pyg_nn.GINConv(mlp(din, dmid))
+        self.conv2 = pyg_nn.GINConv(mlp(dmid, dmid))
+        self.conv3 = pyg_nn.GINConv(mlp(dmid, dmid))
 
         self.lin1 = nn.Linear(dmid * 3, dmid * 3)
         self.lin2 = nn.Linear(dmid * 3, dout)
