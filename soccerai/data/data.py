@@ -204,8 +204,11 @@ def create_dataset(
     event_df, players_df = load_and_process_soccer_events(event_data_path)
     metadata_df = load_and_process_metadata(meta_data_path)
 
-    pos_indices = _flatten_chains(_load_chains(ACCEPTED_POS_CHAINS_PATH))
-    neg_indices = _flatten_chains(_load_chains(ACCEPTED_NEG_CHAINS_PATH))
+    # pos_indices = _flatten_chains(_load_chains(ACCEPTED_POS_CHAINS_PATH))
+    # neg_indices = _flatten_chains(_load_chains(ACCEPTED_NEG_CHAINS_PATH))
+
+    pos_indices = [chain[-1] for chain in _load_chains(ACCEPTED_POS_CHAINS_PATH)]
+    neg_indices = [chain[-1] for chain in _load_chains(ACCEPTED_NEG_CHAINS_PATH)]
 
     logger.info(
         "Labeled data stats: {} positive events, {} negative events",
