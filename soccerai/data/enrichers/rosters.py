@@ -1,5 +1,5 @@
-import os
-import shutil
+import tempfile
+from pathlib import Path
 from typing import Dict, Optional
 
 import polars as pl
@@ -60,31 +60,32 @@ class RostersEnricher:
         return player
 
     def __call__(self):
+        base_dir = Path("soccerai") / "data" / "resources"
+        tmp_prefix = "tmp_teams_"
+        final_rosters_csv = base_dir / "rosters.csv"
+
         all_updated_rows = []
-        TEMP_TEAMS_DIR = os.path.join("soccerai", "data", "resources", "tmp_teams")
 
-        os.makedirs(TEMP_TEAMS_DIR, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            dir=str(base_dir), prefix=tmp_prefix
+        ) as tmp_dir:
+            try:
+                for team_name in list(TEAM_ABBREVS.keys()):
+                    logger.debug("Enriching team {}", team_name)
+                    roster_team_df = self.roster_df.filter(
+                        pl.col("playerTeam") == team_name
+                    )
+                    enriched_team_roster = self._enrich_team_roster(roster_team_df)
+                    enriched_team_roster = enriched_team_roster.drop("tm_data_found")
+                    team_csv_path = Path(tmp_dir) / f"{team_name}.csv"
+                    enriched_team_roster.write_csv(str(team_csv_path))
+                    all_updated_rows.extend(enriched_team_roster.to_dicts())
 
-        try:
-            for team_name in list(TEAM_ABBREVS.keys()):
-                roster_team_df = self.roster_df.filter(
-                    pl.col("playerTeam") == team_name
-                )
-                enriched_team_roster = self._enrich_team_roster(roster_team_df)
-                enriched_team_roster = enriched_team_roster.drop("tm_data_found")
-                enriched_team_roster.write_csv(
-                    os.path.join(TEMP_TEAMS_DIR, f"{team_name}.csv")
-                )
-                all_updated_rows.extend(enriched_team_roster.to_dicts())
+                enriched_rosters = pl.DataFrame(all_updated_rows)
+                enriched_rosters.write_csv(str(final_rosters_csv))
 
-            enriched_rosters = pl.DataFrame(all_updated_rows)
-            enriched_rosters.write_csv(
-                os.path.join("soccerai", "data", "resources", "rosters.csv")
-            )
-
-        finally:
-            shutil.rmtree(TEMP_TEAMS_DIR, ignore_errors=True)
-            self._driver.quit()
+            finally:
+                self._driver.quit()
 
     def _enrich_team_roster(self, roster_team_df: pl.DataFrame) -> pl.DataFrame:
         # Enrichment initial for every player in the team
