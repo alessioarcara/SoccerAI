@@ -239,7 +239,6 @@ def create_dataset(
             PLAYER_STATS_PATH, schema_overrides={"shirtNumber": pl.String}
         ).rename(
             {
-                "playerNickname": "playerName",
                 "playerTeam": "teamName",
                 "shirtNumber": "jerseyNum",
             }
