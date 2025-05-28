@@ -150,7 +150,7 @@ class WorldCup2022Dataset(InMemoryDataset):
         prep.set_output(transform="polars")
         return prep
 
-    def _add_goal_features(df: pl.DataFrame) -> pl.DataFrame:
+    def _add_goal_features(self, df: pl.DataFrame) -> pl.DataFrame:
         df = get_goal_positions(df)
         df = df.with_columns(
             (

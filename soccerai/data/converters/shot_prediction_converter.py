@@ -9,7 +9,7 @@ from soccerai.data.converters import ConnectionMode, GraphConverter
 
 
 class ShotPredictionGraphConverter(GraphConverter):
-    def __init__(self, mode: ConnectionMode, use_goal_features: bool):
+    def __init__(self, mode: ConnectionMode):
         super().__init__(mode)
 
     def _create_edge_index(self) -> torch.Tensor:

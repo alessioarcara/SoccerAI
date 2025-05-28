@@ -44,6 +44,7 @@ def main(args):
         force_reload=args.reload,
         split="val",
         val_ratio=cfg.val_ratio,
+        use_goal_features=cfg.use_goal_features,
     )
 
     logger.success(
