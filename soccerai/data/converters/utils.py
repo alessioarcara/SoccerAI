@@ -1,24 +1,6 @@
 import polars as pl
 
-
-def add_goal_features(df: pl.DataFrame) -> pl.DataFrame:
-    df = get_goal_positions(df)
-    df = df.with_columns(
-        (
-            (
-                (pl.col("x") - pl.col("x_goal")) ** 2
-                + (pl.col("y") - pl.col("y_goal")) ** 2
-            )
-            ** 0.5
-        ).alias("goal_distance")
-    )
-    df = df.with_columns(
-        pl.arctan2(pl.col("y_goal") - pl.col("y"), pl.col("x_goal") - pl.col("x"))
-        .degrees()
-        .alias("goal_angle")
-    )
-
-    return df.drop("x_goal", "y_goal")
+from soccerai.data.config import X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
 
 
 def get_goal_positions(df: pl.DataFrame) -> pl.DataFrame:
@@ -40,6 +22,9 @@ def get_goal_positions(df: pl.DataFrame) -> pl.DataFrame:
     )
 
     return df.with_columns(
-        pl.when(is_goal_right).then(105.0).otherwise(0.0).alias("x_goal"),
-        pl.lit(34.0).alias("y_goal"),
+        pl.when(is_goal_right)
+        .then(X_GOAL_RIGHT)
+        .otherwise(X_GOAL_LEFT)
+        .alias("x_goal"),
+        pl.lit(Y_GOAL).alias("y_goal"),
     )

@@ -129,3 +129,7 @@ SHOOTING_STATS = [
     "pens_made",  # PK
     "pens_att",  # PKatt
 ]
+# ================= GOAL COORDINATES =================
+X_GOAL_RIGHT = 105.0
+X_GOAL_LEFT = 0.0
+Y_GOAL = 34.0

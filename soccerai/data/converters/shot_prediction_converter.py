@@ -11,7 +11,6 @@ from soccerai.data.converters import ConnectionMode, GraphConverter
 class ShotPredictionGraphConverter(GraphConverter):
     def __init__(self, mode: ConnectionMode, use_goal_features: bool):
         super().__init__(mode)
-        self.use_goal_features = use_goal_features
 
     def _create_edge_index(self) -> torch.Tensor:
         if self.mode == ConnectionMode.FULLY_CONNECTED:
