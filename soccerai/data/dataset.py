@@ -9,6 +9,7 @@ from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, StandardScaler
 from torch_geometric.data import InMemoryDataset
 
 from soccerai.data.converters import GraphConverter
+from soccerai.data.converters.utils import get_goal_positions
 from soccerai.data.utils import reorder_dataframe_cols
 
 
@@ -18,6 +19,7 @@ class WorldCup2022Dataset(InMemoryDataset):
         root: str,
         converter: GraphConverter,
         split: str,
+        use_goal_features: bool,
         val_ratio: float = 0.2,
         transform: Optional[Callable] = None,
         force_reload: bool = False,
@@ -25,6 +27,7 @@ class WorldCup2022Dataset(InMemoryDataset):
         self.converter = converter
         self.split = split
         self.val_ratio = val_ratio
+        self.use_goal_features = use_goal_features
         super().__init__(root=root, transform=transform, force_reload=force_reload)
         data_path_idx = 0 if self.split == "train" else 1
         self.load(self.processed_paths[data_path_idx])
@@ -101,7 +104,8 @@ class WorldCup2022Dataset(InMemoryDataset):
                 (pl.col("height_cm").cast(pl.UInt8)),
             ]
         ).drop(["playerName", "playerName_right"])
-
+        if self.use_goal_features:
+            df = self._add_goal_features(df)
         return df
 
     def _create_preprocessor(self, df: pl.DataFrame) -> ColumnTransformer:
@@ -145,6 +149,25 @@ class WorldCup2022Dataset(InMemoryDataset):
 
         prep.set_output(transform="polars")
         return prep
+
+    def _add_goal_features(df: pl.DataFrame) -> pl.DataFrame:
+        df = get_goal_positions(df)
+        df = df.with_columns(
+            (
+                (
+                    (pl.col("x") - pl.col("x_goal")) ** 2
+                    + (pl.col("y") - pl.col("y_goal")) ** 2
+                )
+                ** 0.5
+            ).alias("goal_distance")
+        )
+        df = df.with_columns(
+            pl.arctan2(pl.col("y_goal") - pl.col("y"), pl.col("x_goal") - pl.col("x"))
+            .degrees()
+            .alias("goal_angle")
+        )
+
+        return df.drop("x_goal", "y_goal")
 
     def process(self):
         df_raw = pl.read_parquet(self.raw_paths[0])
