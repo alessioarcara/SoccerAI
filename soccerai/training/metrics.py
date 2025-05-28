@@ -6,12 +6,19 @@ import numpy as np
 import seaborn as sns
 import torch
 from matplotlib.collections import LineCollection
+from mplsoccer import Pitch
+from mplsoccer.dimensions import center_scale_dims
+from torch_geometric.data import Batch
 from torchmetrics.functional.classification import binary_precision_recall_curve
+
+from soccerai.training.utils import TopKStorage
 
 
 class Metric(ABC):
     @abstractmethod
-    def update(self, preds_probs: torch.Tensor, true_labels: torch.Tensor) -> None:
+    def update(
+        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
+    ) -> None:
         pass
 
     @abstractmethod
@@ -33,7 +40,9 @@ class BinaryConfusionMatrix(Metric):
         self.beta = beta
         self.reset()
 
-    def update(self, preds_probs: torch.Tensor, true_labels: torch.Tensor) -> None:
+    def update(
+        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
+    ) -> None:
         preds_labels_flat = (preds_probs >= self.thr).view(-1).long()
         true_labels_flat = true_labels.view(-1).long()
 
@@ -85,7 +94,9 @@ class BinaryPrecisionRecallCurve(Metric):
     def __init__(self):
         self.reset()
 
-    def update(self, preds_probs: torch.Tensor, true_labels: torch.Tensor) -> None:
+    def update(
+        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
+    ) -> None:
         self.all_preds_probs.append(preds_probs.detach().view(-1).cpu())
         self.all_true_labels.append(true_labels.detach().view(-1).cpu())
 
@@ -103,9 +114,9 @@ class BinaryPrecisionRecallCurve(Metric):
             all_preds_probs_flat, all_true_labels_flat
         )
         points = np.stack([r, p], axis=1)
-        segments = np.stack([points[:-1], points[1:]], axis=1)
+        segments_list = np.stack([points[:-1], points[1:]], axis=1).tolist()
         lc = LineCollection(
-            segments,
+            segments_list,
             cmap="rainbow",
             norm=plt.Normalize(
                 vmin=thresholds.min().item(),
@@ -126,3 +137,66 @@ class BinaryPrecisionRecallCurve(Metric):
         ax.set_ylim(0, 1)
         plt.tight_layout()
         return "Precision-Recall Curve", fig
+
+
+class PositiveFrameCollector(Metric):
+    def __init__(self, thr: float = 0.5, max_samples: int = 12):
+        self.thr = thr
+        self.storage: TopKStorage[np.ndarray] = TopKStorage(max_samples)
+
+    def update(
+        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
+    ) -> None:
+        probs_np = preds_probs.detach().cpu().numpy()
+        labels_np = true_labels.detach().cpu().numpy()
+
+        pos_indices = np.where((probs_np > self.thr) & (labels_np == 1))[0]
+
+        for i in pos_indices:
+            node_feats = batch[i].x.detach().cpu().numpy()
+            self.storage.add((probs_np[i], node_feats))
+
+    def compute(self) -> List[Tuple[str, float]]:
+        return []
+
+    def reset(self) -> None:
+        self.storage.clear()
+
+    def plot(self) -> Optional[Tuple[str, plt.Figure]]:
+        dim = center_scale_dims(
+            pitch_width=68, pitch_length=105, width=2, length=2, invert_y=False
+        )
+        pitch = Pitch(
+            pitch_type=dim, pitch_color="grass", line_color="white", linewidth=2
+        )
+
+        fig, axs = pitch.grid(
+            nrows=3,
+            ncols=4,
+            figheight=12,
+            grid_height=0.95,
+            grid_width=0.95,
+            bottom=0.025,
+            endnote_height=0,
+            title_height=0,
+        )
+
+        axes = axs.flatten()
+        entries = self.storage.get_all_entries()
+
+        for ax, (score, node_features) in zip(axes, entries):
+            coords = node_features[:, :2]
+            teams = node_features[:, 2].astype(int)
+            has_ball = node_features[:, 3].astype(bool)
+
+            face_colours = np.where(teams == 0, "red", "blue")
+            edge_colours = np.where(has_ball, "white", face_colours)
+
+            ax.scatter(*coords.T, c=face_colours, ec=edge_colours, s=150)
+            ax.set_title(f"Prob: {float(score):.3f}", fontsize=14, pad=5)
+            ax.axis("off")
+
+        for ax in axes[len(entries) :]:
+            ax.set_visible(False)
+
+        return "positive_frames", fig

@@ -160,34 +160,22 @@ def load_and_process_metadata(
     return metadata_df
 
 
-def load_and_process_rosters(
-    rosters_dir_path: str,
-) -> pl.DataFrame:
+def load_and_process_rosters(rosters_dir_path: str) -> pl.DataFrame:
     rosters_files = [f for f in os.listdir(rosters_dir_path) if f.endswith(".json")]
 
+    players_seen = set()
     rosters = []
-    teams = []
 
     for roster_file in rosters_files:
         with open(os.path.join(rosters_dir_path, roster_file), "r") as f:
             match_rosters_data = json.load(f)
 
-        # first player is an home team player
-        home_team_name = match_rosters_data[0]["team"]["name"]
-        for i in range(len(match_rosters_data)):
-            if match_rosters_data[i]["team"]["name"] != home_team_name:
-                away_team_name = match_rosters_data[i]["team"]["name"]
-                break
-
         for player_info in match_rosters_data:
-            player_team = player_info["team"]["name"]
-            if player_team not in teams:
-                rosters.append(extract_player_info(player_info))
+            player_id = player_info.get("player", {}).get("id")
 
-        if home_team_name not in teams:
-            teams.append(home_team_name)
-        if away_team_name not in teams:
-            teams.append(away_team_name)
+            if player_id and player_id not in players_seen:
+                rosters.append(extract_player_info(player_info))
+                players_seen.add(player_id)
 
     rosters_df = pl.DataFrame(rosters)
 
@@ -251,7 +239,6 @@ def create_dataset(
             PLAYER_STATS_PATH, schema_overrides={"shirtNumber": pl.String}
         ).rename(
             {
-                "playerNickname": "playerName",
                 "playerTeam": "teamName",
                 "shirtNumber": "jerseyNum",
             }

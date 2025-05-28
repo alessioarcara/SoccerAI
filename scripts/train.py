@@ -9,7 +9,11 @@ from torch_geometric.transforms import Compose
 from soccerai.data.converters import ConnectionMode, ShotPredictionGraphConverter
 from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.models import GIN
-from soccerai.training.metrics import BinaryConfusionMatrix, BinaryPrecisionRecallCurve
+from soccerai.training.metrics import (
+    BinaryConfusionMatrix,
+    BinaryPrecisionRecallCurve,
+    PositiveFrameCollector,
+)
 from soccerai.training.trainer import Trainer
 from soccerai.training.trainer_config import build_cfg
 from soccerai.training.transforms import RandomHorizontalFlip, RandomVerticalFlip
@@ -23,9 +27,7 @@ torch.set_float32_matmul_precision("high")
 def main(args):
     cfg = build_cfg(CONFIG_PATH)
     fix_random(cfg.seed)
-    converter = ShotPredictionGraphConverter(
-        ConnectionMode.FULLY_CONNECTED, cfg.use_goal_features
-    )
+    converter = ShotPredictionGraphConverter(ConnectionMode.FULLY_CONNECTED)
 
     train_dataset = WorldCup2022Dataset(
         root="soccerai/data/resources",
@@ -33,6 +35,7 @@ def main(args):
         force_reload=args.reload,
         split="train",
         val_ratio=cfg.val_ratio,
+        use_goal_features=cfg.use_goal_features,
         transform=Compose([RandomHorizontalFlip(p=0.5), RandomVerticalFlip(p=0.5)]),
     )
     val_dataset = WorldCup2022Dataset(
@@ -78,9 +81,12 @@ def main(args):
         train_loader=train_loader,
         val_loader=val_loader,
         device="cuda",
-        metrics=[BinaryConfusionMatrix(), BinaryPrecisionRecallCurve()],
+        metrics=[
+            BinaryConfusionMatrix(),
+            BinaryPrecisionRecallCurve(),
+            PositiveFrameCollector(),
+        ],
     )
-
     trainer.train(args.name)
 
 
@@ -94,6 +100,5 @@ if __name__ == "__main__":
     parser.add_argument(
         "--name", type=str, help="The name of the W&B run", default="debug"
     )
-
     args = parser.parse_args()
     main(args)
