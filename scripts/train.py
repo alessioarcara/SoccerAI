@@ -24,7 +24,7 @@ def main(args):
     cfg = build_cfg(CONFIG_PATH)
     fix_random(cfg.seed)
     converter = ShotPredictionGraphConverter(
-        ConnectionMode.FULLY_CONNECTED, args.use_goal_features
+        ConnectionMode.FULLY_CONNECTED, cfg.use_goal_features
     )
 
     train_dataset = WorldCup2022Dataset(
@@ -93,13 +93,6 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--name", type=str, help="The name of the W&B run", default="debug"
-    )
-
-    parser.add_argument(
-        "--use-goal-features",
-        dest="use_goal_features",
-        action="store_true",
-        help="If set, adds goal features to the generated graph.",
     )
 
     args = parser.parse_args()
