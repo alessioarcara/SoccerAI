@@ -1,15 +1,18 @@
 from typing import Any, Dict, List, Optional
 
 import matplotlib.pyplot as plt
+import seaborn as sns
 import torch
 import torch.nn as nn
+from loguru import logger
 from torch.optim import AdamW
 from torch_geometric.data import Batch
+from torch_geometric.explain import Explainer, GNNExplainer
 from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 
 import wandb
-from soccerai.training.metrics import Metric
+from soccerai.training.metrics import Metric, PositiveFrameCollector
 from soccerai.training.trainer_config import TrainerConfig
 
 
@@ -20,6 +23,7 @@ class Trainer:
         model: nn.Module,
         train_loader: DataLoader,
         device: str,
+        feature_names: List[str],
         val_loader: Optional[DataLoader] = None,
         metrics: List[Metric] = [],
     ):
@@ -30,9 +34,10 @@ class Trainer:
         self.val_loader = val_loader
         self.device = device
         self.metrics = metrics
+        self.feature_names = feature_names
 
         self.optim = AdamW(self.model.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
-        self.criterion = nn.BCEWithLogitsLoss()
+        self.criterion = nn.BCEWithLogitsLoss(torch.tensor([100], device="cuda"))
 
     def train(self, run_name: str):
         wandb.init(
@@ -58,12 +63,19 @@ class Trainer:
                     if self.val_loader:
                         self.eval("val")
 
+            self._explain()
+
         finally:
             wandb.finish()
 
     def _train_step(self, batch: Batch) -> torch.Tensor:
         self.optim.zero_grad(set_to_none=True)
-        out = self.model(batch)
+        out = self.model(
+            x=batch.x,
+            edge_index=batch.edge_index,
+            batch=batch.batch,
+            batch_size=batch.num_graphs,
+        )
         loss: torch.Tensor = self.criterion(out, batch.y)
         loss.backward()
         self.optim.step()
@@ -88,7 +100,12 @@ class Trainer:
             leave=False,
             colour="red",
         ):
-            out = self.model(batch)
+            out = self.model(
+                x=batch.x,
+                edge_index=batch.edge_index,
+                batch=batch.batch,
+                batch_size=batch.num_graphs,
+            )
             batch_loss = self.criterion(out, batch.y)
             total_loss += batch_loss.item()
 
@@ -115,3 +132,56 @@ class Trainer:
                 plt.close(fig)
 
         wandb.log(log_dict)
+
+    def _explain(self) -> None:
+        if (
+            not (
+                pfc := next(
+                    (m for m in self.metrics if isinstance(m, PositiveFrameCollector)),
+                    None,
+                )
+            )
+            or not pfc.storage._items
+        ):
+            logger.warning("Nothing to explain")
+            return
+
+        _, data = pfc.storage._items[0]
+
+        explainer = Explainer(
+            model=self.model,
+            algorithm=GNNExplainer(epochs=200),
+            explanation_type="model",
+            node_mask_type="attributes",
+            edge_mask_type="object",
+            model_config=dict(
+                mode="binary_classification",
+                task_level="graph",
+                return_type="raw",
+            ),
+        )
+
+        with torch.enable_grad():
+            explanation = explainer(
+                x=data.x.clone().float().requires_grad_(True),
+                edge_index=data.edge_index.clone(),
+            )
+
+        node_mask = explanation.node_mask.detach().cpu().numpy()
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        sns.heatmap(
+            node_mask,
+            ax=ax,
+            cmap="coolwarm",
+            cbar=False,
+            xticklabels=self.feature_names,
+        )
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90, ha="right", fontsize=10)
+        ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=9)
+
+        fig.tight_layout()
+
+        wandb.log({"explain/node_feats_heatmap": wandb.Image(fig)})
+        plt.close(fig)
