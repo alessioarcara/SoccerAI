@@ -11,6 +11,7 @@ from torch_geometric.data import InMemoryDataset
 from soccerai.data.converters import GraphConverter
 from soccerai.data.converters.utils import get_goal_positions
 from soccerai.data.utils import reorder_dataframe_cols
+from soccerai.training.trainer_config import TrainerConfig
 
 
 class WorldCup2022Dataset(InMemoryDataset):
@@ -19,15 +20,13 @@ class WorldCup2022Dataset(InMemoryDataset):
         root: str,
         converter: GraphConverter,
         split: str,
-        use_goal_features: bool,
-        val_ratio: float = 0.2,
+        cfg: TrainerConfig,
         transform: Optional[Callable] = None,
         force_reload: bool = False,
     ):
         self.converter = converter
         self.split = split
-        self.val_ratio = val_ratio
-        self.use_goal_features = use_goal_features
+        self.cfg = cfg
         super().__init__(root=root, transform=transform, force_reload=force_reload)
         data_path_idx = 0 if self.split == "train" else 1
         self.load(self.processed_paths[data_path_idx])
@@ -47,7 +46,7 @@ class WorldCup2022Dataset(InMemoryDataset):
     ) -> tuple[pl.DataFrame, pl.DataFrame]:
         event_keys_df = df.select(key_cols).unique().sort(key_cols)
         n_events = event_keys_df.height
-        cut = int((1.0 - self.val_ratio) * n_events)
+        cut = int((1.0 - self.cfg.val_ratio) * n_events)
         train_keys = event_keys_df.slice(0, cut)
         val_keys = event_keys_df.slice(cut, n_events)
 
@@ -104,7 +103,7 @@ class WorldCup2022Dataset(InMemoryDataset):
                 (pl.col("height_cm").cast(pl.UInt8)),
             ]
         ).drop(["playerName", "playerName_right"])
-        if self.use_goal_features:
+        if self.cfg.use_goal_features:
             df = self._add_goal_features(df)
         return df
 

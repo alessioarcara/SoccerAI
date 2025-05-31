@@ -34,8 +34,7 @@ def main(args):
         converter=converter,
         force_reload=args.reload,
         split="train",
-        val_ratio=cfg.val_ratio,
-        use_goal_features=cfg.use_goal_features,
+        cfg=cfg,
         transform=Compose([RandomHorizontalFlip(p=0.5), RandomVerticalFlip(p=0.5)]),
     )
     val_dataset = WorldCup2022Dataset(
@@ -43,8 +42,7 @@ def main(args):
         converter=converter,
         force_reload=args.reload,
         split="val",
-        val_ratio=cfg.val_ratio,
-        use_goal_features=cfg.use_goal_features,
+        cfg=cfg,
     )
 
     logger.success(
