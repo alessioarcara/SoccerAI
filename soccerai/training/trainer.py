@@ -28,7 +28,7 @@ class Trainer:
         metrics: List[Metric] = [],
     ):
         self.cfg = cfg
-        # self.model: nn.Module = torch.compile(model.to(device))  # type: ignore
+        self.model: nn.Module = torch.compile(model.to(device))  # type: ignore
         self.model = model.to(device)
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -37,7 +37,7 @@ class Trainer:
         self.feature_names = feature_names
 
         self.optim = AdamW(self.model.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
-        self.criterion = nn.BCEWithLogitsLoss(torch.tensor([100], device="cuda"))
+        self.criterion = nn.BCEWithLogitsLoss()
 
     def train(self, run_name: str):
         wandb.init(
@@ -178,7 +178,7 @@ class Trainer:
             cbar=False,
             xticklabels=self.feature_names,
         )
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=90, ha="right", fontsize=10)
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=90, ha="center", fontsize=10)
         ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=9)
 
         fig.tight_layout()
