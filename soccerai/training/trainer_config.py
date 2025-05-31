@@ -14,6 +14,7 @@ class TrainerConfig(BaseModel):
     eval_rate: int
     val_ratio: float
     dim: int
+    use_goal_features: bool
 
 
 def _load_yaml(path: str | Path):

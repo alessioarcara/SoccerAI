@@ -10,8 +10,10 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, StandardScaler
 from torch_geometric.data import InMemoryDataset
 
+from soccerai.data.config import X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
 from soccerai.data.converters import GraphConverter
 from soccerai.data.utils import reorder_dataframe_cols
+from soccerai.training.trainer_config import TrainerConfig
 
 
 class WorldCup2022Dataset(InMemoryDataset):
@@ -22,13 +24,13 @@ class WorldCup2022Dataset(InMemoryDataset):
         root: str,
         converter: GraphConverter,
         split: str,
-        val_ratio: float = 0.2,
+        cfg: TrainerConfig,
         transform: Optional[Callable] = None,
         force_reload: bool = False,
     ):
         self.converter = converter
         self.split = split
-        self.val_ratio = val_ratio
+        self.cfg = cfg
         super().__init__(root=root, transform=transform, force_reload=force_reload)
 
         data_path_idx = 0 if self.split == "train" else 1
@@ -54,7 +56,7 @@ class WorldCup2022Dataset(InMemoryDataset):
     ) -> tuple[pl.DataFrame, pl.DataFrame]:
         event_keys_df = df.select(key_cols).unique().sort(key_cols)
         n_events = event_keys_df.height
-        cut = int((1.0 - self.val_ratio) * n_events)
+        cut = int((1.0 - self.cfg.val_ratio) * n_events)
         train_keys = event_keys_df.slice(0, cut)
         val_keys = event_keys_df.slice(cut, n_events)
 
@@ -62,7 +64,7 @@ class WorldCup2022Dataset(InMemoryDataset):
         val_df = df.join(val_keys, on=key_cols, how="semi")
         return train_df, val_df
 
-    def _clean_dataframe(self, df: pl.DataFrame) -> pl.DataFrame:
+    def _prepare_dataframe(self, df: pl.DataFrame) -> pl.DataFrame:
         cols_to_drop = [
             "gameEventType",
             "index",
@@ -111,7 +113,8 @@ class WorldCup2022Dataset(InMemoryDataset):
                 (pl.col("height_cm").cast(pl.UInt8)),
             ]
         ).drop(["playerName", "playerName_right"])
-
+        if self.cfg.use_goal_features:
+            df = self._add_goal_features(df)
         return df
 
     def _create_preprocessor(self, df: pl.DataFrame) -> ColumnTransformer:
@@ -156,11 +159,51 @@ class WorldCup2022Dataset(InMemoryDataset):
         prep.set_output(transform="polars")
         return prep
 
-    def process(self):
-        df_raw = pl.read_parquet(self.raw_paths[0])
-        df_clean = self._clean_dataframe(df_raw)
+    def _add_goal_features(self, df: pl.DataFrame) -> pl.DataFrame:
+        is_home_team = df["team"] == "home"
+        is_second_half = df["frameTime"] > df["startPeriod2"]
+        is_goal_right = (
+            (
+                is_home_team & df["homeTeamStartLeft"] & is_second_half.not_()
+            )  # home team attacking right in 1st half
+            | (
+                is_home_team & df["homeTeamStartLeft"].not_() & is_second_half
+            )  # home team attacking right in 2nd half
+            | (
+                is_home_team.not_() & df["homeTeamStartLeft"] & is_second_half
+            )  # away team attacking right in 2nd half
+            | (
+                is_home_team.not_()
+                & df["homeTeamStartLeft"].not_()
+                & is_second_half.not_()
+            )  # away team attacking right in 1st half
+        )
+        df = df.with_columns(
+            pl.when(is_goal_right)
+            .then(X_GOAL_RIGHT)
+            .otherwise(X_GOAL_LEFT)
+            .alias("x_goal"),
+            pl.lit(Y_GOAL).alias("y_goal"),
+        )
 
-        train_df, val_df = self._split_dataframe_by_event_keys(df_clean)
+        df = df.with_columns(
+            (
+                (
+                    (pl.col("x") - pl.col("x_goal")) ** 2
+                    + (pl.col("y") - pl.col("y_goal")) ** 2
+                )
+                ** 0.5
+            ).alias("goal_distance"),
+            pl.arctan2(pl.col("y_goal") - pl.col("y"), pl.col("x_goal") - pl.col("x"))
+            .degrees()
+            .alias("goal_angle"),
+        )
+        return df.drop("x_goal", "y_goal")
+
+    def process(self):
+        df = self._prepare_dataframe(pl.read_parquet(self.raw_paths[0]))
+
+        train_df, val_df = self._split_dataframe_by_event_keys(df)
 
         logger.info(
             "DataFrame split → train: {} rows, val: {} rows",

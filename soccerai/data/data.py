@@ -247,7 +247,15 @@ def create_dataset(
         metadata_df = metadata_df.with_columns(pl.col("gameId").cast(pl.Int64))
 
         result_df = result_df.join(
-            metadata_df.select(["gameId", "homeTeamName", "awayTeamName"]),
+            metadata_df.select(
+                [
+                    "gameId",
+                    "homeTeamName",
+                    "awayTeamName",
+                    "homeTeamStartLeft",
+                    "startPeriod2",
+                ]
+            ),
             on="gameId",
             how="left",
         ).with_columns(

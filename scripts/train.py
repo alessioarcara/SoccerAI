@@ -34,13 +34,14 @@ def main(args):
         converter=converter,
         force_reload=args.reload,
         split="train",
-        val_ratio=cfg.val_ratio,
+        cfg=cfg,
         transform=Compose([RandomHorizontalFlip(p=0.5), RandomVerticalFlip(p=0.5)]),
     )
     val_ds = WorldCup2022Dataset(
         root="soccerai/data/resources",
         converter=converter,
         split="val",
+        cfg=cfg,
     )
 
     logger.success(
