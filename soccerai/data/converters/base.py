@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import List
+from typing import List, Tuple
 
 import polars as pl
 import torch
@@ -20,5 +20,7 @@ class GraphConverter(ABC):
         pass
 
     @abstractmethod
-    def convert_dataframe_to_data_list(self, df: pl.DataFrame) -> List[Data]:
+    def convert_dataframe_to_data_list(
+        self, df: pl.DataFrame
+    ) -> Tuple[List[Data], List[str]]:
         pass

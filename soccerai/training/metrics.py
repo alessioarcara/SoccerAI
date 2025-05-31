@@ -104,8 +104,8 @@ class BinaryPrecisionRecallCurve(Metric):
         return []
 
     def reset(self):
-        self.all_preds_probs: List[torch.Tensor] = []
-        self.all_true_labels: List[torch.Tensor] = []
+        self.all_preds_probs = []
+        self.all_true_labels = []
 
     def plot(self) -> Optional[Tuple[str, plt.Figure]]:
         all_preds_probs_flat = torch.cat(self.all_preds_probs)
@@ -142,7 +142,7 @@ class BinaryPrecisionRecallCurve(Metric):
 class PositiveFrameCollector(Metric):
     def __init__(self, thr: float = 0.5, max_samples: int = 12):
         self.thr = thr
-        self.storage: TopKStorage[np.ndarray] = TopKStorage(max_samples)
+        self.storage: TopKStorage[Batch] = TopKStorage(max_samples)
 
     def update(
         self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
@@ -153,8 +153,7 @@ class PositiveFrameCollector(Metric):
         pos_indices = np.where((probs_np > self.thr) & (labels_np == 1))[0]
 
         for i in pos_indices:
-            node_feats = batch[i].x.detach().cpu().numpy()
-            self.storage.add((probs_np[i], node_feats))
+            self.storage.add((probs_np[i], batch[i]))
 
     def compute(self) -> List[Tuple[str, float]]:
         return []
@@ -184,7 +183,9 @@ class PositiveFrameCollector(Metric):
         axes = axs.flatten()
         entries = self.storage.get_all_entries()
 
-        for ax, (score, node_features) in zip(axes, entries):
+        for ax, (score, graph) in zip(axes, entries):
+            node_features = graph.x.detach().cpu().numpy()
+
             coords = node_features[:, :2]
             teams = node_features[:, 2].astype(int)
             has_ball = node_features[:, 3].astype(bool)

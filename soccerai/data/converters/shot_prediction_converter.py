@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 
 import polars as pl
 import torch
@@ -21,7 +21,9 @@ class ShotPredictionGraphConverter(GraphConverter):
             return torch.tensor([src, dst], dtype=torch.long)
         assert_never(self.mode)
 
-    def convert_dataframe_to_data_list(self, df: pl.DataFrame) -> List[Data]:
+    def convert_dataframe_to_data_list(
+        self, df: pl.DataFrame
+    ) -> Tuple[List[Data], List[str]]:
         data_list: list[Data] = []
 
         for _, event_df in df.group_by(["gameEventId", "possessionEventId"]):
@@ -36,4 +38,4 @@ class ShotPredictionGraphConverter(GraphConverter):
 
             data_list.append(Data(x=x, edge_index=edge_idx, y=y))
 
-        return data_list
+        return data_list, x_df.columns

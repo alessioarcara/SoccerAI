@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 from typing import Callable, Optional
 
 import polars as pl
@@ -13,6 +15,8 @@ from soccerai.data.utils import reorder_dataframe_cols
 
 
 class WorldCup2022Dataset(InMemoryDataset):
+    FEATURE_NAMES_FILE = "feature_names.json"
+
     def __init__(
         self,
         root: str,
@@ -26,8 +30,14 @@ class WorldCup2022Dataset(InMemoryDataset):
         self.split = split
         self.val_ratio = val_ratio
         super().__init__(root=root, transform=transform, force_reload=force_reload)
+
         data_path_idx = 0 if self.split == "train" else 1
         self.load(self.processed_paths[data_path_idx])
+
+        fp = Path(self.processed_dir) / self.FEATURE_NAMES_FILE
+        self.feature_names = (
+            json.loads(fp.read_text(encoding="utf-8")) if fp.exists() else None
+        )
 
     @property
     def raw_file_names(self):
@@ -168,10 +178,15 @@ class WorldCup2022Dataset(InMemoryDataset):
             self.preprocessor.transform(val_df), first
         )
 
-        train_data_list = self.converter.convert_dataframe_to_data_list(
+        train_data_list, feature_names = self.converter.convert_dataframe_to_data_list(
             train_transformed
         )
-        val_data_list = self.converter.convert_dataframe_to_data_list(val_transformed)
+        val_data_list, _ = self.converter.convert_dataframe_to_data_list(
+            val_transformed
+        )
 
         self.save(train_data_list, self.processed_paths[0])
         self.save(val_data_list, self.processed_paths[1])
+
+        fp = Path(self.processed_dir) / self.FEATURE_NAMES_FILE
+        fp.write_text(json.dumps(feature_names, ensure_ascii=False, indent=4))

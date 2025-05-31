@@ -20,7 +20,7 @@ from soccerai.training.transforms import RandomHorizontalFlip, RandomVerticalFli
 from soccerai.training.utils import fix_random
 
 NUM_WORKERS = (os.cpu_count() or 1) - 1
-CONFIG_PATH = "configs/example.yaml"
+CONFIG_PATH = "configs/base.yaml"
 torch.set_float32_matmul_precision("high")
 
 
@@ -29,7 +29,7 @@ def main(args):
     fix_random(cfg.seed)
     converter = ShotPredictionGraphConverter(ConnectionMode.FULLY_CONNECTED)
 
-    train_dataset = WorldCup2022Dataset(
+    train_ds = WorldCup2022Dataset(
         root="soccerai/data/resources",
         converter=converter,
         force_reload=args.reload,
@@ -37,18 +37,16 @@ def main(args):
         val_ratio=cfg.val_ratio,
         transform=Compose([RandomHorizontalFlip(p=0.5), RandomVerticalFlip(p=0.5)]),
     )
-    val_dataset = WorldCup2022Dataset(
+    val_ds = WorldCup2022Dataset(
         root="soccerai/data/resources",
         converter=converter,
-        force_reload=args.reload,
         split="val",
-        val_ratio=cfg.val_ratio,
     )
 
     logger.success(
         "Datasets loaded successfully → train graphs: {}, val graphs: {}",
-        len(train_dataset),
-        len(val_dataset),
+        len(train_ds),
+        len(val_ds),
     )
 
     common_loader_kwargs = dict(
@@ -60,26 +58,28 @@ def main(args):
 
     train_loader = PrefetchLoader(
         DataLoader(
-            train_dataset,
+            train_ds,
             shuffle=True,
             **common_loader_kwargs,
         ),
     )
     val_loader = PrefetchLoader(
         DataLoader(
-            val_dataset,
+            val_ds,
             shuffle=False,
             **common_loader_kwargs,
         ),
     )
-    model = GIN(train_dataset.num_node_features, cfg.dim, 1)
+    model = GIN(train_ds.num_node_features, cfg.dim, 1)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     trainer = Trainer(
         cfg=cfg,
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
-        device="cuda",
+        device=device,
+        feature_names=train_ds.feature_names,
         metrics=[
             BinaryConfusionMatrix(),
             BinaryPrecisionRecallCurve(),
