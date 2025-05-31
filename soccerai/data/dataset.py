@@ -54,7 +54,7 @@ class WorldCup2022Dataset(InMemoryDataset):
         val_df = df.join(val_keys, on=key_cols, how="semi")
         return train_df, val_df
 
-    def _clean_dataframe(self, df: pl.DataFrame) -> pl.DataFrame:
+    def _prepare_dataframe(self, df: pl.DataFrame) -> pl.DataFrame:
         cols_to_drop = [
             "gameEventType",
             "index",
@@ -169,10 +169,9 @@ class WorldCup2022Dataset(InMemoryDataset):
         return df.drop("x_goal", "y_goal")
 
     def process(self):
-        df_raw = pl.read_parquet(self.raw_paths[0])
-        df_clean = self._clean_dataframe(df_raw)
+        df = self._prepare_dataframe(pl.read_parquet(self.raw_paths[0]))
 
-        train_df, val_df = self._split_dataframe_by_event_keys(df_clean)
+        train_df, val_df = self._split_dataframe_by_event_keys(df)
 
         logger.info(
             "DataFrame split → train: {} rows, val: {} rows",
