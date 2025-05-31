@@ -1,25 +1,15 @@
+from abc import ABC, abstractmethod
 from typing import List, Tuple
 
 import polars as pl
 import torch
 from torch_geometric.data import Data
-from typing_extensions import assert_never
-
-from soccerai.data.converters import ConnectionMode, GraphConverter
 
 
-class ShotPredictionGraphConverter(GraphConverter):
+class GraphConverter(ABC):
+    @abstractmethod
     def _create_edge_index(self) -> torch.Tensor:
-        if self.mode == ConnectionMode.FULLY_CONNECTED:
-            src = []
-            dst = []
-            for i in range(22):
-                for j in range(22):
-                    if i != j:
-                        src.append(i)
-                        dst.append(j)
-            return torch.tensor([src, dst], dtype=torch.long)
-        assert_never(self.mode)
+        pass
 
     def convert_dataframe_to_data_list(
         self, df: pl.DataFrame
@@ -39,3 +29,23 @@ class ShotPredictionGraphConverter(GraphConverter):
             data_list.append(Data(x=x, edge_index=edge_idx, y=y))
 
         return data_list, x_df.columns
+
+
+class FullyConnectedGraphConverter(GraphConverter):
+    def _create_edge_index(self) -> torch.Tensor:
+        src = []
+        dst = []
+        for i in range(22):
+            for j in range(22):
+                if i != j:
+                    src.append(i)
+                    dst.append(j)
+        return torch.tensor([src, dst], dtype=torch.long)
+
+
+def create_graph_converter(connection_mode: str) -> GraphConverter:
+    match connection_mode:
+        case "fully_connected":
+            return FullyConnectedGraphConverter()
+        case _:
+            raise ValueError("Invalid connection mode")

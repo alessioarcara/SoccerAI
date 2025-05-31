@@ -1,10 +1,6 @@
-from soccerai.data.converters.base import ConnectionMode, GraphConverter
-from soccerai.data.converters.shot_prediction_converter import (
-    ShotPredictionGraphConverter,
-)
+from soccerai.data.converters.converter import GraphConverter, create_graph_converter
 
 __all__ = [
     "GraphConverter",
-    "ConnectionMode",
-    "ShotPredictionGraphConverter",
+    "create_graph_converter",
 ]

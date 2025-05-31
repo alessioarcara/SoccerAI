@@ -8,3 +8,4 @@ eval_rate: 2
 val_ratio: 0.1
 dim: 16
 use_goal_features: True
+connection_mode: "fully_connected"
