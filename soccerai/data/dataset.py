@@ -8,8 +8,8 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, StandardScaler
 from torch_geometric.data import InMemoryDataset
 
+from soccerai.data.config import X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
 from soccerai.data.converters import GraphConverter
-from soccerai.data.converters.utils import get_goal_positions
 from soccerai.data.utils import reorder_dataframe_cols
 from soccerai.training.trainer_config import TrainerConfig
 
@@ -150,7 +150,32 @@ class WorldCup2022Dataset(InMemoryDataset):
         return prep
 
     def _add_goal_features(self, df: pl.DataFrame) -> pl.DataFrame:
-        df = get_goal_positions(df)
+        is_home_team = df["team"] == "home"
+        is_second_half = df["frameTime"] > df["startPeriod2"]
+        is_goal_right = (
+            (
+                is_home_team & df["homeTeamStartLeft"] & is_second_half.not_()
+            )  # home team attacking right in 1st half
+            | (
+                is_home_team & df["homeTeamStartLeft"].not_() & is_second_half
+            )  # home team attacking right in 2nd half
+            | (
+                is_home_team.not_() & df["homeTeamStartLeft"] & is_second_half
+            )  # away team attacking right in 2nd half
+            | (
+                is_home_team.not_()
+                & df["homeTeamStartLeft"].not_()
+                & is_second_half.not_()
+            )  # away team attacking right in 1st half
+        )
+        df = df.with_columns(
+            pl.when(is_goal_right)
+            .then(X_GOAL_RIGHT)
+            .otherwise(X_GOAL_LEFT)
+            .alias("x_goal"),
+            pl.lit(Y_GOAL).alias("y_goal"),
+        )
+
         df = df.with_columns(
             (
                 (
@@ -158,14 +183,11 @@ class WorldCup2022Dataset(InMemoryDataset):
                     + (pl.col("y") - pl.col("y_goal")) ** 2
                 )
                 ** 0.5
-            ).alias("goal_distance")
-        )
-        df = df.with_columns(
+            ).alias("goal_distance"),
             pl.arctan2(pl.col("y_goal") - pl.col("y"), pl.col("x_goal") - pl.col("x"))
             .degrees()
-            .alias("goal_angle")
+            .alias("goal_angle"),
         )
-
         return df.drop("x_goal", "y_goal")
 
     def process(self):
