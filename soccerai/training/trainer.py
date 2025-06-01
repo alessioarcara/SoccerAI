@@ -73,6 +73,8 @@ class Trainer:
         out = self.model(
             x=batch.x,
             edge_index=batch.edge_index,
+            edge_weight=batch.edge_weight,
+            edge_attr=batch.edge_attr,
             batch=batch.batch,
             batch_size=batch.num_graphs,
         )
@@ -103,6 +105,8 @@ class Trainer:
             out = self.model(
                 x=batch.x,
                 edge_index=batch.edge_index,
+                edge_weight=batch.edge_weight,
+                edge_attr=batch.edge_attr,
                 batch=batch.batch,
                 batch_size=batch.num_graphs,
             )

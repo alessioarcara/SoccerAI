@@ -8,7 +8,7 @@ from torch_geometric.transforms import Compose
 
 from soccerai.data.converters import create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
-from soccerai.models import GIN
+from soccerai.models import GCN
 from soccerai.training.metrics import (
     BinaryConfusionMatrix,
     BinaryPrecisionRecallCurve,
@@ -71,7 +71,7 @@ def main(args):
             **common_loader_kwargs,
         ),
     )
-    model = GIN(train_ds.num_node_features, cfg.dim, 1)
+    model = GCN(train_ds.num_node_features, cfg.dim, 1)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     trainer = Trainer(
