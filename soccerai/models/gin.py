@@ -47,6 +47,8 @@ class GIN(nn.Module):
         self,
         x: torch.Tensor,
         edge_index: Adj,
+        edge_weight: OptTensor = None,
+        edge_attr: OptTensor = None,
         batch: OptTensor = None,
         batch_size: Optional[int] = None,
     ):

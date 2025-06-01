@@ -198,7 +198,9 @@ class WorldCup2022Dataset(InMemoryDataset):
             .degrees()
             .alias("goal_angle"),
         )
-        return df.drop("x_goal", "y_goal")
+        return df.drop(
+            "x_goal", "y_goal", "homeTeamStartLeft", "startPeriod2", "frameTime"
+        )
 
     def process(self):
         df = self._prepare_dataframe(pl.read_parquet(self.raw_paths[0]))

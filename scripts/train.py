@@ -6,9 +6,9 @@ from loguru import logger
 from torch_geometric.loader import DataLoader, PrefetchLoader
 from torch_geometric.transforms import Compose
 
-from soccerai.data.converters import ConnectionMode, ShotPredictionGraphConverter
+from soccerai.data.converters import create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
-from soccerai.models import GIN
+from soccerai.models import GCN
 from soccerai.training.metrics import (
     BinaryConfusionMatrix,
     BinaryPrecisionRecallCurve,
@@ -27,7 +27,7 @@ torch.set_float32_matmul_precision("high")
 def main(args):
     cfg = build_cfg(CONFIG_PATH)
     fix_random(cfg.seed)
-    converter = ShotPredictionGraphConverter(ConnectionMode.FULLY_CONNECTED)
+    converter = create_graph_converter(cfg.connection_mode)
 
     train_ds = WorldCup2022Dataset(
         root="soccerai/data/resources",
@@ -71,7 +71,7 @@ def main(args):
             **common_loader_kwargs,
         ),
     )
-    model = GIN(train_ds.num_node_features, cfg.dim, 1)
+    model = GCN(train_ds.num_node_features, cfg.dim, 1)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     trainer = Trainer(
