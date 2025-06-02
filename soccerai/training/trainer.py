@@ -73,6 +73,7 @@ class Trainer:
         out = self.model(
             x=batch.x,
             edge_index=batch.edge_index,
+            u=batch.u,
             edge_weight=batch.edge_weight,
             edge_attr=batch.edge_attr,
             batch=batch.batch,
@@ -105,6 +106,7 @@ class Trainer:
             out = self.model(
                 x=batch.x,
                 edge_index=batch.edge_index,
+                u=batch.u,
                 edge_weight=batch.edge_weight,
                 edge_attr=batch.edge_attr,
                 batch=batch.batch,
@@ -166,9 +168,16 @@ class Trainer:
         )
 
         with torch.enable_grad():
+            x = data.x.clone().float().requires_grad_(True)
+            u = data.u.clone().float().requires_grad_(True)
+            edge_index = data.edge_index.clone()
+            edge_weight = data.edge_weight.clone().float().requires_grad_(True)
+
             explanation = explainer(
-                x=data.x.clone().float().requires_grad_(True),
-                edge_index=data.edge_index.clone(),
+                x=x,
+                edge_index=edge_index,
+                u=u,
+                edge_weight=edge_weight,
             )
 
         node_mask = explanation.node_mask.detach().cpu().numpy()

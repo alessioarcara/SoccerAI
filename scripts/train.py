@@ -71,7 +71,7 @@ def main(args):
             **common_loader_kwargs,
         ),
     )
-    model = GCN(train_ds.num_node_features, cfg.dim, 1)
+    model = GCN(cfg, train_ds.num_features, train_ds.num_global_features, 1)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     trainer = Trainer(

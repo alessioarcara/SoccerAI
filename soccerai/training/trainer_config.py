@@ -15,6 +15,7 @@ class TrainerConfig(BaseModel):
     val_ratio: float
     dim: int
     use_goal_features: bool
+    use_global_features: bool
     connection_mode: str
 
 

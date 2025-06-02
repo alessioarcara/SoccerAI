@@ -24,19 +24,33 @@ class GraphConverter(ABC):
     ) -> Tuple[List[Data], List[str]]:
         data_list: list[Data] = []
 
+        global_prefixes = ["possessionEventType", "frameTime", "duration"]
+
         for _, event_df in df.group_by(["gameEventId", "possessionEventId"]):
             if event_df.height != self.NUM_PLAYERS:
                 continue
 
-            x_df = event_df.drop("gameEventId", "possessionEventId", "label")
-            edge_idx, edge_weight, edge_attr = self._create_edges(x_df)
+            global_cols = [
+                c
+                for c in event_df.columns
+                if any(c.startswith(pref) for pref in global_prefixes)
+            ]
 
+            u = torch.tensor(
+                event_df.select(global_cols).slice(0, 1).to_numpy(), dtype=torch.float32
+            )
+
+            x_df = event_df.drop(
+                *["gameEventId", "possessionEventId", "label"], *global_cols
+            )
+            edge_idx, edge_weight, edge_attr = self._create_edges(x_df)
             x = torch.tensor(x_df.to_numpy(), dtype=torch.float32)
             y = torch.tensor(event_df["label"][0], dtype=torch.float32).view(1, 1)
 
             data_list.append(
                 Data(
                     x=x,
+                    u=u,
                     edge_index=edge_idx,
                     y=y,
                     edge_weight=edge_weight,
@@ -81,7 +95,7 @@ class BipartiteGraphConverter(GraphConverter):
         self, x_df: pl.DataFrame
     ) -> Tuple[torch.Tensor, OptTensor, OptTensor]:
         positions = x_df.select(["x", "y"]).to_numpy()
-        teams = x_df["team_home"].to_numpy()
+        teams = x_df["is_possession_team_1"].to_numpy()
 
         src, dst, weights = [], [], []
 
