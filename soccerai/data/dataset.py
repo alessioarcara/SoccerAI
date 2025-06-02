@@ -12,6 +12,7 @@ from torch_geometric.data import InMemoryDataset
 
 from soccerai.data.config import X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
 from soccerai.data.converters import GraphConverter
+from soccerai.data.transformers import PlayerPositionTransformer
 from soccerai.data.utils import reorder_dataframe_cols
 from soccerai.training.trainer_config import TrainerConfig
 
@@ -113,15 +114,20 @@ class WorldCup2022Dataset(InMemoryDataset):
                 (pl.col("height_cm").cast(pl.UInt8)),
             ]
         ).drop(["playerName", "playerName_right"])
+
         if self.cfg.use_goal_features:
             df = self._add_goal_features(df)
+
         return df
 
     def _create_preprocessor(self, df: pl.DataFrame) -> ColumnTransformer:
         cat_cols = ["possessionEventType", "team", "playerRole", "ballPossession"]
-        coord_cols = ["x", "y"]
+        pos_cols = ["x", "y"]
         exclude_cols = set(
-            cat_cols + coord_cols + ["gameEventId", "possessionEventId", "label"]
+            cat_cols
+            + pos_cols
+            + ["gameEventId", "possessionEventId", "label"]
+            + ["goal_distance"]
         )
         num_cols = [c for c in df.columns if c not in exclude_cols]
 
@@ -139,10 +145,12 @@ class WorldCup2022Dataset(InMemoryDataset):
                 ),
             ]
         )
-        coord_pipe = Pipeline(
+        goal_dist_pipe = Pipeline(
             [
-                ("imputer", SimpleImputer(strategy="mean")),
-                ("minmax_scaler", MinMaxScaler(feature_range=(-1, 1))),
+                (
+                    "minmax_scaler",
+                    MinMaxScaler(feature_range=(-((5 / 4) ** 0.5), (5 / 4) ** 0.5)),
+                ),
             ]
         )
 
@@ -150,7 +158,8 @@ class WorldCup2022Dataset(InMemoryDataset):
             [
                 ("num", num_pipe, num_cols),
                 ("cat", cat_pipe, cat_cols),
-                ("coord", coord_pipe, coord_cols),
+                ("pos", PlayerPositionTransformer(), pos_cols),
+                ("goal_dist", goal_dist_pipe, ["goal_distance"]),
             ],
             remainder="passthrough",
             verbose_feature_names_out=False,  # No prefixes
@@ -170,13 +179,13 @@ class WorldCup2022Dataset(InMemoryDataset):
                 is_home_team & df["homeTeamStartLeft"].not_() & is_second_half
             )  # home team attacking right in 2nd half
             | (
-                is_home_team.not_() & df["homeTeamStartLeft"] & is_second_half
-            )  # away team attacking right in 2nd half
-            | (
                 is_home_team.not_()
                 & df["homeTeamStartLeft"].not_()
                 & is_second_half.not_()
             )  # away team attacking right in 1st half
+            | (
+                is_home_team.not_() & df["homeTeamStartLeft"] & is_second_half
+            )  # away team attacking right in 2nd half
         )
         df = df.with_columns(
             pl.when(is_goal_right)
