@@ -1,14 +1,17 @@
 import json
+import os
+from collections import defaultdict
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 import polars as pl
+import torch
 from loguru import logger
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, StandardScaler
-from torch_geometric.data import InMemoryDataset
+from torch_geometric.data import Data, InMemoryDataset
 
 from soccerai.data.config import X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
 from soccerai.data.converters import GraphConverter
@@ -49,26 +52,37 @@ class WorldCup2022Dataset(InMemoryDataset):
     def processed_file_names(self):
         return ["train_data.pt", "val_data.pt"]
 
-    def _split_dataframe_by_event_keys(
-        self,
-        df: pl.DataFrame,
-        key_cols: list[str] = ["gameEventId", "possessionEventId"],
+    def _split_by_game_id(
+        self, df: pl.DataFrame, val_ratio: float
     ) -> tuple[pl.DataFrame, pl.DataFrame]:
-        event_keys_df = df.select(key_cols).unique().sort(key_cols)
-        n_events = event_keys_df.height
-        cut = int((1.0 - self.cfg.val_ratio) * n_events)
-        train_keys = event_keys_df.slice(0, cut)
-        val_keys = event_keys_df.slice(cut, n_events)
+        """Split the DataFrame into training and validation sets based on gameId."""
 
-        train_df = df.join(train_keys, on=key_cols, how="semi")
-        val_df = df.join(val_keys, on=key_cols, how="semi")
+        game_ids_df = df.select(["gameId"]).unique().sort("gameId")
+        n_games = game_ids_df.height
+
+        n_train_games = int((1.0 - val_ratio) * n_games)
+
+        train_game_ids = game_ids_df.slice(0, n_train_games)
+        val_game_ids = game_ids_df.slice(n_train_games, n_games)
+
+        train_df = df.join(train_game_ids, on="gameId", how="semi")
+        val_df = df.join(val_game_ids, on="gameId", how="semi")
+
+        # -------------------------------------------------------
+        print(">>> After split by gameId:")
+        print(f"Number of rows in train_df: {train_df.height}")
+        print(
+            f"Number of games in train_df: {train_df.select('gameId').unique().height}"
+        )
+        print(f"Number of rows in val_df:   {val_df.height}")
+        print(f"Number of games in val_df: {val_df.select('gameId').unique().height}")
+
         return train_df, val_df
 
     def _prepare_dataframe(self, df: pl.DataFrame) -> pl.DataFrame:
         cols_to_drop = [
             "gameEventType",
             "index",
-            "gameId",
             "startTime",
             "endTime",
             "index_right",
@@ -121,7 +135,16 @@ class WorldCup2022Dataset(InMemoryDataset):
         cat_cols = ["possessionEventType", "team", "playerRole", "ballPossession"]
         coord_cols = ["x", "y"]
         exclude_cols = set(
-            cat_cols + coord_cols + ["gameEventId", "possessionEventId", "label"]
+            cat_cols
+            + coord_cols
+            + [
+                "gameEventId",
+                "possessionEventId",
+                "label",
+                "gameId",
+                "frameTime",
+                "sequence_id",
+            ]
         )
         num_cols = [c for c in df.columns if c not in exclude_cols]
 
@@ -198,14 +221,28 @@ class WorldCup2022Dataset(InMemoryDataset):
             .degrees()
             .alias("goal_angle"),
         )
-        return df.drop(
-            "x_goal", "y_goal", "homeTeamStartLeft", "startPeriod2", "frameTime"
-        )
+        return df.drop("x_goal", "y_goal", "homeTeamStartLeft", "startPeriod2")
+
+    def _group_by_sequence_id(self, data_list: List[Data]) -> List[List[Data]]:
+        """ """
+        # build a dictionary: key = sequence_id, value = list of Data
+        buckets: dict[int, List[Data]] = defaultdict(list)
+        for data in data_list:
+            seq_id = int(data.sequence_id.item())
+            buckets[seq_id].append(data)
+
+        # sort each list by ascending frameTime and append it to sequences
+        sequences: List[List[Data]] = []
+        for seq_id, items in buckets.items():
+            items.sort(key=lambda d: float(d.frameTime.item()))
+            sequences.append(items)
+
+        return sequences
 
     def process(self):
         df = self._prepare_dataframe(pl.read_parquet(self.raw_paths[0]))
 
-        train_df, val_df = self._split_dataframe_by_event_keys(df)
+        train_df, val_df = self._split_by_game_id(df, val_ratio=0.2)
 
         logger.info(
             "DataFrame split → train: {} rows, val: {} rows",
@@ -223,15 +260,78 @@ class WorldCup2022Dataset(InMemoryDataset):
             self.preprocessor.transform(val_df), first
         )
 
+        # -------------------------------------------------------
+        print(">>> After pre-processing:")
+        print(
+            f"  train_transformed: {train_transformed.height} rows, "
+            f"{len(train_transformed.columns)} columns"
+        )
+        print("  Columns of train_transformed:", train_transformed.columns)
+        print(train_transformed.head(3))
+
+        print(
+            f"  val_transformed:   {val_transformed.height} rows, "
+            f"{len(val_transformed.columns)} columns"
+        )
+        print("  Columns of val_transformed:", val_transformed.columns)
+        print(val_transformed.head(3))
+        # --------------------------------------------------------------------
+
         train_data_list, feature_names = self.converter.convert_dataframe_to_data_list(
             train_transformed
         )
+
+        # -------------------------------------------------------
+        print(">>> After convert_dataframe_to_data_list(train):")
+        print(
+            f"  Number of Data objects generated (train_data_list): {len(train_data_list)}"
+        )
+        for i, data in enumerate(train_data_list[:2]):
+            print(f"--- Data train #{i} ---")
+            print("  x.shape:", data.x.shape)  # (NUM_PLAYERS, n_features)
+            print("  edge_index.shape:", data.edge_index.shape)  # (2, n_edges)
+            print("  y (label):", data.y.item())  # 0 or 1
+            print("  sequence_id:", data.sequence_id.item())  # integer
+            print("  frameTime:", data.frameTime.item())
+
         val_data_list, _ = self.converter.convert_dataframe_to_data_list(
             val_transformed
         )
 
-        self.save(train_data_list, self.processed_paths[0])
-        self.save(val_data_list, self.processed_paths[1])
+        train_sequences = self._group_by_sequence_id(train_data_list)
+        val_sequences = self._group_by_sequence_id(val_data_list)
+
+        print(">>> After group_by_sequence_id:")
+        print(f"  Number of distinct sequence_id in train: {len(train_sequences)}")
+        for i in range(min(3, len(train_sequences))):
+            seq = train_sequences[i]
+            print(
+                f"   - Train sequence [{i}] – sequence_id = {seq[0].sequence_id.item()}, "
+                f"n_frames = {len(seq)}, "
+                f"frameTimes = {[d.frameTime.item() for d in seq[:5]]} ..."
+            )
+
+        print(f"  Number of distinct sequence_id in val:   {len(val_sequences)}")
+        for i in range(min(3, len(val_sequences))):
+            seq = val_sequences[i]
+            print(
+                f"   - Val sequence [{i}] – sequence_id = {seq[0].sequence_id.item()}, "
+                f"n_frames = {len(seq)}, "
+                f"frameTimes = {[d.frameTime.item() for d in seq[:5]]} ..."
+            )
+
+        train_out = os.path.join(self.root, "train_data.pt")
+        val_out = os.path.join(self.root, "val_data.pt")
+
+        print(
+            f"  Saving train_sequences ({len(train_sequences)} sequences) to {train_out}"
+        )
+        torch.save(train_sequences, train_out)
+
+        print(
+            f"  Saving val_sequences   ({len(val_sequences)}   sequences) to {val_out}"
+        )
+        torch.save(val_sequences, val_out)
 
         fp = Path(self.processed_dir) / self.FEATURE_NAMES_FILE
         fp.write_text(json.dumps(feature_names, ensure_ascii=False, indent=4))
