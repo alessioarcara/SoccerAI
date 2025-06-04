@@ -22,49 +22,40 @@ class GraphConverter(ABC):
     def convert_dataframe_to_data_list(
         self, df: pl.DataFrame
     ) -> Tuple[List[Data], List[str]]:
-        """ """
-
         data_list: List[Data] = []
 
-        for _, frame_df in df.group_by(["sequence_id", "frameTime"]):
-            if frame_df.height != self.NUM_PLAYERS:
+        for _, event_df in df.group_by(["gameEventId", "possessionEventId"]):
+            if event_df.height != self.NUM_PLAYERS:
                 continue
 
-            seq_id = int(frame_df["sequence_id"][0])
-            t_val = float(frame_df["frameTime"][0])
+            chain_id = int(event_df["chain_id"][0])
+            frameTime = float(event_df["frameTime"][0])
 
-            x_df = frame_df.drop(
-                [
-                    "gameEventId",
-                    "possessionEventId",
-                    "gameId",
-                    "label",
-                    "sequence_id",
-                    "frameTime",
-                ]
+            x_df = event_df.drop(
+                "gameEventId",
+                "possessionEventId",
+                "label",
+                "chain_id",
+                "frameTime",
             )
 
-            edge_index, edge_weight, edge_attr = self._create_edges(x_df)
-
+            edge_idx, edge_weight, edge_attr = self._create_edges(x_df)
             x = torch.tensor(x_df.to_numpy(), dtype=torch.float32)
+            y = torch.tensor(event_df["label"][0], dtype=torch.float32).view(1, 1)
 
-            y = torch.tensor(frame_df["label"][0], dtype=torch.float32).view(1, 1)
-
-            data = Data(
-                x=x,
-                edge_index=edge_index,
-                y=y,
-                edge_weight=edge_weight,
-                edge_attr=edge_attr,
-                sequence_id=torch.tensor([seq_id], dtype=torch.long),
-                frameTime=torch.tensor([t_val], dtype=torch.float32),
+            data_list.append(
+                Data(
+                    x=x,
+                    edge_index=edge_idx,
+                    y=y,
+                    edge_weight=edge_weight,
+                    edge_attr=edge_attr,
+                    chain_id=torch.tensor([chain_id], dtype=torch.long),
+                    frameTime=torch.tensor([frameTime], dtype=torch.float32),
+                )
             )
 
-            data_list.append(data)
-
-        feature_columns = list(x_df.columns)
-
-        return data_list, feature_columns
+        return data_list, x_df.columns
 
 
 class FullyConnectedGraphConverter(GraphConverter):

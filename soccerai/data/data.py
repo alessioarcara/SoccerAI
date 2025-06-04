@@ -188,24 +188,18 @@ def _load_chains(chain_path: str) -> List[List[int]]:
         return chains
 
 
-def _build_sequence_id_df(
+def _attach_indices_to_chains(
     pos_chains: List[List[int]], neg_chains: List[List[int]]
 ) -> pl.DataFrame:
-    rows = []
-    for chain_id, chain in enumerate(pos_chains):
-        for idx in chain:
-            rows.append({"index": idx, "sequence_id": chain_id})
+    all_chains = pos_chains + neg_chains
 
-    offset = len(pos_chains)
-    for i, chain in enumerate(neg_chains):
-        seq_id = offset + i
-        for idx in chain:
-            rows.append({"index": idx, "sequence_id": seq_id})
+    rows = [
+        {"chain_id": chain_id, "index": frame_id}
+        for chain_id, chain in enumerate(all_chains)
+        for frame_id in chain
+    ]
 
-    if rows:
-        return pl.DataFrame(rows)
-    else:
-        return pl.DataFrame({"index": [], "sequence_id": []})
+    return pl.DataFrame(rows)
 
 
 def _flatten_chains(chains: List[List[int]]) -> List[int]:
@@ -225,7 +219,7 @@ def create_dataset(
 
     pos_chains = _load_chains(ACCEPTED_POS_CHAINS_PATH)
     neg_chains = _load_chains(ACCEPTED_NEG_CHAINS_PATH)
-    chains_df = _build_sequence_id_df(pos_chains, neg_chains)
+    chains_df = _attach_indices_to_chains(pos_chains, neg_chains)
 
     pos_indices = _flatten_chains(pos_chains)
     neg_indices = _flatten_chains(neg_chains)
@@ -240,7 +234,7 @@ def create_dataset(
             .otherwise(None)
             .alias("label")
         )
-        .filter(pl.col("sequence_id").is_not_null() & pl.col("label").is_not_null())
+        .filter(pl.col("label").is_not_null())
     )
 
     if not skip_velocity:

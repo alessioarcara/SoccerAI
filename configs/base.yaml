@@ -2,10 +2,11 @@ project_name: "soccerai"
 seed: 42
 bs: 32 
 n_epochs: 100
+n_epochs: 100
 lr: 5e-5
 wd: 0.01
 eval_rate: 2
 val_ratio: 0.1
 dim: 256 
-use_goal_features: True
+use_goal_features: True 
 connection_mode: "bipartite"

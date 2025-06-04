@@ -48,6 +48,8 @@ def main(args):
         len(val_ds),
     )
 
+    _ = train_ds.to_temporal_graph()
+
     common_loader_kwargs = dict(
         batch_size=cfg.bs,
         num_workers=NUM_WORKERS,
