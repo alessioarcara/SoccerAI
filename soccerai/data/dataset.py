@@ -9,7 +9,8 @@ from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, StandardScaler
-from torch_geometric.data import Data, InMemoryDataset
+from torch_geometric.data import InMemoryDataset
+from torch_geometric_temporal.signal import DynamicGraphTemporalSignal
 
 from soccerai.data.config import X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
 from soccerai.data.converters import GraphConverter
@@ -254,15 +255,15 @@ class WorldCup2022Dataset(InMemoryDataset):
         fp = Path(self.processed_dir) / self.FEATURE_NAMES_FILE
         fp.write_text(json.dumps(feature_names, ensure_ascii=False, indent=4))
 
-    def to_temporal_graph(self):
-        buckets: dict[int, List[Data]] = defaultdict(list)
-        for data in self.data:
-            chain_id = data.chain_id.item()
+    def to_temporal_iterator(self) -> List[DynamicGraphTemporalSignal]:
+        buckets = defaultdict(list)
+        for data in self:
+            chain_id = int(data.chain_id.item())
             buckets[chain_id].append(data)
 
-        sequences: List[List[Data]] = []
-        for seq_id, items in buckets.items():
-            items.sort(key=lambda d: float(d.frameTime.item()))
-            sequences.append(items)
+        chains = []
+        for chain_id, frames in buckets.items():
+            frames.sort(key=lambda d: float(d.frameTime.item()))
+            chains.append(frames)
 
-        return sequences
+        return chains

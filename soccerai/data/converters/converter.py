@@ -29,7 +29,8 @@ class GraphConverter(ABC):
                 continue
 
             chain_id = int(event_df["chain_id"][0])
-            frameTime = float(event_df["frameTime"][0])
+            frame_time = float(event_df["frameTime"][0])
+            label = float(event_df["label"][0])
 
             x_df = event_df.drop(
                 "gameEventId",
@@ -41,7 +42,7 @@ class GraphConverter(ABC):
 
             edge_idx, edge_weight, edge_attr = self._create_edges(x_df)
             x = torch.tensor(x_df.to_numpy(), dtype=torch.float32)
-            y = torch.tensor(event_df["label"][0], dtype=torch.float32).view(1, 1)
+            y = torch.tensor(label, dtype=torch.float32).view(1, 1)
 
             data_list.append(
                 Data(
@@ -51,7 +52,7 @@ class GraphConverter(ABC):
                     edge_weight=edge_weight,
                     edge_attr=edge_attr,
                     chain_id=torch.tensor([chain_id], dtype=torch.long),
-                    frameTime=torch.tensor([frameTime], dtype=torch.float32),
+                    frame_time=torch.tensor([frame_time], dtype=torch.long),
                 )
             )
 
