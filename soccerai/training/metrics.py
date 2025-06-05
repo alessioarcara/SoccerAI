@@ -9,6 +9,9 @@ from matplotlib.collections import LineCollection
 from mplsoccer import Pitch
 from mplsoccer.dimensions import center_scale_dims
 from torch_geometric.data import Batch
+from torch_geometric_temporal.signal import (
+    DynamicGraphTemporalSignalBatch,
+)
 from torchmetrics.functional.classification import binary_precision_recall_curve
 
 from soccerai.training.utils import TopKStorage
@@ -44,7 +47,7 @@ class BinaryConfusionMatrix(Metric):
         self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
     ) -> None:
         preds_labels_flat = (preds_probs >= self.thr).view(-1).long()
-        true_labels_flat = true_labels.view(-1).long()
+        true_labels_flat = true_labels.reshape(-1).long()
 
         for t, p in zip(true_labels_flat, preds_labels_flat):
             self.cm[t, p] += 1
@@ -97,8 +100,8 @@ class BinaryPrecisionRecallCurve(Metric):
     def update(
         self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
     ) -> None:
-        self.all_preds_probs.append(preds_probs.detach().view(-1).cpu())
-        self.all_true_labels.append(true_labels.detach().view(-1).cpu())
+        self.all_preds_probs.append(preds_probs.detach().reshape(-1).cpu())
+        self.all_true_labels.append(true_labels.detach().reshape(-1).cpu())
 
     def compute(self) -> List[Tuple[str, float]]:
         return []
@@ -147,13 +150,14 @@ class PositiveFrameCollector(Metric):
     def update(
         self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
     ) -> None:
-        probs_np = preds_probs.detach().cpu().numpy()
-        labels_np = true_labels.detach().cpu().numpy()
+        if not isinstance(batch, DynamicGraphTemporalSignalBatch):
+            probs_np = preds_probs.detach().cpu().numpy()
+            labels_np = true_labels.detach().cpu().numpy()
 
-        pos_indices = np.where((probs_np > self.thr) & (labels_np == 1))[0]
+            pos_indices = np.where((probs_np > self.thr) & (labels_np == 1))[0]
 
-        for i in pos_indices:
-            self.storage.add((probs_np[i], batch[i]))
+            for i in pos_indices:
+                self.storage.add((probs_np[i], batch[i]))
 
     def compute(self) -> List[Tuple[str, float]]:
         return []

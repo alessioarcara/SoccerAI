@@ -70,15 +70,18 @@ class Trainer:
 
     def _train_step(self, batch: Batch) -> torch.Tensor:
         self.optim.zero_grad(set_to_none=True)
-        out = self.model(
-            x=batch.x,
-            edge_index=batch.edge_index,
-            edge_weight=batch.edge_weight,
-            edge_attr=batch.edge_attr,
-            batch=batch.batch,
-            batch_size=batch.num_graphs,
-        )
-        loss: torch.Tensor = self.criterion(out, batch.y)
+        if self.cfg.use_temporal_sequences:
+            loss, _ = self._compute_temporal_loss(batch)
+        else:
+            out = self.model(
+                x=batch.x,
+                edge_index=batch.edge_index,
+                edge_weight=batch.edge_weight,
+                edge_attr=batch.edge_attr,
+                batch=batch.batch,
+                batch_size=batch.num_graphs,
+            )
+            loss: torch.Tensor = self.criterion(out, batch.y)
         loss.backward()
         self.optim.step()
         return loss
@@ -102,19 +105,23 @@ class Trainer:
             leave=False,
             colour="red",
         ):
-            out = self.model(
-                x=batch.x,
-                edge_index=batch.edge_index,
-                edge_weight=batch.edge_weight,
-                edge_attr=batch.edge_attr,
-                batch=batch.batch,
-                batch_size=batch.num_graphs,
-            )
-            batch_loss = self.criterion(out, batch.y)
+            if self.cfg.use_temporal_sequences:
+                batch_loss, out = self._compute_temporal_loss(batch)
+                true_labels = torch.Tensor(batch.targets[0])
+            else:
+                out = self.model(
+                    x=batch.x,
+                    edge_index=batch.edge_index,
+                    edge_weight=batch.edge_weight,
+                    edge_attr=batch.edge_attr,
+                    batch=batch.batch,
+                    batch_size=batch.num_graphs,
+                )
+                batch_loss = self.criterion(out, batch.y)
+                true_labels = batch.y.cpu().long()
             total_loss += batch_loss.item()
 
             preds_probs = torch.sigmoid(out)
-            true_labels = batch.y.cpu().long()
 
             for m in self.metrics:
                 m.update(preds_probs, true_labels, batch)
@@ -128,12 +135,14 @@ class Trainer:
             results = m.compute()
             for name, value in results:
                 log_dict[f"{split}/{name}"] = value
-
-            plot_result = m.plot()
-            if plot_result:
-                name, fig = plot_result
-                log_dict[f"{split}/{name}"] = wandb.Image(fig)
-                plt.close(fig)
+            if not self.cfg.use_temporal_sequences or not isinstance(
+                m, PositiveFrameCollector
+            ):
+                plot_result = m.plot()
+                if plot_result:
+                    name, fig = plot_result
+                    log_dict[f"{split}/{name}"] = wandb.Image(fig)
+                    plt.close(fig)
 
         wandb.log(log_dict)
 
@@ -189,3 +198,15 @@ class Trainer:
 
         wandb.log({"explain/node_feats_heatmap": wandb.Image(fig)})
         plt.close(fig)
+
+    def _compute_temporal_loss(self, batch) -> torch.Tensor:
+        hidden_state = None
+        for t, (x_t, edge_index_t, _, y_t, _) in enumerate(batch):
+            mask_t = batch.masks[t]
+            y_hat, hidden_state = self.model(
+                x_t[1].to(self.device),
+                edge_index_t[1].to(self.device),
+                hidden_state,
+            )
+        loss = self.criterion(y_hat[mask_t], y_t[1][mask_t].to(self.device))
+        return loss, y_hat
