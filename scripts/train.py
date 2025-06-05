@@ -48,7 +48,7 @@ def main(args):
         len(val_ds),
     )
 
-    _ = train_ds.to_temporal_graph()
+    _ = train_ds.to_temporal_iterator()
 
     common_loader_kwargs = dict(
         batch_size=cfg.bs,

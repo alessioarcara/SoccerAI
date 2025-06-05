@@ -263,7 +263,21 @@ class WorldCup2022Dataset(InMemoryDataset):
 
         chains = []
         for chain_id, frames in buckets.items():
-            frames.sort(key=lambda d: float(d.frameTime.item()))
-            chains.append(frames)
+            frames.sort(key=lambda d: float(d.frame_time.item()))
+            edge_indices = []
+            features = []
+            targets = []
+            edge_weights = [None] * len(frames)
+            for frame in frames:
+                edge_indices.append(frame.edge_index.numpy())
+                features.append(frame.x.numpy())
+                targets.append(frame.y.numpy())
+            temporal_chain = DynamicGraphTemporalSignal(
+                edge_indices=edge_indices,
+                edge_weights=edge_weights,
+                features=features,
+                targets=targets,
+            )
+            chains.append(temporal_chain)
 
         return chains
