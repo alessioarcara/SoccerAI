@@ -3,7 +3,6 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Callable, List, Optional
 
-import numpy as np
 import polars as pl
 from loguru import logger
 from sklearn.compose import ColumnTransformer
@@ -273,11 +272,7 @@ class WorldCup2022Dataset(InMemoryDataset):
                 edge_indices.append(frame.edge_index.numpy())
                 features.append(frame.x.numpy())
                 targets.append(frame.y.numpy())
-                edge_weights.append(
-                    np.full_like(
-                        frame.edge_index.numpy(), fill_value=None, dtype=object
-                    )
-                )
+                edge_weights.append(frame.edge_weight.numpy())
             temporal_chain = DynamicGraphTemporalSignal(
                 edge_indices=edge_indices,
                 edge_weights=edge_weights,

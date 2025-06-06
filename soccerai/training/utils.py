@@ -65,7 +65,7 @@ def temporal_collate_fn(
         masks.append(mask)
 
     edge_indices = np.array(edge_indices, dtype=np.int32).transpose(1, 0, 2, 3)
-    edge_weights = np.array(edge_weights, dtype=np.float32).transpose(1, 0, 2, 3)
+    edge_weights = np.array(edge_weights, dtype=np.float32).transpose(1, 0, 2)
     features = np.array(features, dtype=np.float32).transpose(1, 0, 2, 3)
     targets = np.array(targets, dtype=np.float32).transpose(1, 0, 2, 3)
     masks = np.array(masks, dtype=np.bool).T

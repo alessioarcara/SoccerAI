@@ -83,6 +83,9 @@ class Trainer:
             )
             loss: torch.Tensor = self.criterion(out, batch.y)
         loss.backward()
+        # for name, param in self.model.named_parameters():
+        #    if param.grad is not None:
+        #        print(f"{name}: grad norm = {param.grad.norm():.4f}")
         self.optim.step()
         return loss
 
@@ -201,12 +204,24 @@ class Trainer:
 
     def _compute_temporal_loss(self, batch) -> torch.Tensor:
         hidden_state = None
-        for t, (x_t, edge_index_t, _, y_t, _) in enumerate(batch):
-            mask_t = batch.masks[t]
+        final_loss = torch.zeros((len(batch.edge_indices[0]))).to(self.device)
+        y_hat_average = 0
+        total_valid_t = 0
+        for t, (x_t, edge_index_t, edge_weight_t, y_t, _) in enumerate(batch):
+            mask_t = torch.from_numpy(batch.masks[t]).to(self.device)
             y_hat, hidden_state = self.model(
                 x_t[1].to(self.device),
                 edge_index_t[1].to(self.device),
+                edge_weight_t[1].to(self.device),
                 hidden_state,
             )
-        loss = self.criterion(y_hat[mask_t], y_t[1][mask_t].to(self.device))
-        return loss, y_hat
+            # n_valid = mask_t.sum()
+            self.criterion.reduction = "none"
+            loss = self.criterion(y_hat, y_t[1].to(self.device))
+            y_hat_average += y_hat
+            final_loss = loss.squeeze() * mask_t + final_loss * ~mask_t
+            # total_valid_t += n_valid
+        # loss /= total_valid_t
+        loss = final_loss.mean()
+        y_hat_average /= total_valid_t
+        return loss, y_hat_average
