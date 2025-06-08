@@ -2,17 +2,17 @@ project_name: "soccerai"
 seed: 42
 use_temporal: True 
 model:
-  model_name: "rgcn"
+  model_name: "gcrnn"
   dmid: 256
   dhid: 128
 trainer:
   bs: 32 
   n_epochs: 100
-  lr: 5e-5
+  lr: 1e-4
   wd: 0.01
   eval_rate: 2
-  gamma: 0.1
-  grad_accumulation_steps: 128 
+  gamma: 0.5
+  grad_accumulation_steps: 1 
 data:
   include_goal_features: True 
   connection_mode: "bipartite"

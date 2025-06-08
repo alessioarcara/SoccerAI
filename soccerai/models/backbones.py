@@ -9,9 +9,7 @@ class GCNBackbone(nn.Module):
     def __init__(self, din: int, dmid: int):
         super(GCNBackbone, self).__init__()
         self.conv1 = pyg_nn.GCNConv(din, dmid)
-        # self.norm1 = pyg_nn.LayerNorm(dmid)
         self.conv2 = pyg_nn.GCNConv(dmid, dmid)
-        # self.norm2 = pyg_nn.LayerNorm(dmid)
 
     def forward(
         self,
