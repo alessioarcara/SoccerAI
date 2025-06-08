@@ -3,7 +3,6 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Callable, List, Optional
 
-import numpy as np
 import polars as pl
 from loguru import logger
 from sklearn.compose import ColumnTransformer
@@ -256,7 +255,7 @@ class WorldCup2022Dataset(InMemoryDataset):
         fp = Path(self.processed_dir) / self.FEATURE_NAMES_FILE
         fp.write_text(json.dumps(feature_names, ensure_ascii=False, indent=4))
 
-    def to_temporal_iterator(self) -> List[DynamicGraphTemporalSignal]:
+    def to_temporal_iterators(self) -> List[DynamicGraphTemporalSignal]:
         buckets = defaultdict(list)
         for data in self:
             chain_id = int(data.chain_id.item())
@@ -264,26 +263,20 @@ class WorldCup2022Dataset(InMemoryDataset):
 
         chains = []
         for chain_id, frames in buckets.items():
-            frames.sort(key=lambda d: float(d.frame_time.item()))
-            edge_indices = []
-            features = []
-            targets = []
-            edge_weights = []
-            for frame in frames:
-                edge_indices.append(frame.edge_index.numpy())
-                features.append(frame.x.numpy())
-                targets.append(frame.y.numpy())
-                edge_weights.append(
-                    np.full_like(
-                        frame.edge_index.numpy(), fill_value=None, dtype=object
-                    )
+            ordered = sorted(frames, key=lambda f: float(f.frame_time.item()))
+
+            edge_indices = [f.edge_index.numpy() for f in ordered]
+            features = [f.x.numpy() for f in ordered]
+            targets = [f.y.numpy() for f in ordered]
+            edge_weights = [f.edge_weight.numpy() for f in ordered]
+
+            chains.append(
+                DynamicGraphTemporalSignal(
+                    edge_indices=edge_indices,
+                    edge_weights=edge_weights,
+                    features=features,
+                    targets=targets,
                 )
-            temporal_chain = DynamicGraphTemporalSignal(
-                edge_indices=edge_indices,
-                edge_weights=edge_weights,
-                features=features,
-                targets=targets,
             )
-            chains.append(temporal_chain)
 
         return chains

@@ -3,17 +3,17 @@ import os
 
 import torch
 from loguru import logger
-from torch_geometric.loader import DataLoader, PrefetchLoader
 
+# from torch_geometric.loader import DataLoader, PrefetchLoader
 from soccerai.data.converters import create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
-from soccerai.models import GCN
+from soccerai.models.rgcn import RGCN
 from soccerai.training.metrics import (
     BinaryConfusionMatrix,
     BinaryPrecisionRecallCurve,
-    PositiveFrameCollector,
+    # PositiveFrameCollector,
 )
-from soccerai.training.trainer import Trainer
+from soccerai.training.trainer import TemporalTrainer
 from soccerai.training.trainer_config import build_cfg
 from soccerai.training.utils import fix_random
 
@@ -48,43 +48,55 @@ def main(args):
         len(val_ds),
     )
 
-    _ = train_ds.to_temporal_iterator()
+    # common_loader_kwargs = dict(
+    #     batch_size=cfg.bs,
+    #     num_workers=NUM_WORKERS,
+    #     pin_memory=True,
+    #     persistent_workers=True,
+    # )
 
-    common_loader_kwargs = dict(
-        batch_size=cfg.bs,
-        num_workers=NUM_WORKERS,
-        pin_memory=True,
-        persistent_workers=True,
-    )
+    # train_loader = PrefetchLoader(
+    #     DataLoader(
+    #         train_ds,
+    #         shuffle=True,
+    #         **common_loader_kwargs,
+    #     ),
+    # )
+    # val_loader = PrefetchLoader(
+    #     DataLoader(
+    #         val_ds,
+    #         shuffle=False,
+    #         **common_loader_kwargs,
+    #     ),
+    # )
 
-    train_loader = PrefetchLoader(
-        DataLoader(
-            train_ds,
-            shuffle=True,
-            **common_loader_kwargs,
-        ),
-    )
-    val_loader = PrefetchLoader(
-        DataLoader(
-            val_ds,
-            shuffle=False,
-            **common_loader_kwargs,
-        ),
-    )
-    model = GCN(train_ds.num_node_features, cfg.dim, 1)
+    train_signals = train_ds.to_temporal_iterators()
+    val_signals = val_ds.to_temporal_iterators()
+    model = RGCN(train_ds.num_node_features, cfg.dim, 1, 256)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    trainer = Trainer(
+    # trainer = Trainer(
+    #     cfg=cfg,
+    #     model=model,
+    #     train_loader=train_loader,
+    #     val_loader=val_loader,
+    #     device=device,
+    #     feature_names=train_ds.feature_names,
+    #     metrics=[
+    #         BinaryConfusionMatrix(),
+    #         BinaryPrecisionRecallCurve(),
+    #         PositiveFrameCollector(),
+    #     ],
+    # )
+    trainer = TemporalTrainer(
         cfg=cfg,
         model=model,
-        train_loader=train_loader,
-        val_loader=val_loader,
+        train_signals=train_signals,
+        val_signals=val_signals,
         device=device,
-        feature_names=train_ds.feature_names,
         metrics=[
             BinaryConfusionMatrix(),
             BinaryPrecisionRecallCurve(),
-            PositiveFrameCollector(),
         ],
     )
     trainer.train(args.name)

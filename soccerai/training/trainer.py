@@ -1,4 +1,6 @@
-from typing import Any, Dict, List, Optional
+import random
+from abc import ABC, abstractmethod
+from typing import Any, Collection, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -9,14 +11,141 @@ from torch.optim import AdamW
 from torch_geometric.data import Batch
 from torch_geometric.explain import Explainer, GNNExplainer
 from torch_geometric.loader import DataLoader
+from torch_geometric_temporal.signal import Discrete_Signal
 from tqdm import tqdm
 
 import wandb
 from soccerai.training.metrics import Metric, PositiveFrameCollector
 from soccerai.training.trainer_config import TrainerConfig
 
+Signals = List[Discrete_Signal]
 
-class Trainer:
+
+class BaseTrainer(ABC):
+    def __init__(
+        self,
+        cfg: TrainerConfig,
+        model: nn.Module,
+        device: str,
+        metrics: List[Metric] = [],
+    ):
+        self.cfg = cfg
+        # self.model: nn.Module = torch.compile(model.to(device))  # type: ignore
+        self.model = model.to(device)
+        self.device = device
+        self.metrics = metrics
+        self.optim = AdamW(self.model.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
+        self.criterion = nn.BCEWithLogitsLoss()
+
+    @abstractmethod
+    def _train_step(self, item: Any) -> torch.Tensor:
+        """
+        Returns: loss
+        """
+        ...
+
+    @abstractmethod
+    def _eval_step(self, item: Any) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Returns: (loss, prediction_probabilities, true_labels)
+        """
+        ...
+
+    @abstractmethod
+    def _get_data_iterable(self, split: str) -> Optional[Collection[Any]]: ...
+
+    def _on_epoch_start(self) -> None:
+        """
+        Hook called at the start of each epoch.
+        """
+        self.model.train()
+
+    def _on_training_end(self) -> None:
+        """
+        Hook called at the end of training.
+        """
+        ...
+
+    def train(self, run_name: str):
+        wandb.init(
+            project=self.cfg.project_name, name=run_name, config=self.cfg.model_dump()
+        )
+        wandb.watch(self.model, log="all", log_freq=100)
+        try:
+            for epoch in tqdm(
+                range(1, self.cfg.n_epochs + 1), desc="Epoch", colour="green"
+            ):
+                self._on_epoch_start()
+
+                train_iterable = self._get_data_iterable("train")
+                assert train_iterable is not None
+
+                for item in tqdm(
+                    train_iterable,
+                    total=len(train_iterable),
+                    desc=f"Epoch {epoch} Batches",
+                    leave=False,
+                    colour="blue",
+                ):
+                    loss = self._train_step(item)
+                    wandb.log({"train/step_loss": loss.item()})
+
+                if epoch % self.cfg.eval_rate == 0:
+                    self.eval("train")
+                    self.eval("val")
+
+            self._on_training_end()
+
+        finally:
+            wandb.finish()
+
+    @torch.inference_mode()
+    def eval(self, split: str) -> None:
+        self.model.eval()
+        iterable = self._get_data_iterable(split)
+
+        if iterable is None:
+            logger.warning(
+                "No data to evaluate for the '{}' split. Skipping evaluation.", split
+            )
+            return
+
+        num_items = len(iterable)
+
+        total_loss = 0.0
+        for m in self.metrics:
+            m.reset()
+
+        for item in tqdm(
+            iterable,
+            total=num_items,
+            desc=f"Evaluating {split}",
+            leave=False,
+            colour="red",
+        ):
+            loss, preds_probs, true_labels = self._eval_step(item)
+            total_loss += loss.item()
+
+            for m in self.metrics:
+                m.update(preds_probs, true_labels, item)
+
+        mean_loss = total_loss / num_items
+        log_dict: Dict[str, Any] = {f"{split}/loss": mean_loss}
+
+        for m in self.metrics:
+            results = m.compute()
+            for name, value in results:
+                log_dict[f"{split}/{name}"] = value
+            plot_result = m.plot()
+            if plot_result:
+                name, fig = plot_result
+                log_dict[f"{split}/{name}"] = wandb.Image(fig)
+                plt.close(fig)
+
+        wandb.log(log_dict)
+
+
+class Trainer(BaseTrainer):
     def __init__(
         self,
         cfg: TrainerConfig,
@@ -27,46 +156,13 @@ class Trainer:
         val_loader: Optional[DataLoader] = None,
         metrics: List[Metric] = [],
     ):
-        self.cfg = cfg
-        self.model: nn.Module = torch.compile(model.to(device))  # type: ignore
-        self.model = model.to(device)
+        super().__init__(cfg, model, device, metrics)
         self.train_loader = train_loader
         self.val_loader = val_loader
-        self.device = device
-        self.metrics = metrics
         self.feature_names = feature_names
 
-        self.optim = AdamW(self.model.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
-        self.criterion = nn.BCEWithLogitsLoss()
-
-    def train(self, run_name: str):
-        wandb.init(
-            project=self.cfg.project_name, name=run_name, config=self.cfg.model_dump()
-        )
-        try:
-            for epoch in tqdm(
-                range(1, self.cfg.n_epochs + 1), desc="Epoch", colour="green"
-            ):
-                self.model.train()
-                for batch in tqdm(
-                    self.train_loader,
-                    total=len(self.train_loader),
-                    desc=f"Epoch {epoch} Batches",
-                    leave=False,
-                    colour="blue",
-                ):
-                    batch_loss = self._train_step(batch)
-                    wandb.log({"train/batch_loss": batch_loss.item()})
-
-                if epoch % self.cfg.eval_rate == 0:
-                    self.eval("train")
-                    if self.val_loader:
-                        self.eval("val")
-
-            self._explain()
-
-        finally:
-            wandb.finish()
+    def _get_data_iterable(self, split: str):
+        return self.train_loader if split == "train" else self.val_loader
 
     def _train_step(self, batch: Batch) -> torch.Tensor:
         self.optim.zero_grad(set_to_none=True)
@@ -83,59 +179,24 @@ class Trainer:
         self.optim.step()
         return loss
 
-    @torch.inference_mode()
-    def eval(self, split: str) -> None:
-        self.model.eval()
-        loader = self.val_loader if split == "val" else self.train_loader
+    def _eval_step(
+        self, batch: Batch
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        out = self.model(
+            x=batch.x,
+            edge_index=batch.edge_index,
+            edge_weight=batch.edge_weight,
+            edge_attr=batch.edge_attr,
+            batch=batch.batch,
+            batch_size=batch.num_graphs,
+        )
+        loss = self.criterion(out, batch.y)
+        preds_probs = torch.sigmoid(out)
+        true_labels = batch.y.cpu().long()
+        return loss, preds_probs, true_labels
 
-        assert loader is not None
-
-        total_loss = 0.0
-        for m in self.metrics:
-            m.reset()
-
-        batch: Batch
-        for batch in tqdm(
-            loader,
-            total=len(loader),
-            desc=f"Evaluating {split}",
-            leave=False,
-            colour="red",
-        ):
-            out = self.model(
-                x=batch.x,
-                edge_index=batch.edge_index,
-                edge_weight=batch.edge_weight,
-                edge_attr=batch.edge_attr,
-                batch=batch.batch,
-                batch_size=batch.num_graphs,
-            )
-            batch_loss = self.criterion(out, batch.y)
-            total_loss += batch_loss.item()
-
-            preds_probs = torch.sigmoid(out)
-            true_labels = batch.y.cpu().long()
-
-            for m in self.metrics:
-                m.update(preds_probs, true_labels, batch)
-
-        mean_loss = total_loss / len(loader)
-
-        # Log metrics and plots to  W&B
-        log_dict: Dict[str, Any] = {f"{split}/loss": mean_loss}
-
-        for m in self.metrics:
-            results = m.compute()
-            for name, value in results:
-                log_dict[f"{split}/{name}"] = value
-
-            plot_result = m.plot()
-            if plot_result:
-                name, fig = plot_result
-                log_dict[f"{split}/{name}"] = wandb.Image(fig)
-                plt.close(fig)
-
-        wandb.log(log_dict)
+    def _on_training_end(self):
+        self._explain()
 
     def _explain(self) -> None:
         if (
@@ -189,3 +250,81 @@ class Trainer:
 
         wandb.log({"explain/node_feats_heatmap": wandb.Image(fig)})
         plt.close(fig)
+
+
+class TemporalTrainer(BaseTrainer):
+    def __init__(
+        self,
+        cfg: TrainerConfig,
+        model: nn.Module,
+        train_signals: Signals,
+        device: str,
+        val_signals: Optional[Signals] = None,
+        metrics: List[Metric] = [],
+    ) -> None:
+        super().__init__(cfg, model, device, metrics)
+        self.train_signals = train_signals
+        self.val_signals = val_signals
+        self.global_step = 0
+
+    def _get_data_iterable(self, split: str) -> Optional[Collection[Any]]:
+        return self.train_signals if split == "train" else self.val_signals
+
+    def _compute_signal_loss_and_last_pred(
+        self, signal: Discrete_Signal
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        T = signal.snapshot_count
+        weights = torch.tensor(
+            [self.cfg.gamma ** (T - 1 - t) for t in range(T)], device=self.device
+        )
+        weights /= weights.sum()
+
+        loss = torch.scalar_tensor(0.0, device=self.device)
+        h = None
+
+        for t, snapshot in enumerate(signal):
+            x = snapshot.x.to(self.device, non_blocking=True)
+            y = snapshot.y.to(self.device, non_blocking=True)
+            edge_index = snapshot.edge_index.to(self.device, non_blocking=True)
+            edge_attr = snapshot.edge_attr.to(self.device, non_blocking=True)
+
+            out, h = self.model(
+                x=x,
+                edge_index=edge_index,
+                edge_weight=edge_attr,
+                edge_attr=edge_attr,
+                prev_h=h,
+            )
+
+            loss += weights[t] * self.criterion(out, y)
+
+        return loss, out
+
+    def _train_step(self, signal: Discrete_Signal) -> torch.Tensor:
+        loss, _ = self._compute_signal_loss_and_last_pred(signal)
+        (loss / self.cfg.accumulation_steps).backward()
+
+        self.global_step += 1
+
+        is_update_step = (
+            self.global_step % self.cfg.accumulation_steps == 0
+            or self.global_step == len(self.train_signals)
+        )
+
+        if is_update_step:
+            self.optim.step()
+            self.optim.zero_grad(set_to_none=True)
+        return loss
+
+    def _eval_step(
+        self, signal: Discrete_Signal
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        loss, out = self._compute_signal_loss_and_last_pred(signal)
+        preds_probs = torch.sigmoid(out)
+        true_labels = signal[0].y.cpu().long()
+        return loss, preds_probs, true_labels
+
+    def _on_epoch_start(self):
+        train_iterable = self._get_data_iterable("train")
+        assert train_iterable is not None
+        random.shuffle(train_iterable)

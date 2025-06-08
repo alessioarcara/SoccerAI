@@ -16,6 +16,8 @@ class TrainerConfig(BaseModel):
     dim: int
     use_goal_features: bool
     connection_mode: str
+    gamma: float
+    accumulation_steps: int
 
 
 def _load_yaml(path: str | Path):
