@@ -206,6 +206,40 @@ def _flatten_chains(chains: List[List[int]]) -> List[int]:
     return [idx for chain in chains for idx in chain]
 
 
+def extract_history_chains(
+    chains_df: pl.DataFrame, event_df: pl.DataFrame, history_length: int
+) -> pl.DataFrame:
+    """
+    Starting from each chain final frame, retrieve its last `history_length`
+    frames regardless of whether they are labeled positive or negative
+    """
+    last_chain_frames = chains_df.unique("chain_id", keep="last", maintain_order=True)
+    history_chains: List[Dict[str, Any]] = []
+
+    for f in last_chain_frames.iter_rows(named=True):
+        chain = []
+        curr_idx = f["index"]
+        curr_game_id = event_df.row(curr_idx, named=True)["gameId"]
+
+        while True:
+            event = event_df.row(curr_idx, named=True)
+            if (
+                event["playerName"] is not None
+                and event["possessionEventType"] != "SH"
+                and event["gameId"] == curr_game_id
+            ):
+                chain.append(event["index"])
+            curr_idx -= 1
+
+            if len(chain) >= history_length:
+                history_chains.append(
+                    {"index": chain, "chain_id": f["chain_id"], "label": f["label"]}
+                )
+                break
+
+    return pl.from_dicts(history_chains).explode("index")
+
+
 def create_dataset(
     output_path: str,
     event_data_path: str = "/home/soccerdata/FIFA_WorldCup_2022/Event Data",
@@ -213,28 +247,32 @@ def create_dataset(
     meta_data_path: str = "/home/soccerdata/FIFA_WorldCup_2022/Metadata",
     skip_velocity: bool = False,
     skip_player_stats: bool = False,
+    pad_history: bool = False,
+    history_length: int = 10,
 ) -> None:
     logger.info("Loading event and player data from {}", event_data_path)
     event_df, players_df = load_and_process_soccer_events(event_data_path)
 
     pos_chains = _load_chains(ACCEPTED_POS_CHAINS_PATH)
     neg_chains = _load_chains(ACCEPTED_NEG_CHAINS_PATH)
-    chains_df = _attach_indices_to_chains(pos_chains, neg_chains)
-
     pos_indices = _flatten_chains(pos_chains)
     neg_indices = _flatten_chains(neg_chains)
+    chains_df = _attach_indices_to_chains(pos_chains, neg_chains)
 
-    labeled_events_df = (
-        event_df.join(chains_df, on="index", how="left")
-        .with_columns(
-            pl.when(pl.col("index").is_in(pos_indices))
-            .then(1)
-            .when(pl.col("index").is_in(neg_indices))
-            .then(0)
-            .otherwise(None)
-            .alias("label")
-        )
-        .filter(pl.col("label").is_not_null())
+    chains_df = chains_df.with_columns(
+        pl.when(pl.col("index").is_in(pos_indices))
+        .then(1)
+        .when(pl.col("index").is_in(neg_indices))
+        .then(0)
+        .otherwise(None)
+        .alias("label")
+    )
+
+    if pad_history:
+        chains_df = extract_history_chains(chains_df, event_df, history_length)
+
+    labeled_events_df = event_df.join(chains_df, on="index", how="left").filter(
+        pl.col("label").is_not_null()
     )
 
     if not skip_velocity:
