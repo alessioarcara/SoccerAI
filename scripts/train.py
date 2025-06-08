@@ -4,19 +4,17 @@ import os
 import torch
 from loguru import logger
 from torch_geometric.loader import DataLoader, PrefetchLoader
-from torch_geometric.transforms import Compose
 
 from soccerai.data.converters import create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
-from soccerai.models import GCN
+from soccerai.models.model import create_model
 from soccerai.training.metrics import (
     BinaryConfusionMatrix,
     BinaryPrecisionRecallCurve,
     PositiveFrameCollector,
 )
-from soccerai.training.trainer import Trainer
+from soccerai.training.trainer import TemporalTrainer, Trainer
 from soccerai.training.trainer_config import build_cfg
-from soccerai.training.transforms import RandomHorizontalFlip, RandomVerticalFlip
 from soccerai.training.utils import fix_random
 
 NUM_WORKERS = (os.cpu_count() or 1) - 1
@@ -27,21 +25,21 @@ torch.set_float32_matmul_precision("high")
 def main(args):
     cfg = build_cfg(CONFIG_PATH)
     fix_random(cfg.seed)
-    converter = create_graph_converter(cfg.connection_mode)
+    converter = create_graph_converter(cfg.data.connection_mode)
 
     train_ds = WorldCup2022Dataset(
         root="soccerai/data/resources",
         converter=converter,
         force_reload=args.reload,
         split="train",
-        cfg=cfg,
-        transform=Compose([RandomHorizontalFlip(p=0.5), RandomVerticalFlip(p=0.5)]),
+        cfg=cfg.data,
+        # transform=Compose([RandomHorizontalFlip(p=0.5), RandomVerticalFlip(p=0.5)]),
     )
     val_ds = WorldCup2022Dataset(
         root="soccerai/data/resources",
         converter=converter,
         split="val",
-        cfg=cfg,
+        cfg=cfg.data,
     )
 
     logger.success(
@@ -50,43 +48,59 @@ def main(args):
         len(val_ds),
     )
 
-    common_loader_kwargs = dict(
-        batch_size=cfg.bs,
-        num_workers=NUM_WORKERS,
-        pin_memory=True,
-        persistent_workers=True,
-    )
-
-    train_loader = PrefetchLoader(
-        DataLoader(
-            train_ds,
-            shuffle=True,
-            **common_loader_kwargs,
-        ),
-    )
-    val_loader = PrefetchLoader(
-        DataLoader(
-            val_ds,
-            shuffle=False,
-            **common_loader_kwargs,
-        ),
-    )
-    model = GCN(train_ds.num_node_features, cfg.dim, 1)
+    model = create_model(cfg, train_ds)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    trainer = Trainer(
-        cfg=cfg,
-        model=model,
-        train_loader=train_loader,
-        val_loader=val_loader,
-        device=device,
-        feature_names=train_ds.feature_names,
-        metrics=[
-            BinaryConfusionMatrix(),
-            BinaryPrecisionRecallCurve(),
-            PositiveFrameCollector(),
-        ],
-    )
+    if cfg.use_temporal:
+        train_signals = train_ds.to_temporal_iterators()
+        val_signals = val_ds.to_temporal_iterators()
+        trainer = TemporalTrainer(
+            cfg=cfg,
+            model=model,
+            train_signals=train_signals,
+            val_signals=val_signals,
+            device=device,
+            metrics=[
+                BinaryConfusionMatrix(),
+                BinaryPrecisionRecallCurve(),
+            ],
+        )
+    else:
+        common_loader_kwargs = dict(
+            batch_size=cfg.trainer.bs,
+            num_workers=NUM_WORKERS,
+            pin_memory=True,
+            persistent_workers=True,
+        )
+
+        train_loader = PrefetchLoader(
+            DataLoader(
+                train_ds,
+                shuffle=True,
+                **common_loader_kwargs,
+            ),
+        )
+        val_loader = PrefetchLoader(
+            DataLoader(
+                val_ds,
+                shuffle=False,
+                **common_loader_kwargs,
+            ),
+        )
+        trainer = Trainer(
+            cfg=cfg,
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            device=device,
+            feature_names=train_ds.feature_names,
+            metrics=[
+                BinaryConfusionMatrix(),
+                BinaryPrecisionRecallCurve(),
+                PositiveFrameCollector(),
+            ],
+        )
+
     trainer.train(args.name)
 
 

@@ -22,17 +22,28 @@ class GraphConverter(ABC):
     def convert_dataframe_to_data_list(
         self, df: pl.DataFrame
     ) -> Tuple[List[Data], List[str]]:
-        data_list: list[Data] = []
+        data_list: List[Data] = []
 
         for _, event_df in df.group_by(["gameEventId", "possessionEventId"]):
             if event_df.height != self.NUM_PLAYERS:
                 continue
 
-            x_df = event_df.drop("gameEventId", "possessionEventId", "label")
-            edge_idx, edge_weight, edge_attr = self._create_edges(x_df)
+            chain_id = int(event_df["chain_id"][0])
+            frame_time = float(event_df["frameTime"][0])
+            label = float(event_df["label"][0])
 
+            x_df = event_df.drop(
+                "gameEventId",
+                "possessionEventId",
+                "label",
+                "chain_id",
+                "frameTime",
+                "gameId",
+            )
+
+            edge_idx, edge_weight, edge_attr = self._create_edges(x_df)
             x = torch.tensor(x_df.to_numpy(), dtype=torch.float32)
-            y = torch.tensor(event_df["label"][0], dtype=torch.float32).view(1, 1)
+            y = torch.tensor(label, dtype=torch.float32).view(1, 1)
 
             data_list.append(
                 Data(
@@ -41,6 +52,8 @@ class GraphConverter(ABC):
                     y=y,
                     edge_weight=edge_weight,
                     edge_attr=edge_attr,
+                    chain_id=torch.tensor([chain_id], dtype=torch.long),
+                    frame_time=torch.tensor([frame_time], dtype=torch.long),
                 )
             )
 
