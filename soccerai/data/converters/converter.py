@@ -38,6 +38,7 @@ class GraphConverter(ABC):
                 "label",
                 "chain_id",
                 "frameTime",
+                "gameId",
             )
 
             edge_idx, edge_weight, edge_attr = self._create_edges(x_df)

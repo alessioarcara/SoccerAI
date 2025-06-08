@@ -15,7 +15,7 @@ from torch_geometric_temporal.signal import DynamicGraphTemporalSignal
 from soccerai.data.config import X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
 from soccerai.data.converters import GraphConverter
 from soccerai.data.utils import reorder_dataframe_cols
-from soccerai.training.trainer_config import TrainerConfig
+from soccerai.training.trainer_config import DataConfig
 
 
 class WorldCup2022Dataset(InMemoryDataset):
@@ -26,7 +26,7 @@ class WorldCup2022Dataset(InMemoryDataset):
         root: str,
         converter: GraphConverter,
         split: str,
-        cfg: TrainerConfig,
+        cfg: DataConfig,
         transform: Optional[Callable] = None,
         force_reload: bool = False,
     ):
@@ -123,7 +123,7 @@ class WorldCup2022Dataset(InMemoryDataset):
             ]
         ).drop(["playerName", "playerName_right"])
 
-        if self.cfg.use_goal_features:
+        if self.cfg.include_goal_features:
             df = self._add_goal_features(df)
 
         return df

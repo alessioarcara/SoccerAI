@@ -16,7 +16,7 @@ from tqdm import tqdm
 
 import wandb
 from soccerai.training.metrics import Metric, PositiveFrameCollector
-from soccerai.training.trainer_config import TrainerConfig
+from soccerai.training.trainer_config import Config
 
 Signals = List[Discrete_Signal]
 
@@ -24,7 +24,7 @@ Signals = List[Discrete_Signal]
 class BaseTrainer(ABC):
     def __init__(
         self,
-        cfg: TrainerConfig,
+        cfg: Config,
         model: nn.Module,
         device: str,
         metrics: List[Metric] = [],
@@ -34,7 +34,9 @@ class BaseTrainer(ABC):
         self.model = model.to(device)
         self.device = device
         self.metrics = metrics
-        self.optim = AdamW(self.model.parameters(), lr=cfg.lr, weight_decay=cfg.wd)
+        self.optim = AdamW(
+            self.model.parameters(), lr=cfg.trainer.lr, weight_decay=cfg.trainer.wd
+        )
         self.criterion = nn.BCEWithLogitsLoss()
 
     @abstractmethod
@@ -73,7 +75,7 @@ class BaseTrainer(ABC):
         wandb.watch(self.model, log="all", log_freq=100)
         try:
             for epoch in tqdm(
-                range(1, self.cfg.n_epochs + 1), desc="Epoch", colour="green"
+                range(1, self.cfg.trainer.n_epochs + 1), desc="Epoch", colour="green"
             ):
                 self._on_epoch_start()
 
@@ -90,7 +92,7 @@ class BaseTrainer(ABC):
                     loss = self._train_step(item)
                     wandb.log({"train/step_loss": loss.item()})
 
-                if epoch % self.cfg.eval_rate == 0:
+                if epoch % self.cfg.trainer.eval_rate == 0:
                     self.eval("train")
                     self.eval("val")
 
@@ -148,7 +150,7 @@ class BaseTrainer(ABC):
 class Trainer(BaseTrainer):
     def __init__(
         self,
-        cfg: TrainerConfig,
+        cfg: Config,
         model: nn.Module,
         train_loader: DataLoader,
         device: str,
@@ -161,7 +163,7 @@ class Trainer(BaseTrainer):
         self.val_loader = val_loader
         self.feature_names = feature_names
 
-    def _get_data_iterable(self, split: str):
+    def _get_data_iterable(self, split: str) -> Optional[Collection[Any]]:
         return self.train_loader if split == "train" else self.val_loader
 
     def _train_step(self, batch: Batch) -> torch.Tensor:
@@ -255,7 +257,7 @@ class Trainer(BaseTrainer):
 class TemporalTrainer(BaseTrainer):
     def __init__(
         self,
-        cfg: TrainerConfig,
+        cfg: Config,
         model: nn.Module,
         train_signals: Signals,
         device: str,
@@ -275,7 +277,8 @@ class TemporalTrainer(BaseTrainer):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         T = signal.snapshot_count
         weights = torch.tensor(
-            [self.cfg.gamma ** (T - 1 - t) for t in range(T)], device=self.device
+            [self.cfg.trainer.gamma ** (T - 1 - t) for t in range(T)],
+            device=self.device,
         )
         weights /= weights.sum()
 
@@ -302,12 +305,12 @@ class TemporalTrainer(BaseTrainer):
 
     def _train_step(self, signal: Discrete_Signal) -> torch.Tensor:
         loss, _ = self._compute_signal_loss_and_last_pred(signal)
-        (loss / self.cfg.accumulation_steps).backward()
+        (loss / self.cfg.trainer.grad_accumulation_steps).backward()
 
         self.global_step += 1
 
         is_update_step = (
-            self.global_step % self.cfg.accumulation_steps == 0
+            self.global_step % self.cfg.trainer.grad_accumulation_steps == 0
             or self.global_step == len(self.train_signals)
         )
 
