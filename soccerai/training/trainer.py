@@ -267,7 +267,6 @@ class TemporalTrainer(BaseTrainer):
         super().__init__(cfg, model, device, metrics)
         self.train_signals = train_signals
         self.val_signals = val_signals
-        self.global_step = 0
 
     def _get_data_iterable(self, split: str) -> Optional[Collection[Any]]:
         return self.train_signals if split == "train" else self.val_signals
@@ -304,19 +303,10 @@ class TemporalTrainer(BaseTrainer):
         return loss, out
 
     def _train_step(self, signal: Discrete_Signal) -> torch.Tensor:
+        self.optim.zero_grad(set_to_none=True)
         loss, _ = self._compute_signal_loss_and_last_pred(signal)
-        (loss / self.cfg.trainer.grad_accumulation_steps).backward()
-
-        self.global_step += 1
-
-        is_update_step = (
-            self.global_step % self.cfg.trainer.grad_accumulation_steps == 0
-            or self.global_step == len(self.train_signals)
-        )
-
-        if is_update_step:
-            self.optim.step()
-            self.optim.zero_grad(set_to_none=True)
+        loss.backward()
+        self.optim.step()
         return loss
 
     def _eval_step(

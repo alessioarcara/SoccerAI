@@ -17,7 +17,6 @@ class TrainerConfig(BaseModel):
     n_epochs: int
     eval_rate: int
     gamma: float
-    grad_accumulation_steps: int
 
 
 class DataConfig(BaseModel):
