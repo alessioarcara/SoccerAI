@@ -11,8 +11,7 @@ trainer:
   lr: 1e-4
   wd: 0.01
   eval_rate: 2
-  gamma: 0.5
-  grad_accumulation_steps: 1 
+  gamma: 0.9
 data:
   include_goal_features: True 
   connection_mode: "bipartite"
