@@ -1,4 +1,5 @@
 import json
+from collections import defaultdict
 from pathlib import Path
 from typing import Callable, List, Optional
 
@@ -9,6 +10,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from torch_geometric.data import InMemoryDataset
+from torch_geometric_temporal.signal import DynamicGraphTemporalSignal
 
 from soccerai.data.config import X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
 from soccerai.data.converters import GraphConverter
@@ -17,7 +19,7 @@ from soccerai.data.transformers import (
     PlayerPositionTransformer,
 )
 from soccerai.data.utils import reorder_dataframe_cols
-from soccerai.training.trainer_config import TrainerConfig
+from soccerai.training.trainer_config import DataConfig
 
 
 class WorldCup2022Dataset(InMemoryDataset):
@@ -28,7 +30,7 @@ class WorldCup2022Dataset(InMemoryDataset):
         root: str,
         converter: GraphConverter,
         split: str,
-        cfg: TrainerConfig,
+        cfg: DataConfig,
         transform: Optional[Callable] = None,
         force_reload: bool = False,
     ):
@@ -60,26 +62,33 @@ class WorldCup2022Dataset(InMemoryDataset):
         except (IndexError, AttributeError):
             return 0
 
-    def _split_dataframe_by_event_keys(
-        self,
-        df: pl.DataFrame,
-        key_cols: list[str] = ["gameEventId", "possessionEventId"],
+    def _split_by_worldcup_phase(
+        self, df: pl.DataFrame, val_ratio: float
     ) -> tuple[pl.DataFrame, pl.DataFrame]:
-        event_keys_df = df.select(key_cols).unique().sort(key_cols)
-        n_events = event_keys_df.height
-        cut = int((1.0 - self.cfg.val_ratio) * n_events)
-        train_keys = event_keys_df.slice(0, cut)
-        val_keys = event_keys_df.slice(cut, n_events)
+        """
+        Split the DataFrame into training and validation sets.
 
-        train_df = df.join(train_keys, on=key_cols, how="semi")
-        val_df = df.join(val_keys, on=key_cols, how="semi")
+        The split accounts the two phases of a FIFA World Cup:
+            * 48 group-stage games -> training set
+            * 16 knock-out games -> validation set
+        """
+        game_ids_df = df.select(["gameId"]).unique().sort("gameId")
+        n_games = game_ids_df.height
+
+        n_train_games = int((1.0 - val_ratio) * n_games)
+
+        train_game_ids = game_ids_df.slice(0, n_train_games)
+        val_game_ids = game_ids_df.slice(n_train_games, n_games)
+
+        train_df = df.join(train_game_ids, on="gameId", how="semi")
+        val_df = df.join(val_game_ids, on="gameId", how="semi")
+
         return train_df, val_df
 
     def _prepare_dataframe(self, df: pl.DataFrame) -> pl.DataFrame:
         cols_to_drop = [
             "gameEventType",
             "index",
-            "gameId",
             "startTime",
             "endTime",
             "index_right",
@@ -148,7 +157,7 @@ class WorldCup2022Dataset(InMemoryDataset):
             ]
         )
 
-        if self.cfg.use_goal_features:
+        if self.cfg.include_goal_features:
             is_home_team = df["team"] == "home"
             is_second_half = df["frameTime"] > df["startPeriod2"]
 
@@ -183,9 +192,11 @@ class WorldCup2022Dataset(InMemoryDataset):
         ]
         pos_cols = ["x", "y"]
         exclude_cols = set(
-            cat_cols + pos_cols + ["gameEventId", "possessionEventId", "label"]
+            cat_cols
+            + pos_cols
+            + ["gameEventId", "possessionEventId", "label", "gameId", "chain_id"]
         )
-        if self.cfg.use_goal_features:
+        if self.cfg.include_goal_features:
             goal_cols = ["x_goal", "y_goal"]
             exclude_cols.update(goal_cols)
         num_cols = [c for c in df.columns if c not in exclude_cols]
@@ -211,7 +222,7 @@ class WorldCup2022Dataset(InMemoryDataset):
             ("player_pos", PlayerPositionTransformer(), pos_cols),
         ]
 
-        if self.cfg.use_goal_features:
+        if self.cfg.include_goal_features:
             transformers.append(
                 ("goal_loc", GoalLocationTransformer(), pos_cols + goal_cols)
             )
@@ -228,7 +239,7 @@ class WorldCup2022Dataset(InMemoryDataset):
     def process(self):
         df = self._prepare_dataframe(pl.read_parquet(self.raw_paths[0]))
 
-        train_df, val_df = self._split_dataframe_by_event_keys(df)
+        train_df, val_df = self._split_by_worldcup_phase(df, self.cfg.val_ratio)
 
         logger.info(
             "DataFrame split → train: {} rows, val: {} rows",
@@ -249,6 +260,7 @@ class WorldCup2022Dataset(InMemoryDataset):
         train_data_list, feature_names = self.converter.convert_dataframe_to_data_list(
             train_transformed
         )
+
         val_data_list, _ = self.converter.convert_dataframe_to_data_list(
             val_transformed
         )
@@ -258,3 +270,31 @@ class WorldCup2022Dataset(InMemoryDataset):
 
         fp = Path(self.processed_dir) / self.FEATURE_NAMES_FILE
         fp.write_text(json.dumps(feature_names, ensure_ascii=False, indent=4))
+
+    def to_temporal_iterators(self) -> List[DynamicGraphTemporalSignal]:
+        buckets = defaultdict(list)
+        for data in self:
+            chain_id = int(data.chain_id.item())
+            buckets[chain_id].append(data)
+
+        chains = []
+        for chain_id, frames in buckets.items():
+            ordered = sorted(frames, key=lambda f: float(f.frame_time.item()))
+
+            edge_indices = [f.edge_index.numpy() for f in ordered]
+            node_features = [f.x.numpy() for f in ordered]
+            global_features = [f.u.numpy() for f in ordered]
+            targets = [f.y.numpy() for f in ordered]
+            edge_weights = [f.edge_weight.numpy() for f in ordered]
+
+            chains.append(
+                DynamicGraphTemporalSignal(
+                    edge_indices=edge_indices,
+                    edge_weights=edge_weights,
+                    features=node_features,
+                    targets=targets,
+                    u=global_features,
+                )
+            )
+
+        return chains

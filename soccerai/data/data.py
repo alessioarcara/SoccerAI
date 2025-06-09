@@ -188,6 +188,20 @@ def _load_chains(chain_path: str) -> List[List[int]]:
         return chains
 
 
+def _attach_indices_to_chains(
+    pos_chains: List[List[int]], neg_chains: List[List[int]]
+) -> pl.DataFrame:
+    all_chains = pos_chains + neg_chains
+
+    rows = [
+        {"chain_id": chain_id, "index": frame_id}
+        for chain_id, chain in enumerate(all_chains)
+        for frame_id in chain
+    ]
+
+    return pl.DataFrame(rows)
+
+
 def _flatten_chains(chains: List[List[int]]) -> List[int]:
     return [idx for chain in chains for idx in chain]
 
@@ -202,25 +216,26 @@ def create_dataset(
 ) -> None:
     logger.info("Loading event and player data from {}", event_data_path)
     event_df, players_df = load_and_process_soccer_events(event_data_path)
-    metadata_df = load_and_process_metadata(meta_data_path)
 
-    pos_indices = _flatten_chains(_load_chains(ACCEPTED_POS_CHAINS_PATH))
-    neg_indices = _flatten_chains(_load_chains(ACCEPTED_NEG_CHAINS_PATH))
+    pos_chains = _load_chains(ACCEPTED_POS_CHAINS_PATH)
+    neg_chains = _load_chains(ACCEPTED_NEG_CHAINS_PATH)
+    chains_df = _attach_indices_to_chains(pos_chains, neg_chains)
 
-    logger.info(
-        "Labeled data stats: {} positive events, {} negative events",
-        len(pos_indices),
-        len(neg_indices),
+    pos_indices = _flatten_chains(pos_chains)
+    neg_indices = _flatten_chains(neg_chains)
+
+    labeled_events_df = (
+        event_df.join(chains_df, on="index", how="left")
+        .with_columns(
+            pl.when(pl.col("index").is_in(pos_indices))
+            .then(1)
+            .when(pl.col("index").is_in(neg_indices))
+            .then(0)
+            .otherwise(None)
+            .alias("label")
+        )
+        .filter(pl.col("label").is_not_null())
     )
-
-    labeled_events_df = event_df.with_columns(
-        pl.when(pl.col("index").is_in(pos_indices))
-        .then(1)
-        .when(pl.col("index").is_in(neg_indices))
-        .then(0)
-        .otherwise(None)
-        .alias("label")
-    ).filter(pl.col("label").is_not_null())
 
     if not skip_velocity:
         logger.info("Adding player velocities from {}", tracking_data_path)
@@ -237,38 +252,35 @@ def create_dataset(
         logger.info("Adding player statistics")
         player_stats_df = pl.read_csv(
             PLAYER_STATS_PATH, schema_overrides={"shirtNumber": pl.String}
-        ).rename(
-            {
-                "playerTeam": "teamName",
-                "shirtNumber": "jerseyNum",
-            }
-        )
-
+        ).rename({"playerTeam": "teamName", "shirtNumber": "jerseyNum"})
+        metadata_df = load_and_process_metadata(meta_data_path)
         metadata_df = metadata_df.with_columns(pl.col("gameId").cast(pl.Int64))
 
-        result_df = result_df.join(
-            metadata_df.select(
-                [
-                    "gameId",
-                    "homeTeamName",
-                    "awayTeamName",
-                    "homeTeamStartLeft",
-                    "startPeriod2",
-                ]
-            ),
-            on="gameId",
-            how="left",
-        ).with_columns(
-            pl.when(pl.col("team") == "home")
-            .then(pl.col("homeTeamName"))
-            .when(pl.col("team") == "away")
-            .then(pl.col("awayTeamName"))
-            .otherwise(None)
-            .alias("teamName")
-        )
-
-        result_df = result_df.join(
-            player_stats_df, on=["teamName", "jerseyNum"], coalesce=True, how="left"
+        result_df = (
+            result_df.join(
+                metadata_df.select(
+                    [
+                        "gameId",
+                        "homeTeamName",
+                        "awayTeamName",
+                        "homeTeamStartLeft",
+                        "startPeriod2",
+                    ]
+                ),
+                on="gameId",
+                how="left",
+            )
+            .with_columns(
+                pl.when(pl.col("team") == "home")
+                .then(pl.col("homeTeamName"))
+                .when(pl.col("team") == "away")
+                .then(pl.col("awayTeamName"))
+                .otherwise(None)
+                .alias("teamName")
+            )
+            .join(
+                player_stats_df, on=["teamName", "jerseyNum"], coalesce=True, how="left"
+            )
         )
 
     logger.info("Saving dataset to {}", output_path)

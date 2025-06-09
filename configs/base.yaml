@@ -1,12 +1,18 @@
 project_name: "soccerai"
 seed: 42
-bs: 32 
-n_epochs: 10
-lr: 5e-5
-wd: 0.01
-eval_rate: 2
-val_ratio: 0.1
-dim: 256 
-use_goal_features: False 
-use_global_features: True 
-connection_mode: "bipartite"
+use_temporal: True 
+model:
+  model_name: "gcrnn"
+  dmid: 256
+  dhid: 128
+trainer:
+  bs: 32 
+  n_epochs: 20
+  lr: 1e-4
+  wd: 0.01
+  eval_rate: 2
+  gamma: 0.9
+data:
+  include_goal_features: True 
+  connection_mode: "bipartite"
+  val_ratio: 0.2
