@@ -139,7 +139,7 @@ class WorldCup2022Dataset(InMemoryDataset):
                 "possessionEventId",
                 "label",
                 "gameId",
-                "frameTime",
+                # "frameTime",
                 "chain_id",
             ]
         )
