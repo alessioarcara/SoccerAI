@@ -101,10 +101,9 @@ def main(args):
             ],
         )
 
-    x = torch.rand(22, train_ds.num_features)
-    u = torch.rand(1, train_ds.num_global_features)
-    edge_index = torch.randint(11 * 22, size=(2, 1))
-
+    x = torch.rand((22, train_ds.num_features), device=device)
+    edge_index = torch.randint(0, 22, (2, 11 * 22), dtype=torch.long, device=device)
+    u = torch.rand((1, train_ds.num_global_features), device=device)
     print(summary(model, x, edge_index, u))
     trainer.train(args.name)
 

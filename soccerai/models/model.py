@@ -58,9 +58,13 @@ class GCRNN(nn.Module):
         super(GCRNN, self).__init__()
         self.gcn1 = pyg_nn.GCNConv(node_feature_din, 256)
         self.gcn2 = pyg_nn.GCNConv(256, 128)
+
+        self.global_proj = nn.Linear(glob_feature_din, 128)
+
         self.gcrn = pygt_nn.recurrent.GConvGRU(128 + node_feature_din, 256, 1)
+
         self.mean_pool = pyg_nn.MeanAggregation()
-        self.head = GraphClassificationHead(128, dout)
+        self.head = GraphClassificationHead(256, dout)
 
     def forward(
         self,
@@ -72,10 +76,17 @@ class GCRNN(nn.Module):
         prev_h: OptTensor = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         f = F.relu(self.gcn1(x, edge_index, edge_weight))
-
         if prev_h is None:
             prev_h = torch.zeros_like(f, device=f.device)
 
         z = F.relu(self.gcn2(f + prev_h, edge_index, edge_weight))
+
+        global_emb = F.relu(self.global_proj(u))
+
         h = self.gcrn(torch.concat([z, x], dim=-1), edge_index, edge_weight, prev_h)
-        return self.head(self.mean_pool(z)), h
+
+        graph_emb = self.mean_pool(z)
+        fused_emb = torch.cat([graph_emb, global_emb], dim=-1)
+        out = self.head(fused_emb)
+
+        return out, h
