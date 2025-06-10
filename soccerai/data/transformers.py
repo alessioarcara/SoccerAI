@@ -68,15 +68,15 @@ class LocationTransformer(BaseTransformer):
         dx = x_target - x
         dy = y_target - y
 
-        goal_dist = np.sqrt(dx**2 + dy**2) + 1e-6
+        target_dist = np.sqrt(dx**2 + dy**2) + 1e-6
 
-        cos_theta = dx / goal_dist
-        sin_theta = dy / goal_dist
+        cos_theta = dx / target_dist
+        sin_theta = dy / target_dist
 
         norm = np.sqrt(self.pitch_length**2 + self.pitch_width**2)
-        goal_dist_normed = goal_dist / norm
+        target_dist_normed = target_dist / norm
 
-        result = np.column_stack((goal_dist_normed, cos_theta, sin_theta))
+        result = np.column_stack((target_dist_normed, cos_theta, sin_theta))
 
         if self.output == "polars":
             return pl.DataFrame(

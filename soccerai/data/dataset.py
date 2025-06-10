@@ -180,7 +180,6 @@ class WorldCup2022Dataset(InMemoryDataset):
                 | (~is_home_team & ~df["homeTeamStartLeft"] & ~is_second_half)
                 | (~is_home_team & df["homeTeamStartLeft"] & is_second_half)
             )
-
             df = df.with_columns(
                 [
                     pl.when(is_goal_right)
@@ -240,11 +239,19 @@ class WorldCup2022Dataset(InMemoryDataset):
 
         if self.cfg.include_goal_features:
             transformers.append(
-                ("goal_loc", LocationTransformer("goal"), pos_cols + goal_cols)
+                (
+                    "goal_loc",
+                    LocationTransformer(target_name="goal"),
+                    pos_cols + goal_cols,
+                )
             )
         if self.cfg.include_ball_features:
             transformers.append(
-                ("ball_loc", LocationTransformer("ball"), pos_cols + ball_cols)
+                (
+                    "ball_loc",
+                    LocationTransformer(target_name="ball"),
+                    pos_cols + ball_cols,
+                )
             )
 
         prep = ColumnTransformer(
