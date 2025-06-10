@@ -125,7 +125,7 @@ class WorldCup2022Dataset(InMemoryDataset):
                     ).alias("frameTime")
                 ),
                 (
-                    pl.when(pl.col("playerName") == pl.col("playerName_right"))
+                    pl.when(pl.col("playerName") == pl.col("playerNickname"))
                     .then(1)
                     .otherwise(0)
                 ).alias("is_ball_carrier"),
@@ -142,7 +142,7 @@ class WorldCup2022Dataset(InMemoryDataset):
                     .alias("age")
                 ),
             ]
-        ).drop(["playerName", "playerName_right"])
+        ).drop(["playerName", "playerNickname"])
 
         possession_team = df.filter(pl.col("is_ball_carrier") == 1)["team"][0]
 
@@ -185,7 +185,7 @@ class WorldCup2022Dataset(InMemoryDataset):
     def _create_preprocessor(self, df: pl.DataFrame) -> ColumnTransformer:
         cat_cols = [
             "possessionEventType",
-            "playerRole",
+            "positionGroupType",
             "is_possession_team",
             "is_ball_carrier",
             "age",

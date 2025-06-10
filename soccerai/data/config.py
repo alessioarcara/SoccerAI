@@ -10,6 +10,8 @@ def get_resource_path(filename: str, package: str = "soccerai.data.resources") -
 
 BALL_IMAGE_PATH = get_resource_path("soccer_ball_transparent.png")
 PLAYER_STATS_PATH = get_resource_path("rosters.csv")
+PLAYER_ORIGINAL_ADDITIONAL_PATH = get_resource_path("players_original.csv")
+PLAYER_ADDITIONAL_PATH = get_resource_path("players.csv")
 ACCEPTED_POS_CHAINS_PATH = get_resource_path("accepted_pos_chains.json")
 ACCEPTED_NEG_CHAINS_PATH = get_resource_path("accepted_neg_chains.json")
 DATASET_PATH = get_resource_path("dataset.parquet")

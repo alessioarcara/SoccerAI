@@ -8,6 +8,7 @@ from loguru import logger
 from soccerai.data.config import (
     ACCEPTED_NEG_CHAINS_PATH,
     ACCEPTED_POS_CHAINS_PATH,
+    PLAYER_ADDITIONAL_PATH,
     PLAYER_STATS_PATH,
 )
 from soccerai.data.enrichers import PlayerVelocityEnricher
@@ -99,7 +100,7 @@ def extract_player_info(player_info: Dict[str, Any]) -> Dict[str, Any]:
         "playerName": player_info["player"]["nickname"],
         "shirtNumber": player_info["shirtNumber"],
         "playerTeam": player_info["team"]["name"],
-        "playerRole": player_info["positionGroupType"],
+        "playerRole": player_info["playerRole"],
     }
 
 
@@ -282,6 +283,15 @@ def create_dataset(
                 player_stats_df, on=["teamName", "jerseyNum"], coalesce=True, how="left"
             )
         )
+
+    players_additional_df = pl.read_csv(PLAYER_ADDITIONAL_PATH)
+    players_additional_df = players_additional_df.unique().select(
+        "id", "height", "positionGroupType"
+    )
+    result_df = result_df.join(
+        players_additional_df, left_on="playerId", right_on="id", how="left"
+    )
+    result_df = result_df.drop("playerRole")
 
     logger.info("Saving dataset to {}", output_path)
     result_df.write_parquet(output_path)
