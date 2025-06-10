@@ -15,7 +15,7 @@ from torch_geometric_temporal.signal import DynamicGraphTemporalSignal
 from soccerai.data.config import X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
 from soccerai.data.converters import GraphConverter
 from soccerai.data.transformers import (
-    GoalLocationTransformer,
+    LocationTransformer,
     PlayerPositionTransformer,
 )
 from soccerai.data.utils import reorder_dataframe_cols
@@ -107,6 +107,19 @@ class WorldCup2022Dataset(InMemoryDataset):
             "playerId",
         ]
         df = df.drop(cols_to_drop)
+        if self.cfg.include_ball_features:
+            df = df.with_columns(
+                pl.col("x")
+                .filter(pl.col("team").is_null())
+                .first()
+                .over("gameEventId", "possessionEventId")
+                .alias("x_ball"),
+                pl.col("y")
+                .filter(pl.col("team").is_null())
+                .first()
+                .over("gameEventId", "possessionEventId")
+                .alias("y_ball"),
+            )
 
         df = (
             df.filter(pl.col("team").is_not_null())
@@ -199,6 +212,9 @@ class WorldCup2022Dataset(InMemoryDataset):
         if self.cfg.include_goal_features:
             goal_cols = ["x_goal", "y_goal"]
             exclude_cols.update(goal_cols)
+        if self.cfg.include_ball_features:
+            ball_cols = ["x_ball", "y_ball"]
+            exclude_cols.update(ball_cols)
         num_cols = [c for c in df.columns if c not in exclude_cols]
 
         num_pipe = Pipeline(
@@ -224,7 +240,11 @@ class WorldCup2022Dataset(InMemoryDataset):
 
         if self.cfg.include_goal_features:
             transformers.append(
-                ("goal_loc", GoalLocationTransformer(), pos_cols + goal_cols)
+                ("goal_loc", LocationTransformer("goal"), pos_cols + goal_cols)
+            )
+        if self.cfg.include_ball_features:
+            transformers.append(
+                ("ball_loc", LocationTransformer("ball"), pos_cols + ball_cols)
             )
 
         prep = ColumnTransformer(

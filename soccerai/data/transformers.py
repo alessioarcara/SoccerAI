@@ -45,9 +45,10 @@ class PlayerPositionTransformer(BaseTransformer):
         return result
 
 
-class GoalLocationTransformer(BaseTransformer):
+class LocationTransformer(BaseTransformer):
     def __init__(
         self,
+        target_name: str,
         pitch_length: float = 105.0,
         pitch_width: float = 68.0,
         output: str = "default",
@@ -55,16 +56,17 @@ class GoalLocationTransformer(BaseTransformer):
         super().__init__(output)
         self.pitch_length = pitch_length
         self.pitch_width = pitch_width
+        self.target_name = target_name
 
     def transform(self, X):
         coords = np.asarray(X, dtype=float)
         x = coords[:, 0]
         y = coords[:, 1]
-        x_G = coords[:, 2]
-        y_G = coords[:, 3]
+        x_target = coords[:, 2]
+        y_target = coords[:, 3]
 
-        dx = x_G - x
-        dy = y_G - y
+        dx = x_target - x
+        dy = y_target - y
 
         goal_dist = np.sqrt(dx**2 + dy**2) + 1e-6
 
@@ -79,9 +81,9 @@ class GoalLocationTransformer(BaseTransformer):
         if self.output == "polars":
             return pl.DataFrame(
                 {
-                    "goal_dist": result[:, 0],
-                    "goal_cos": result[:, 1],
-                    "goal_sin": result[:, 2],
+                    f"{self.target_name}_dist": result[:, 0],
+                    f"{self.target_name}_cos": result[:, 1],
+                    f"{self.target_name}_sin": result[:, 2],
                 }
             )
 
