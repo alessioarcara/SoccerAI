@@ -16,77 +16,77 @@ from soccerai.training.trainer_config import Config
 def create_model(cfg: Config, train_ds: WorldCup2022Dataset) -> nn.Module:
     match cfg.model.model_name:
         case "gcn":
-            return GCN(train_ds.num_node_features, cfg.model.dmid)
-        case "rgcn":
-            return RGCN(train_ds.num_node_features, cfg.model.dmid, cfg.model.dhid)
+            return GCN(
+                train_ds.num_node_features, train_ds.num_global_features, cfg.model.dmid
+            )
         case "gcrnn":
-            return GCRNN(train_ds.num_node_features)
+            return GCRNN(train_ds.num_node_features, train_ds.num_global_features)
         case _:
             raise ValueError("Invalid model name")
 
 
 class GCN(torch.nn.Module):
-    def __init__(self, din: int, dmid: int, dout: int = 1):
+    def __init__(
+        self, node_feature_din: int, glob_feature_din: int, dmid: int, dout: int = 1
+    ):
         super(GCN, self).__init__()
-        self.backbone = GCNBackbone(din, dmid)
-        self.head = GraphClassificationHead(dmid, dout)
+        self.backbone = GCNBackbone(node_feature_din, dmid)
+        self.global_proj = nn.Linear(glob_feature_din, dmid)
+        self.mean_pool = pyg_nn.MeanAggregation()
+        self.head = GraphClassificationHead(dmid * 2, dout)
 
     def forward(
         self,
         x: torch.Tensor,
         edge_index: Adj,
+        u: torch.Tensor,
         edge_weight: OptTensor = None,
         edge_attr: OptTensor = None,
         batch: OptTensor = None,
         batch_size: Optional[int] = None,
     ):
-        x = self.backbone(x, edge_index, edge_weight, edge_attr)
-        return self.head(x, batch, batch_size)
+        node_emb = self.backbone(x, edge_index, edge_weight, edge_attr)
+        graph_emb = self.mean_pool(node_emb, batch, dim_size=batch_size)
+        global_emb = F.relu(self.global_proj(u), inplace=True)
 
-
-class RGCN(torch.nn.Module):
-    def __init__(self, din: int, dmid: int, dhid: int, dout: int = 1):
-        super(RGCN, self).__init__()
-        self.spatial = GCNBackbone(din, dmid)
-        self.temporal = nn.GRUCell(dmid, dhid, bias=False)
-        self.head = GraphClassificationHead(dhid, dout)
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        edge_index: Adj,
-        edge_weight: OptTensor = None,
-        edge_attr: OptTensor = None,
-        prev_h: OptTensor = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        x = self.spatial(x, edge_index, edge_weight, edge_attr)
-        h = self.temporal(x, prev_h)
-        return self.head(h), h
+        fused_emb = torch.cat([graph_emb, global_emb], dim=-1)
+        return self.head(fused_emb)
 
 
 class GCRNN(nn.Module):
-    # TODO: aggiungere iperparametro per scegliere tipologia di skip connection
-    def __init__(self, din: int, dout: int = 1):
+    def __init__(self, node_feature_din: int, glob_feature_din: int, dout: int = 1):
         super(GCRNN, self).__init__()
-        self.gcn1 = pyg_nn.GCNConv(din, 256)
+        self.gcn1 = pyg_nn.GCNConv(node_feature_din, 256)
         self.gcn2 = pyg_nn.GCNConv(256, 128)
-        self.gcrn = pygt_nn.recurrent.GConvGRU(128 + din, 256, 1)
-        self.head = GraphClassificationHead(128, dout)
+
+        self.global_proj = nn.Linear(glob_feature_din, 128)
+
+        self.gcrn = pygt_nn.recurrent.GConvGRU(128 + node_feature_din, 256, 1)
+
+        self.mean_pool = pyg_nn.MeanAggregation()
+        self.head = GraphClassificationHead(256, dout)
 
     def forward(
         self,
         x: torch.Tensor,
         edge_index: Adj,
+        u: torch.Tensor,
         edge_weight: OptTensor = None,
         edge_attr: OptTensor = None,
         prev_h: OptTensor = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        edge_index = edge_index.to(torch.long)
         f = F.relu(self.gcn1(x, edge_index, edge_weight))
-
         if prev_h is None:
             prev_h = torch.zeros_like(f, device=f.device)
 
         z = F.relu(self.gcn2(f + prev_h, edge_index, edge_weight))
+
+        global_emb = F.relu(self.global_proj(u))
+
         h = self.gcrn(torch.concat([z, x], dim=-1), edge_index, edge_weight, prev_h)
-        return self.head(z), h
+
+        graph_emb = self.mean_pool(z)
+        fused_emb = torch.cat([graph_emb, global_emb], dim=-1)
+        out = self.head(fused_emb)
+
+        return out, h

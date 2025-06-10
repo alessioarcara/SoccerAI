@@ -8,12 +8,16 @@ from loguru import logger
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import MinMaxScaler, OneHotEncoder, StandardScaler
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from torch_geometric.data import InMemoryDataset
 from torch_geometric_temporal.signal import DynamicGraphTemporalSignal
 
 from soccerai.data.config import X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
 from soccerai.data.converters import GraphConverter
+from soccerai.data.transformers import (
+    GoalLocationTransformer,
+    PlayerPositionTransformer,
+)
 from soccerai.data.utils import reorder_dataframe_cols
 from soccerai.training.trainer_config import DataConfig
 
@@ -44,12 +48,19 @@ class WorldCup2022Dataset(InMemoryDataset):
         )
 
     @property
-    def raw_file_names(self):
+    def raw_file_names(self) -> List[str]:
         return ["dataset.parquet"]
 
     @property
-    def processed_file_names(self):
+    def processed_file_names(self) -> List[str]:
         return ["train_data.pt", "val_data.pt"]
+
+    @property
+    def num_global_features(self) -> int:
+        try:
+            return self[0].u.shape[-1]
+        except (IndexError, AttributeError):
+            return 0
 
     def _split_by_worldcup_phase(
         self, df: pl.DataFrame, val_ratio: float
@@ -117,32 +128,77 @@ class WorldCup2022Dataset(InMemoryDataset):
                     pl.when(pl.col("playerName") == pl.col("playerName_right"))
                     .then(1)
                     .otherwise(0)
-                ).alias("ballPossession"),
-                (pl.col("Weight").str.replace("kg", "").cast(pl.UInt8)),
-                (pl.col("height_cm").cast(pl.UInt8)),
+                ).alias("is_ball_carrier"),
+                (pl.col("Weight").str.replace("kg", "").cast(pl.Float64)),
+                (pl.col("height_cm").cast(pl.Float64)),
+                (
+                    pl.when(pl.col("age") < 20)
+                    .then(pl.lit("Under 20"))
+                    .when(pl.col("age") < 29)
+                    .then(pl.lit("20-28"))
+                    .when(pl.col("age") < 35)
+                    .then(pl.lit("29-35"))
+                    .otherwise(pl.lit("35+"))
+                    .alias("age")
+                ),
             ]
         ).drop(["playerName", "playerName_right"])
 
+        possession_team = df.filter(pl.col("is_ball_carrier") == 1)["team"][0]
+
+        df = df.with_columns(
+            [
+                (
+                    pl.when(pl.col("team") == possession_team)
+                    .then(1)
+                    .otherwise(0)
+                    .alias("is_possession_team")
+                ),
+            ]
+        )
+
         if self.cfg.include_goal_features:
-            df = self._add_goal_features(df)
+            is_home_team = df["team"] == "home"
+            is_second_half = df["frameTime"] > df["startPeriod2"]
+
+            is_goal_right = (
+                (is_home_team & df["homeTeamStartLeft"] & ~is_second_half)
+                | (is_home_team & ~df["homeTeamStartLeft"] & is_second_half)
+                | (~is_home_team & ~df["homeTeamStartLeft"] & ~is_second_half)
+                | (~is_home_team & df["homeTeamStartLeft"] & is_second_half)
+            )
+
+            df = df.with_columns(
+                [
+                    pl.when(is_goal_right)
+                    .then(X_GOAL_RIGHT)
+                    .otherwise(X_GOAL_LEFT)
+                    .alias("x_goal"),
+                    pl.lit(Y_GOAL).alias("y_goal"),
+                ]
+            )
+
+        df = df.drop(["team", "homeTeamStartLeft", "startPeriod2"])
 
         return df
 
     def _create_preprocessor(self, df: pl.DataFrame) -> ColumnTransformer:
-        cat_cols = ["possessionEventType", "team", "playerRole", "ballPossession"]
-        coord_cols = ["x", "y"]
+        cat_cols = [
+            "possessionEventType",
+            "playerRole",
+            "is_possession_team",
+            "is_ball_carrier",
+            "age",
+        ]
+        pos_cols = ["x", "y"]
         exclude_cols = set(
             cat_cols
-            + coord_cols
-            + [
-                "gameEventId",
-                "possessionEventId",
-                "label",
-                "gameId",
-                "frameTime",
-                "chain_id",
-            ]
+            + pos_cols
+            + ["gameEventId", "possessionEventId", "label", "gameId", "chain_id"]
         )
+        if self.cfg.include_goal_features:
+            goal_cols = ["x_goal", "y_goal"]
+            exclude_cols.update(goal_cols)
         num_cols = [c for c in df.columns if c not in exclude_cols]
 
         num_pipe = Pipeline(
@@ -154,71 +210,31 @@ class WorldCup2022Dataset(InMemoryDataset):
                 (
                     "onehot",
                     OneHotEncoder(
-                        handle_unknown="ignore", sparse_output=False, drop="if_binary"
+                        handle_unknown="ignore", drop="if_binary", sparse_output=False
                     ),
                 ),
             ]
         )
-        coord_pipe = Pipeline(
-            [
-                ("imputer", SimpleImputer(strategy="mean")),
-                ("minmax_scaler", MinMaxScaler(feature_range=(-1, 1))),
-            ]
-        )
+
+        transformers = [
+            ("num", num_pipe, num_cols),
+            ("cat", cat_pipe, cat_cols),
+            ("player_pos", PlayerPositionTransformer(), pos_cols),
+        ]
+
+        if self.cfg.include_goal_features:
+            transformers.append(
+                ("goal_loc", GoalLocationTransformer(), pos_cols + goal_cols)
+            )
 
         prep = ColumnTransformer(
-            [
-                ("num", num_pipe, num_cols),
-                ("cat", cat_pipe, cat_cols),
-                ("coord", coord_pipe, coord_cols),
-            ],
+            transformers,
             remainder="passthrough",
             verbose_feature_names_out=False,  # No prefixes
         )
 
         prep.set_output(transform="polars")
         return prep
-
-    def _add_goal_features(self, df: pl.DataFrame) -> pl.DataFrame:
-        is_home_team = df["team"] == "home"
-        is_second_half = df["frameTime"] > df["startPeriod2"]
-        is_goal_right = (
-            (
-                is_home_team & df["homeTeamStartLeft"] & is_second_half.not_()
-            )  # home team attacking right in 1st half
-            | (
-                is_home_team & df["homeTeamStartLeft"].not_() & is_second_half
-            )  # home team attacking right in 2nd half
-            | (
-                is_home_team.not_() & df["homeTeamStartLeft"] & is_second_half
-            )  # away team attacking right in 2nd half
-            | (
-                is_home_team.not_()
-                & df["homeTeamStartLeft"].not_()
-                & is_second_half.not_()
-            )  # away team attacking right in 1st half
-        )
-        df = df.with_columns(
-            pl.when(is_goal_right)
-            .then(X_GOAL_RIGHT)
-            .otherwise(X_GOAL_LEFT)
-            .alias("x_goal"),
-            pl.lit(Y_GOAL).alias("y_goal"),
-        )
-
-        df = df.with_columns(
-            (
-                (
-                    (pl.col("x") - pl.col("x_goal")) ** 2
-                    + (pl.col("y") - pl.col("y_goal")) ** 2
-                )
-                ** 0.5
-            ).alias("goal_distance"),
-            pl.arctan2(pl.col("y_goal") - pl.col("y"), pl.col("x_goal") - pl.col("x"))
-            .degrees()
-            .alias("goal_angle"),
-        )
-        return df.drop("x_goal", "y_goal", "homeTeamStartLeft", "startPeriod2")
 
     def process(self):
         df = self._prepare_dataframe(pl.read_parquet(self.raw_paths[0]))
@@ -233,7 +249,7 @@ class WorldCup2022Dataset(InMemoryDataset):
 
         self.preprocessor = self._create_preprocessor(train_df)
 
-        first = ["x", "y", "team_home", "ballPossession_1"]
+        first = ["x", "y", "is_possession_team_1", "is_ball_carrier_1"]
         train_transformed = reorder_dataframe_cols(
             self.preprocessor.fit_transform(train_df), first
         )
@@ -266,7 +282,8 @@ class WorldCup2022Dataset(InMemoryDataset):
             ordered = sorted(frames, key=lambda f: float(f.frame_time.item()))
 
             edge_indices = [f.edge_index.numpy() for f in ordered]
-            features = [f.x.numpy() for f in ordered]
+            node_features = [f.x.numpy() for f in ordered]
+            global_features = [f.u.numpy() for f in ordered]
             targets = [f.y.numpy() for f in ordered]
             edge_weights = [f.edge_weight.numpy() for f in ordered]
 
@@ -274,8 +291,9 @@ class WorldCup2022Dataset(InMemoryDataset):
                 DynamicGraphTemporalSignal(
                     edge_indices=edge_indices,
                     edge_weights=edge_weights,
-                    features=features,
+                    features=node_features,
                     targets=targets,
+                    u=global_features,
                 )
             )
 

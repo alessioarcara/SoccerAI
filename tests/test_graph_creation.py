@@ -1,8 +1,7 @@
 import torch
 from torch_geometric.data import Data
 
-from soccerai.data.converters import create_graph_converter
-from soccerai.data.converters.converter import BipartiteGraphConverter
+from soccerai.data.converters import BipartiteGraphConverter, create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.training.trainer_config import build_cfg
 from soccerai.training.transforms import RandomHorizontalFlip

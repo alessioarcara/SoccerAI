@@ -7,7 +7,7 @@ model:
   dhid: 128
 trainer:
   bs: 32 
-  n_epochs: 100
+  n_epochs: 20
   lr: 1e-4
   wd: 0.01
   eval_rate: 2

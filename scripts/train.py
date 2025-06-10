@@ -4,6 +4,7 @@ import os
 import torch
 from loguru import logger
 from torch_geometric.loader import DataLoader, PrefetchLoader
+from torch_geometric.nn import summary
 
 from soccerai.data.converters import create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
@@ -47,7 +48,6 @@ def main(args):
         len(train_ds),
         len(val_ds),
     )
-
     model = create_model(cfg, train_ds)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -101,6 +101,10 @@ def main(args):
             ],
         )
 
+    x = torch.rand((22, train_ds.num_features), device=device)
+    edge_index = torch.randint(0, 22, (2, 11 * 22), dtype=torch.long, device=device)
+    u = torch.rand((1, train_ds.num_global_features), device=device)
+    print(summary(model, x, edge_index, u))
     trainer.train(args.name)
 
 

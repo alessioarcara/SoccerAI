@@ -12,6 +12,7 @@ from torch_geometric.typing import (
 
 class GraphConverter(ABC):
     NUM_PLAYERS = 22
+    GLOBAL_FEATURE_PREFIXES = ["possessionEventType", "frameTime", "duration"]
 
     @abstractmethod
     def _create_edges(
@@ -28,36 +29,43 @@ class GraphConverter(ABC):
             if event_df.height != self.NUM_PLAYERS:
                 continue
 
+            global_feature_cols = [
+                c
+                for c in event_df.columns
+                if any(c.startswith(pref) for pref in self.GLOBAL_FEATURE_PREFIXES)
+            ]
+
+            node_df = event_df.drop(
+                *["gameEventId", "possessionEventId", "label", "chain_id", "gameId"],
+                *global_feature_cols,
+            )
+
+            global_df = event_df.select(global_feature_cols).head(1)
+
             chain_id = int(event_df["chain_id"][0])
             frame_time = float(event_df["frameTime"][0])
             label = float(event_df["label"][0])
 
-            x_df = event_df.drop(
-                "gameEventId",
-                "possessionEventId",
-                "label",
-                "chain_id",
-                "frameTime",
-                "gameId",
-            )
+            edge_idx, edge_weight, edge_attr = self._create_edges(node_df)
 
-            edge_idx, edge_weight, edge_attr = self._create_edges(x_df)
-            x = torch.tensor(x_df.to_numpy(), dtype=torch.float32)
+            x = torch.tensor(node_df.to_numpy(), dtype=torch.float32)
+            u = torch.tensor(global_df.to_numpy(), dtype=torch.float32)
             y = torch.tensor(label, dtype=torch.float32).view(1, 1)
 
             data_list.append(
                 Data(
                     x=x,
                     edge_index=edge_idx,
-                    y=y,
                     edge_weight=edge_weight,
                     edge_attr=edge_attr,
-                    chain_id=torch.tensor([chain_id], dtype=torch.long),
-                    frame_time=torch.tensor([frame_time], dtype=torch.long),
+                    u=u,
+                    y=y,
+                    chain_id=chain_id,
+                    frame_time=frame_time,
                 )
             )
 
-        return data_list, x_df.columns
+        return data_list, node_df.columns
 
 
 class FullyConnectedGraphConverter(GraphConverter):
@@ -94,7 +102,7 @@ class BipartiteGraphConverter(GraphConverter):
         self, x_df: pl.DataFrame
     ) -> Tuple[torch.Tensor, OptTensor, OptTensor]:
         positions = x_df.select(["x", "y"]).to_numpy()
-        teams = x_df["team_home"].to_numpy()
+        teams = x_df["is_possession_team_1"].to_numpy()
 
         src, dst, weights = [], [], []
 

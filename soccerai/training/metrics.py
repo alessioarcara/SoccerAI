@@ -7,7 +7,6 @@ import seaborn as sns
 import torch
 from matplotlib.collections import LineCollection
 from mplsoccer import Pitch
-from mplsoccer.dimensions import center_scale_dims
 from torch_geometric.data import Batch
 from torchmetrics.functional.classification import binary_precision_recall_curve
 
@@ -162,11 +161,13 @@ class PositiveFrameCollector(Metric):
         self.storage.clear()
 
     def plot(self) -> Optional[Tuple[str, plt.Figure]]:
-        dim = center_scale_dims(
-            pitch_width=68, pitch_length=105, width=2, length=2, invert_y=False
-        )
         pitch = Pitch(
-            pitch_type=dim, pitch_color="grass", line_color="white", linewidth=2
+            pitch_type="metricasports",
+            pitch_length=105,
+            pitch_width=68,
+            pitch_color="grass",
+            line_color="white",
+            linewidth=2,
         )
 
         fig, axs = pitch.grid(
@@ -196,6 +197,7 @@ class PositiveFrameCollector(Metric):
             ax.scatter(*coords.T, c=face_colours, ec=edge_colours, s=150)
             ax.set_title(f"Prob: {float(score):.3f}", fontsize=14, pad=5)
             ax.axis("off")
+            ax.invert_yaxis()
 
         for ax in axes[len(entries) :]:
             ax.set_visible(False)

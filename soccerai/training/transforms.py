@@ -13,12 +13,12 @@ class BaseRandomFlip(BaseTransform):
 class RandomHorizontalFlip(BaseRandomFlip):
     def forward(self, data):
         if self._maybe():
-            data.x[:, 0] = -data.x[:, 0]
+            data.x[:, 0] = 1.0 - data.x[:, 0]
         return data
 
 
 class RandomVerticalFlip(BaseRandomFlip):
     def forward(self, data):
         if self._maybe():
-            data.x[:, 1] = -data.x[:, 1]
+            data.x[:, 1] = 1.0 - data.x[:, 1]
         return data

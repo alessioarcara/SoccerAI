@@ -173,6 +173,7 @@ class Trainer(BaseTrainer):
             edge_index=batch.edge_index,
             edge_weight=batch.edge_weight,
             edge_attr=batch.edge_attr,
+            u=batch.u,
             batch=batch.batch,
             batch_size=batch.num_graphs,
         )
@@ -189,6 +190,7 @@ class Trainer(BaseTrainer):
             edge_index=batch.edge_index,
             edge_weight=batch.edge_weight,
             edge_attr=batch.edge_attr,
+            u=batch.u,
             batch=batch.batch,
             batch_size=batch.num_graphs,
         )
@@ -229,9 +231,16 @@ class Trainer(BaseTrainer):
         )
 
         with torch.enable_grad():
+            x = data.x.clone().float().requires_grad_(True)
+            u = data.u.clone().float().requires_grad_(True)
+            edge_index = data.edge_index.clone()
+            edge_weight = data.edge_weight.clone().float().requires_grad_(True)
+
             explanation = explainer(
-                x=data.x.clone().float().requires_grad_(True),
-                edge_index=data.edge_index.clone(),
+                x=x,
+                edge_index=edge_index,
+                u=u,
+                edge_weight=edge_weight,
             )
 
         node_mask = explanation.node_mask.detach().cpu().numpy()
@@ -289,12 +298,14 @@ class TemporalTrainer(BaseTrainer):
             y = snapshot.y.to(self.device, non_blocking=True)
             edge_index = snapshot.edge_index.to(self.device, non_blocking=True)
             edge_attr = snapshot.edge_attr.to(self.device, non_blocking=True)
+            u = snapshot.u.to(self.device, non_blocking=True)
 
             out, h = self.model(
                 x=x,
                 edge_index=edge_index,
                 edge_weight=edge_attr,
                 edge_attr=edge_attr,
+                u=u,
                 prev_h=h,
             )
 

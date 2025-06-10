@@ -18,8 +18,8 @@ class GCNBackbone(nn.Module):
         edge_weight: OptTensor = None,
         edge_attr: OptTensor = None,
     ):
-        x = F.relu(self.conv1(x, edge_index, edge_weight))
-        return F.relu(self.conv2(x, edge_index, edge_weight))
+        x = F.relu(self.conv1(x, edge_index, edge_weight), inplace=True)
+        return F.relu(self.conv2(x, edge_index, edge_weight), inplace=True)
 
 
 # class GIN(nn.Module):
