@@ -14,6 +14,6 @@ trainer:
   gamma: 0.9
 data:
   include_goal_features: True 
-  include_ball_features: False
+  include_ball_features: True 
   connection_mode: "bipartite"
   val_ratio: 0.2

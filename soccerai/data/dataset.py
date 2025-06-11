@@ -15,7 +15,8 @@ from torch_geometric_temporal.signal import DynamicGraphTemporalSignal
 from soccerai.data.config import X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
 from soccerai.data.converters import GraphConverter
 from soccerai.data.transformers import (
-    LocationTransformer,
+    BallLocationTransformer,
+    GoalLocationTransformer,
     PlayerPositionTransformer,
 )
 from soccerai.data.utils import reorder_dataframe_cols
@@ -95,7 +96,6 @@ class WorldCup2022Dataset(InMemoryDataset):
             "gameId_right",
             "jerseyNum",
             "visibility",
-            "z",
             "videoUrl",
             "homeTeamName",
             "awayTeamName",
@@ -109,17 +109,15 @@ class WorldCup2022Dataset(InMemoryDataset):
         df = df.drop(cols_to_drop)
         if self.cfg.include_ball_features:
             df = df.with_columns(
-                pl.col("x")
-                .filter(pl.col("team").is_null())
-                .first()
-                .over("gameEventId", "possessionEventId")
-                .alias("x_ball"),
-                pl.col("y")
-                .filter(pl.col("team").is_null())
-                .first()
-                .over("gameEventId", "possessionEventId")
-                .alias("y_ball"),
-            )
+                *[
+                    pl.col(c)
+                    .filter(pl.col("team").is_null())
+                    .first()
+                    .over("gameEventId", "possessionEventId")
+                    .alias(f"{c}_ball")
+                    for c in ["x", "y", "z"]
+                ]
+            ).drop("z")
 
         df = (
             df.filter(pl.col("team").is_not_null())
@@ -208,12 +206,15 @@ class WorldCup2022Dataset(InMemoryDataset):
             + pos_cols
             + ["gameEventId", "possessionEventId", "label", "gameId", "chain_id"]
         )
+
         if self.cfg.include_goal_features:
             goal_cols = ["x_goal", "y_goal"]
             exclude_cols.update(goal_cols)
+
         if self.cfg.include_ball_features:
-            ball_cols = ["x_ball", "y_ball"]
+            ball_cols = ["x_ball", "y_ball", "z_ball"]
             exclude_cols.update(ball_cols)
+
         num_cols = [c for c in df.columns if c not in exclude_cols]
 
         num_pipe = Pipeline(
@@ -241,7 +242,7 @@ class WorldCup2022Dataset(InMemoryDataset):
             transformers.append(
                 (
                     "goal_loc",
-                    LocationTransformer(target_name="goal"),
+                    GoalLocationTransformer(),
                     pos_cols + goal_cols,
                 )
             )
@@ -249,8 +250,8 @@ class WorldCup2022Dataset(InMemoryDataset):
             transformers.append(
                 (
                     "ball_loc",
-                    LocationTransformer(target_name="ball"),
-                    pos_cols + ball_cols,
+                    BallLocationTransformer(),
+                    pos_cols + ["height_cm"] + ball_cols,
                 )
             )
 

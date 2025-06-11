@@ -45,10 +45,9 @@ class PlayerPositionTransformer(BaseTransformer):
         return result
 
 
-class LocationTransformer(BaseTransformer):
+class GoalLocationTransformer(BaseTransformer):
     def __init__(
         self,
-        target_name: str,
         pitch_length: float = 105.0,
         pitch_width: float = 68.0,
         output: str = "default",
@@ -56,34 +55,81 @@ class LocationTransformer(BaseTransformer):
         super().__init__(output)
         self.pitch_length = pitch_length
         self.pitch_width = pitch_width
-        self.target_name = target_name
 
     def transform(self, X):
         coords = np.asarray(X, dtype=float)
         x = coords[:, 0]
         y = coords[:, 1]
-        x_target = coords[:, 2]
-        y_target = coords[:, 3]
+        x_goal = coords[:, 2]
+        y_goal = coords[:, 3]
 
-        dx = x_target - x
-        dy = y_target - y
+        dx = x_goal - x
+        dy = y_goal - y
 
-        target_dist = np.sqrt(dx**2 + dy**2) + 1e-6
+        goal_dist = np.hypot(dx, dy) + 1e-6
 
-        cos_theta = dx / target_dist
-        sin_theta = dy / target_dist
+        cos_theta = dx / goal_dist
+        sin_theta = dy / goal_dist
 
-        norm = np.sqrt(self.pitch_length**2 + self.pitch_width**2)
-        target_dist_normed = target_dist / norm
+        norm = np.hypot(self.pitch_length, self.pitch_width)
+        goal_dist_normed = goal_dist / norm
 
-        result = np.column_stack((target_dist_normed, cos_theta, sin_theta))
+        result = np.column_stack((goal_dist_normed, cos_theta, sin_theta))
 
         if self.output == "polars":
             return pl.DataFrame(
                 {
-                    f"{self.target_name}_dist": result[:, 0],
-                    f"{self.target_name}_cos": result[:, 1],
-                    f"{self.target_name}_sin": result[:, 2],
+                    "goal_dist": result[:, 0],
+                    "goal_cos": result[:, 1],
+                    "goal_sin": result[:, 2],
+                }
+            )
+
+        return result
+
+
+class BallLocationTransformer(BaseTransformer):
+    def __init__(
+        self,
+        pitch_length: float = 105.0,
+        pitch_width: float = 68.0,
+        air_threshold_m: float = 3.0,
+        output: str = "default",
+    ):
+        super().__init__(output)
+        self.pitch_length = pitch_length
+        self.pitch_width = pitch_width
+        self.air_threshold_m = air_threshold_m
+
+    def transform(self, X):
+        coords = np.asarray(X, dtype=float)
+        x = coords[:, 0]
+        y = coords[:, 1]
+        z = coords[:, 2] / 100.0  # height_cm -> height_m
+        x_ball = coords[:, 3]
+        y_ball = coords[:, 4]
+        z_ball = coords[:, 5]
+
+        dx = x_ball - x
+        dy = y_ball - y
+        dz = z_ball - z
+
+        ball_dist = np.hypot(dx, dy) + 1e-6
+
+        norm = np.hypot(self.pitch_length, self.pitch_width)
+        ball_dist_normed = ball_dist / norm
+        dz_normed = dz / self.air_threshold_m
+        dz_clipped = np.clip(dz_normed, 0.0, 1.0)
+        is_in_air = (dz > self.air_threshold_m).astype(float)
+
+        result = np.column_stack((ball_dist_normed, dz_clipped, is_in_air))
+
+        if self.output == "polars":
+            return pl.DataFrame(
+                {
+                    "ball_dist": result[:, 0],
+                    "dz": result[:, 1],
+                    "is_in_air": result[:, 2],
                 }
             )
 
