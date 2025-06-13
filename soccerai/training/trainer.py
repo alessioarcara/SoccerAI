@@ -265,26 +265,19 @@ class Trainer(BaseTrainer):
             mean_node_mask = np.mean(node_masks, axis=0)
             fig, ax = plt.subplots(figsize=(10, 6))
 
-            feat_names = self.feature_names
-            pos_flag_idx = feat_names.index("is_possession_team_1")
-
             _, (batch0, idx0) = entries[0]
             data0 = batch0.to_data_list()[idx0]
 
             jersey_ids = data0.jersey_num.cpu().numpy().astype(int)
-            pos_flags = data0.x[:, pos_flag_idx].detach().cpu().numpy().astype(int)
+            jersey_num = [str(num) for num in jersey_ids]
 
-            label_map = {1: "Attacking", 0: "Defending"}
-            combined_labels = [
-                f"{label_map[flag]} – {num}" for flag, num in zip(pos_flags, jersey_ids)
-            ]
             sns.heatmap(
                 mean_node_mask,
                 ax=ax,
                 cmap="coolwarm",
                 cbar=False,
                 xticklabels=self.feature_names,
-                yticklabels=combined_labels,
+                yticklabels=jersey_num,
             )
             ax.set_xticklabels(
                 ax.get_xticklabels(), rotation=90, ha="center", fontsize=10
@@ -300,6 +293,8 @@ class Trainer(BaseTrainer):
                 ax.get_xticklabels(), rotation=90, ha="center", fontsize=10
             )
             ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=9)
+            ax.set_ylabel("Player Jersey Number", fontsize=12, labelpad=10)
+
             fig.tight_layout()
 
             wandb.log({f"explain/avg_node_feats_label_{label}": wandb.Image(fig)})
