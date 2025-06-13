@@ -126,4 +126,18 @@ class BallLocationTransformer(BaseTransformer):
                 }
             )
 
+
+class SinCosTransformer(BaseTransformer):
+    def transform(self, X):
+        angles = np.radians(np.asarray(X[:, 0], dtype=float))
+        sin = np.sin(angles)
+        cos = np.cos(angles)
+
+        result = np.column_stack((sin, cos))
+
+        if self.output == "polars":
+            return pl.DataFrame(
+                {"players_sin": result[:, 0], "players_cos": result[:, 1]}
+            )
+
         return result

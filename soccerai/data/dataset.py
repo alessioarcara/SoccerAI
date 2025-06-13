@@ -6,7 +6,7 @@ from typing import Callable, List, Optional
 import polars as pl
 from loguru import logger
 from sklearn.compose import ColumnTransformer
-from sklearn.impute import SimpleImputer
+from sklearn.impute import KNNImputer, SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from torch_geometric.data import InMemoryDataset
@@ -18,6 +18,7 @@ from soccerai.data.transformers import (
     BallLocationTransformer,
     GoalLocationTransformer,
     PlayerPositionTransformer,
+    SinCosTransformer,
 )
 from soccerai.data.utils import reorder_dataframe_cols
 from soccerai.training.trainer_config import DataConfig
@@ -217,10 +218,18 @@ class WorldCup2022Dataset(InMemoryDataset):
             "age",
         ]
         pos_cols = ["x", "y"]
+        angle_cols = ["direction"]
         exclude_cols = set(
             cat_cols
             + pos_cols
-            + ["gameEventId", "possessionEventId", "label", "gameId", "chain_id"]
+            + angle_cols
+            + [
+                "gameEventId",
+                "possessionEventId",
+                "label",
+                "gameId",
+                "chain_id",
+            ],
         )
 
         if self.cfg.include_goal_features:
@@ -248,9 +257,17 @@ class WorldCup2022Dataset(InMemoryDataset):
             ]
         )
 
+        angle_pipe = Pipeline(
+            [
+                ("imputer", KNNImputer(weights="distance")),
+                ("ball_loc", SinCosTransformer()),
+            ]
+        )
+
         transformers = [
             ("num", num_pipe, num_cols),
             ("cat", cat_pipe, cat_cols),
+            ("angles", angle_pipe, angle_cols + pos_cols + goal_cols),
             ("player_pos", PlayerPositionTransformer(), pos_cols),
         ]
 
@@ -298,15 +315,20 @@ class WorldCup2022Dataset(InMemoryDataset):
             val_df.height,
         )
 
-        self.preprocessor = self._create_preprocessor(train_df)
+        preprocessor = self._create_preprocessor(train_df)
 
-        first = ["x", "y", "is_possession_team_1", "is_ball_carrier_1"]
+        first = [
+            "x",
+            "y",
+            "is_possession_team_1",
+            "is_ball_carrier_1",
+            "players_sin",
+            "players_cos",
+        ]
         train_transformed = reorder_dataframe_cols(
-            self.preprocessor.fit_transform(train_df), first
+            preprocessor.fit_transform(train_df), first
         )
-        val_transformed = reorder_dataframe_cols(
-            self.preprocessor.transform(val_df), first
-        )
+        val_transformed = reorder_dataframe_cols(preprocessor.transform(val_df), first)
 
         train_data_list, feature_names = self.converter.convert_dataframe_to_data_list(
             train_transformed
