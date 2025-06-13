@@ -24,6 +24,7 @@ class DataConfig(BaseModel):
     include_goal_features: bool
     include_ball_features: bool
     use_macro_roles: bool
+    use_augmentations: bool
     connection_mode: str
 
 

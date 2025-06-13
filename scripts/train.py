@@ -36,7 +36,9 @@ def main(args):
         force_reload=args.reload,
         split="train",
         cfg=cfg.data,
-        transform=Compose([RandomHorizontalFlip(p=0.5), RandomVerticalFlip(p=0.5)]),
+        transform=Compose([RandomHorizontalFlip(p=0.5), RandomVerticalFlip(p=0.5)])
+        if cfg.data.use_augmentations
+        else None,
     )
     val_ds = WorldCup2022Dataset(
         root="soccerai/data/resources",

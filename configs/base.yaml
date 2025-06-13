@@ -7,7 +7,7 @@ model:
   dhid: 128
 trainer:
   bs: 32 
-  n_epochs: 42
+  n_epochs: 50
   lr: 1e-4
   wd: 0.01
   eval_rate: 2
@@ -15,6 +15,7 @@ trainer:
 data:
   include_goal_features: True 
   include_ball_features: True 
-  use_macro_roles: False 
+  use_macro_roles: True 
+  use_augmentations: True
   connection_mode: "bipartite"
   val_ratio: 0.2

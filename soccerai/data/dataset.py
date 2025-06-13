@@ -18,7 +18,6 @@ from soccerai.data.transformers import (
     BallLocationTransformer,
     GoalLocationTransformer,
     PlayerPositionTransformer,
-    SinCosTransformer,
 )
 from soccerai.data.utils import reorder_dataframe_cols
 from soccerai.training.trainer_config import DataConfig
@@ -153,6 +152,8 @@ class WorldCup2022Dataset(InMemoryDataset):
                     .otherwise(pl.lit("35+"))
                     .alias("age")
                 ),
+                (pl.col("direction").radians().sin().alias("players_sin")),
+                (pl.col("direction").radians().cos().alias("players_cos")),
             ]
         ).drop(["playerName", "playerName_right"])
 
@@ -218,7 +219,7 @@ class WorldCup2022Dataset(InMemoryDataset):
             "age",
         ]
         pos_cols = ["x", "y"]
-        angle_cols = ["direction"]
+        angle_cols = ["players_sin", "players_cos"]
         exclude_cols = set(
             cat_cols
             + pos_cols
@@ -256,11 +257,9 @@ class WorldCup2022Dataset(InMemoryDataset):
                 ),
             ]
         )
-
         angle_pipe = Pipeline(
             [
                 ("imputer", KNNImputer(weights="distance")),
-                ("ball_loc", SinCosTransformer()),
             ]
         )
 
