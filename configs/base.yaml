@@ -1,8 +1,8 @@
 project_name: "soccerai"
 seed: 42
-use_temporal: True 
+use_temporal: False
 model:
-  model_name: "gcrnn"
+  model_name: "gcn"
   dmid: 256
   dhid: 128
 trainer:
@@ -14,5 +14,6 @@ trainer:
   gamma: 0.9
 data:
   include_goal_features: True 
+  use_macro_roles: False 
   connection_mode: "bipartite"
   val_ratio: 0.2

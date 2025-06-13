@@ -22,6 +22,7 @@ class TrainerConfig(BaseModel):
 class DataConfig(BaseModel):
     val_ratio: float
     include_goal_features: bool
+    use_macro_roles: bool
     connection_mode: str
 
 
