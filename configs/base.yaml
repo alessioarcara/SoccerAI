@@ -24,11 +24,12 @@ data:
 
 
 explain:
-  n_frames: 1         
+  n_frames: 12         
   thr: 0.5             
   grid:
     nrows: 3
     ncols: 4
     figheight: 12.0
     pitch_type: "metricasports"
+    log_best_single: True
 

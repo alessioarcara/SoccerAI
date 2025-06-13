@@ -33,6 +33,7 @@ class ExplainConfig(BaseModel):
     grid_ncols: int = 4
     grid_figheight: float = 12.0
     grid_pitch_type: str = "metricasports"
+    log_best_single: bool = True
 
 
 class Config(BaseModel):

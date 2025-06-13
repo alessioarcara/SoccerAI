@@ -3,7 +3,6 @@ from abc import ABC, abstractmethod
 from typing import Any, Collection, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
-import numpy as np
 import seaborn as sns
 import torch
 import torch.nn as nn
@@ -18,6 +17,10 @@ from tqdm import tqdm
 import wandb
 from soccerai.training.metrics import FrameCollector, Metric
 from soccerai.training.trainer_config import Config
+from soccerai.training.utils import (
+    make_heatmap_video_opencv,
+    plot_feature_importance_distribution,
+)
 
 Signals = List[Discrete_Signal]
 
@@ -216,19 +219,10 @@ class Trainer(BaseTrainer):
             actual_n = min(desired_n, len(entries))
 
             if actual_n == 0:
-                logger.info(
-                    f"No graphs collected for label={coll.target_label}, skipping."
-                )
                 continue
 
-            if len(entries) < desired_n:
-                logger.warning(
-                    f"Only {len(entries)} graphs for label={label} "
-                    f"(fewer than {desired_n}); averaging over {actual_n}"
-                )
-                wandb.log({f"explain/n_used_label_{label}": actual_n})
-
             entries = entries[:actual_n]
+
             explainer = Explainer(
                 model=self.model,
                 algorithm=GNNExplainer(epochs=200),
@@ -242,63 +236,98 @@ class Trainer(BaseTrainer):
                 ),
             )
 
-            node_masks, edge_masks = [], []
+            if actual_n == 1:
+                score, (batch, idx) = entries[0]
+                data = batch.to_data_list()[idx]
+                with torch.enable_grad():
+                    exp = explainer(
+                        x=data.x.clone().float().requires_grad_(True),
+                        edge_index=data.edge_index,
+                        u=data.u.clone().float().requires_grad_(True),
+                        edge_weight=data.edge_weight.clone()
+                        .float()
+                        .requires_grad_(True),
+                    )
+                single_mask = exp.node_mask.detach().cpu().numpy()
+
+                fig, ax = plt.subplots(figsize=(10, 8))
+                sns.heatmap(
+                    single_mask,
+                    ax=ax,
+                    cmap="coolwarm",
+                    cbar=False,
+                    xticklabels=self.feature_names,
+                    yticklabels=[str(int(n)) for n in data.jersey_num.cpu().numpy()],
+                )
+                ax.set_title(f"Single frame (score={score:.3f})", fontsize=14)
+                ax.tick_params(axis="x", rotation=90)
+                plt.tight_layout()
+
+                wandb.log({f"explain/single_label_{label}": wandb.Image(fig)})
+                plt.close(fig)
+                continue
+
+            node_masks = []
             for _, (batch, idx) in entries:
                 data = batch.to_data_list()[idx]
+                with torch.enable_grad():
+                    exp = explainer(
+                        x=data.x.clone().float().requires_grad_(True),
+                        edge_index=data.edge_index,
+                        u=data.u.clone().float().requires_grad_(True),
+                        edge_weight=data.edge_weight.clone()
+                        .float()
+                        .requires_grad_(True),
+                    )
+                node_masks.append(exp.node_mask.detach().cpu().numpy())
 
-                x = data.x.clone().float().requires_grad_(True)
-                u = data.u.clone().float().requires_grad_(True)
-                edge_index = data.edge_index.clone()
-                edge_weight = data.edge_weight.clone().float().requires_grad_(True)
+            key, fig = plot_feature_importance_distribution(
+                node_masks,
+                self.feature_names,
+                label_name=("TruePositive" if label == 1 else "FalsePositive"),
+                actual_n=actual_n,
+            )
+            wandb.log({key: wandb.Image(fig)})
+            plt.close(fig)
+
+            video_path = make_heatmap_video_opencv(
+                node_masks, self.feature_names, f"label_{label}", fps=1
+            )
+            wandb.log({f"explain/video_label_{label}": wandb.Video(video_path, fps=1)})
+
+            if self.cfg.explain.log_best_single:
+                score, (batch, idx) = entries[0]
+                data = batch.to_data_list()[idx]
+                label_name = "True Positive" if label == 1 else "False Positive"
 
                 with torch.enable_grad():
-                    explanation = explainer(
-                        x=x,
-                        edge_index=edge_index,
-                        u=u,
-                        edge_weight=edge_weight,
+                    exp_best = explainer(
+                        x=data.x.clone().float().requires_grad_(True),
+                        edge_index=data.edge_index,
+                        u=data.u.clone().float().requires_grad_(True),
+                        edge_weight=data.edge_weight.clone()
+                        .float()
+                        .requires_grad_(True),
                     )
+                best_mask = exp_best.node_mask.detach().cpu().numpy()
 
-                node_masks.append(explanation.node_mask.detach().cpu().numpy())
-                edge_masks.append(explanation.edge_mask.detach().cpu().numpy())
-
-            mean_node_mask = np.mean(node_masks, axis=0)
-            fig, ax = plt.subplots(figsize=(10, 6))
-
-            _, (batch0, idx0) = entries[0]
-            data0 = batch0.to_data_list()[idx0]
-
-            jersey_ids = data0.jersey_num.cpu().numpy().astype(int)
-            jersey_num = [str(num) for num in jersey_ids]
-
-            sns.heatmap(
-                mean_node_mask,
-                ax=ax,
-                cmap="coolwarm",
-                cbar=False,
-                xticklabels=self.feature_names,
-                yticklabels=jersey_num,
-            )
-            ax.set_xticklabels(
-                ax.get_xticklabels(), rotation=90, ha="center", fontsize=10
-            )
-            ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=9)
-
-            label_name = "True Positive" if label == 1 else "False Positive"
-            ax.set_title(
-                f"Mean node feature importance ({label_name}, {actual_n} frames)",
-                fontsize=14,
-            )
-            ax.set_xticklabels(
-                ax.get_xticklabels(), rotation=90, ha="center", fontsize=10
-            )
-            ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=9)
-            ax.set_ylabel("Player Jersey Number", fontsize=12, labelpad=10)
-
-            fig.tight_layout()
-
-            wandb.log({f"explain/avg_node_feats_label_{label}": wandb.Image(fig)})
-            plt.close(fig)
+                fig, ax = plt.subplots(figsize=(10, 8))
+                sns.heatmap(
+                    best_mask,
+                    ax=ax,
+                    cmap="coolwarm",
+                    cbar=False,
+                    xticklabels=self.feature_names,
+                    yticklabels=[str(int(n)) for n in data.jersey_num.cpu().numpy()],
+                )
+                ax.set_title(
+                    f"{label_name} — Best frame (score={score:.3f})", fontsize=14
+                )
+                ax.tick_params(axis="x", rotation=90)
+                ax.set_ylabel("Player Jersey Number", fontsize=12, labelpad=10)
+                plt.tight_layout()
+                wandb.log({f"explain/best_single_label_{label}": wandb.Image(fig)})
+                plt.close(fig)
 
 
 class TemporalTrainer(BaseTrainer):
