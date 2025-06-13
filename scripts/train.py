@@ -12,7 +12,7 @@ from soccerai.models.model import create_model
 from soccerai.training.metrics import (
     BinaryConfusionMatrix,
     BinaryPrecisionRecallCurve,
-    PositiveFrameCollector,
+    FrameCollector,
 )
 from soccerai.training.trainer import TemporalTrainer, Trainer
 from soccerai.training.trainer_config import build_cfg
@@ -87,6 +87,7 @@ def main(args):
                 **common_loader_kwargs,
             ),
         )
+
         trainer = Trainer(
             cfg=cfg,
             model=model,
@@ -97,7 +98,8 @@ def main(args):
             metrics=[
                 BinaryConfusionMatrix(),
                 BinaryPrecisionRecallCurve(),
-                PositiveFrameCollector(),
+                FrameCollector(target_label=1, explain_cfg=cfg.explain),
+                FrameCollector(target_label=0, explain_cfg=cfg.explain),
             ],
         )
 

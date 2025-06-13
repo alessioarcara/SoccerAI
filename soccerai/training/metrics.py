@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, TypeVar
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,7 +10,10 @@ from mplsoccer import Pitch
 from torch_geometric.data import Batch
 from torchmetrics.functional.classification import binary_precision_recall_curve
 
+from soccerai.training.trainer_config import ExplainConfig
 from soccerai.training.utils import TopKStorage
+
+T = TypeVar("T")
 
 
 class Metric(ABC):
@@ -138,21 +141,36 @@ class BinaryPrecisionRecallCurve(Metric):
         return "Precision-Recall Curve", fig
 
 
-class PositiveFrameCollector(Metric):
-    def __init__(self, thr: float = 0.5, max_samples: int = 12):
-        self.thr = thr
-        self.storage: TopKStorage[Batch] = TopKStorage(max_samples)
+class FrameCollector(Metric):
+    def __init__(
+        self,
+        target_label: int,
+        explain_cfg: ExplainConfig,
+    ):
+        self.target_label = target_label
+        self.thr = explain_cfg.thr
+        self.storage: TopKStorage = TopKStorage(explain_cfg.n_frames)
+        self.grid_nrows = explain_cfg.grid_nrows
+        self.grid_ncols = explain_cfg.grid_ncols
+        self.grid_figheight = explain_cfg.grid_figheight
+        self.grid_pitch_type = explain_cfg.grid_pitch_type
 
     def update(
-        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
+        self,
+        preds_probs: torch.Tensor,
+        true_labels: torch.Tensor,
+        batch: Batch,
     ) -> None:
-        probs_np = preds_probs.detach().cpu().numpy()
-        labels_np = true_labels.detach().cpu().numpy()
+        probs = preds_probs.detach().cpu().numpy().ravel()
+        labels = true_labels.detach().cpu().numpy().ravel()
 
-        pos_indices = np.where((probs_np > self.thr) & (labels_np == 1))[0]
+        if self.target_label == 1:
+            idxs = np.where((probs >= self.thr) & (labels == 1))[0]
+        else:
+            idxs = np.where((probs >= self.thr) & (labels == 0))[0]
 
-        for i in pos_indices:
-            self.storage.add((probs_np[i], batch[i]))
+        for i in idxs:
+            self.storage.add((float(probs[i]), (batch, i)))
 
     def compute(self) -> List[Tuple[str, float]]:
         return []
@@ -161,8 +179,12 @@ class PositiveFrameCollector(Metric):
         self.storage.clear()
 
     def plot(self) -> Optional[Tuple[str, plt.Figure]]:
+        entries = self.storage.get_all_entries()
+        if not entries:
+            return None
+
         pitch = Pitch(
-            pitch_type="metricasports",
+            pitch_type=self.grid_pitch_type,
             pitch_length=105,
             pitch_width=68,
             pitch_color="grass",
@@ -171,35 +193,43 @@ class PositiveFrameCollector(Metric):
         )
 
         fig, axs = pitch.grid(
-            nrows=3,
-            ncols=4,
-            figheight=12,
+            nrows=self.grid_nrows,
+            ncols=self.grid_ncols,
+            figheight=self.grid_figheight,
             grid_height=0.95,
             grid_width=0.95,
             bottom=0.025,
             endnote_height=0,
             title_height=0,
         )
-
         axes = axs.flatten()
-        entries = self.storage.get_all_entries()
 
-        for ax, (score, graph) in zip(axes, entries):
-            node_features = graph.x.detach().cpu().numpy()
+        for ax, (score, (batch, idx)) in zip(axes, entries):
+            data = batch.to_data_list()[idx]
+            feats = data.x.detach().cpu().numpy()
 
-            coords = node_features[:, :2]
-            teams = node_features[:, 2].astype(int)
-            has_ball = node_features[:, 3].astype(bool)
+            coords = feats[:, :2]
+            teams = feats[:, 2].astype(int)
+            has_ball = feats[:, 3].astype(bool)
 
             face_colours = np.where(teams == 0, "red", "blue")
             edge_colours = np.where(has_ball, "white", face_colours)
 
             ax.scatter(*coords.T, c=face_colours, ec=edge_colours, s=150)
-            ax.set_title(f"Prob: {float(score):.3f}", fontsize=14, pad=5)
+            ax.set_title(
+                f"{'Pos' if self.target_label == 1 else 'Neg'} {score:.2f}",
+                fontsize=12,
+                pad=4,
+            )
             ax.axis("off")
             ax.invert_yaxis()
 
         for ax in axes[len(entries) :]:
             ax.set_visible(False)
 
-        return "positive_frames", fig
+        key = (
+            "true_positive_frames"
+            if self.target_label == 1
+            else "false_positive_frames"
+        )
+        return key, fig

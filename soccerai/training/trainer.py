@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Collection, Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
 import torch
 import torch.nn as nn
@@ -15,7 +16,7 @@ from torch_geometric_temporal.signal import Discrete_Signal
 from tqdm import tqdm
 
 import wandb
-from soccerai.training.metrics import Metric, PositiveFrameCollector
+from soccerai.training.metrics import FrameCollector, Metric
 from soccerai.training.trainer_config import Config
 
 Signals = List[Discrete_Signal]
@@ -203,64 +204,86 @@ class Trainer(BaseTrainer):
         self._explain()
 
     def _explain(self) -> None:
-        if (
-            not (
-                pfc := next(
-                    (m for m in self.metrics if isinstance(m, PositiveFrameCollector)),
-                    None,
-                )
-            )
-            or not pfc.storage._items
-        ):
+        collectors = [m for m in self.metrics if isinstance(m, FrameCollector)]
+        if not collectors or all(len(c.storage._items) == 0 for c in collectors):
             logger.warning("Nothing to explain")
             return
 
-        _, data = pfc.storage._items[0]
+        for coll in collectors:
+            label = coll.target_label
+            entries = coll.storage.get_all_entries()
+            desired_n = coll.storage.k
+            actual_n = min(desired_n, len(entries))
 
-        explainer = Explainer(
-            model=self.model,
-            algorithm=GNNExplainer(epochs=200),
-            explanation_type="model",
-            node_mask_type="attributes",
-            edge_mask_type="object",
-            model_config=dict(
-                mode="binary_classification",
-                task_level="graph",
-                return_type="raw",
-            ),
-        )
+            if actual_n == 0:
+                logger.info(
+                    f"No graphs collected for label={coll.target_label}, skipping."
+                )
+                continue
 
-        with torch.enable_grad():
-            x = data.x.clone().float().requires_grad_(True)
-            u = data.u.clone().float().requires_grad_(True)
-            edge_index = data.edge_index.clone()
-            edge_weight = data.edge_weight.clone().float().requires_grad_(True)
+            if len(entries) < desired_n:
+                logger.warning(
+                    f"Only {len(entries)} graphs for label={label} "
+                    f"(fewer than {desired_n}); averaging over {actual_n}"
+                )
+                wandb.log({f"explain/n_used_label_{label}": actual_n})
 
-            explanation = explainer(
-                x=x,
-                edge_index=edge_index,
-                u=u,
-                edge_weight=edge_weight,
+            entries = entries[:actual_n]
+            explainer = Explainer(
+                model=self.model,
+                algorithm=GNNExplainer(epochs=200),
+                explanation_type="model",
+                node_mask_type="attributes",
+                edge_mask_type="object",
+                model_config=dict(
+                    mode="binary_classification",
+                    task_level="graph",
+                    return_type="raw",
+                ),
             )
 
-        node_mask = explanation.node_mask.detach().cpu().numpy()
+            node_masks, edge_masks = [], []
+            for _, (batch, idx) in entries:
+                data = batch.to_data_list()[idx]
 
-        fig, ax = plt.subplots(figsize=(10, 6))
+                x = data.x.clone().float().requires_grad_(True)
+                u = data.u.clone().float().requires_grad_(True)
+                edge_index = data.edge_index.clone()
+                edge_weight = data.edge_weight.clone().float().requires_grad_(True)
 
-        sns.heatmap(
-            node_mask,
-            ax=ax,
-            cmap="coolwarm",
-            cbar=False,
-            xticklabels=self.feature_names,
-        )
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=90, ha="center", fontsize=10)
-        ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=9)
+                with torch.enable_grad():
+                    explanation = explainer(
+                        x=x,
+                        edge_index=edge_index,
+                        u=u,
+                        edge_weight=edge_weight,
+                    )
 
-        fig.tight_layout()
+                node_masks.append(explanation.node_mask.detach().cpu().numpy())
+                edge_masks.append(explanation.edge_mask.detach().cpu().numpy())
 
-        wandb.log({"explain/node_feats_heatmap": wandb.Image(fig)})
-        plt.close(fig)
+            mean_node_mask = np.mean(node_masks, axis=0)
+            fig, ax = plt.subplots(figsize=(10, 6))
+            sns.heatmap(
+                mean_node_mask,
+                ax=ax,
+                cmap="coolwarm",
+                cbar=False,
+                xticklabels=self.feature_names,
+            )
+            label_name = "True Positive" if label == 1 else "False Positive"
+            ax.set_title(
+                f"Mean node feature importance ({label_name}, {actual_n} frames)",
+                fontsize=14,
+            )
+            ax.set_xticklabels(
+                ax.get_xticklabels(), rotation=90, ha="center", fontsize=10
+            )
+            ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=9)
+            fig.tight_layout()
+
+            wandb.log({f"explain/avg_node_feats_label_{label}": wandb.Image(fig)})
+            plt.close(fig)
 
 
 class TemporalTrainer(BaseTrainer):

@@ -26,6 +26,15 @@ class DataConfig(BaseModel):
     connection_mode: str
 
 
+class ExplainConfig(BaseModel):
+    n_frames: int = 12
+    thr: float = 0.5
+    grid_nrows: int = 3
+    grid_ncols: int = 4
+    grid_figheight: float = 12.0
+    grid_pitch_type: str = "metricasports"
+
+
 class Config(BaseModel):
     project_name: str
     seed: int
@@ -33,6 +42,7 @@ class Config(BaseModel):
     model: ModelConfig
     trainer: TrainerConfig
     data: DataConfig
+    explain: ExplainConfig
 
 
 def _load_yaml(path: str | Path):

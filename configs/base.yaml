@@ -1,10 +1,12 @@
 project_name: "soccerai"
 seed: 42
-use_temporal: False
+use_temporal: False 
+
 model:
   model_name: "gcn"
   dmid: 256
   dhid: 128
+
 trainer:
   bs: 32 
   n_epochs: 20
@@ -12,8 +14,20 @@ trainer:
   wd: 0.01
   eval_rate: 2
   gamma: 0.9
+  
+
 data:
   include_goal_features: True 
   use_macro_roles: False 
   connection_mode: "bipartite"
   val_ratio: 0.2
+
+
+explain:
+  n_frames: 12         
+  thr: 0.5             
+  grid:
+    nrows: 3
+    ncols: 4
+    figheight: 12.0
+    pitch_type: "metricasports"
