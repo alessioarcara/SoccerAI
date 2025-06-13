@@ -7,7 +7,7 @@ import seaborn as sns
 import torch
 from matplotlib.collections import LineCollection
 from mplsoccer import Pitch
-from torch_geometric.data import Batch
+from torch_geometric.data import Batch, Data
 from torchmetrics.functional.classification import binary_precision_recall_curve
 
 from soccerai.training.trainer_config import ExplainConfig
@@ -178,6 +178,22 @@ class FrameCollector(Metric):
     def reset(self) -> None:
         self.storage.clear()
 
+    def _annotate_jerseys(self, ax: plt.Axes, data: Data) -> None:
+        coords = data.x[:, :2].detach().cpu().numpy()
+        jersey_nums = data.jersey_num.detach().cpu().numpy()
+
+        for (x_i, y_i), num in zip(coords, jersey_nums):
+            ax.text(
+                x_i,
+                y_i,
+                str(int(num)),
+                fontsize=8,
+                fontweight="bold",
+                ha="center",
+                va="center",
+                color="white",
+            )
+
     def plot(self) -> Optional[Tuple[str, plt.Figure]]:
         entries = self.storage.get_all_entries()
         if not entries:
@@ -216,6 +232,7 @@ class FrameCollector(Metric):
             edge_colours = np.where(has_ball, "white", face_colours)
 
             ax.scatter(*coords.T, c=face_colours, ec=edge_colours, s=150)
+            self._annotate_jerseys(ax, data)
             ax.set_title(
                 f"{'Pos' if self.target_label == 1 else 'Neg'} {score:.2f}",
                 fontsize=12,

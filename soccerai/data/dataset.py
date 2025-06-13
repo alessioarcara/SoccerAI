@@ -93,7 +93,6 @@ class WorldCup2022Dataset(InMemoryDataset):
             "endTime",
             "index_right",
             "gameId_right",
-            "jerseyNum",
             "visibility",
             "z",
             "videoUrl",
@@ -210,7 +209,14 @@ class WorldCup2022Dataset(InMemoryDataset):
         exclude_cols = set(
             cat_cols
             + pos_cols
-            + ["gameEventId", "possessionEventId", "label", "gameId", "chain_id"]
+            + [
+                "gameEventId",
+                "possessionEventId",
+                "label",
+                "gameId",
+                "chain_id",
+                "jerseyNum",
+            ]
         )
         if self.cfg.include_goal_features:
             goal_cols = ["x_goal", "y_goal"]

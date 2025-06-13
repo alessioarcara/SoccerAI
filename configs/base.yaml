@@ -9,7 +9,7 @@ model:
 
 trainer:
   bs: 32 
-  n_epochs: 20
+  n_epochs: 10
   lr: 1e-4
   wd: 0.01
   eval_rate: 2
@@ -24,7 +24,7 @@ data:
 
 
 explain:
-  n_frames: 12         
+  n_frames: 12        
   thr: 0.5             
   grid:
     nrows: 3

@@ -35,8 +35,17 @@ class GraphConverter(ABC):
                 if any(c.startswith(pref) for pref in self.GLOBAL_FEATURE_PREFIXES)
             ]
 
+            jersey_nums = event_df["jerseyNum"].to_numpy().astype(int)
+
             node_df = event_df.drop(
-                *["gameEventId", "possessionEventId", "label", "chain_id", "gameId"],
+                *[
+                    "gameEventId",
+                    "possessionEventId",
+                    "label",
+                    "chain_id",
+                    "gameId",
+                    "jerseyNum",
+                ],
                 *global_feature_cols,
             )
 
@@ -62,6 +71,7 @@ class GraphConverter(ABC):
                     y=y,
                     chain_id=chain_id,
                     frame_time=frame_time,
+                    jersey_num=torch.tensor(jersey_nums, dtype=torch.long),
                 )
             )
 
