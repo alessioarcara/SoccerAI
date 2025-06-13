@@ -157,6 +157,7 @@ class WorldCup2022Dataset(InMemoryDataset):
                 .when(pl.col("playerRole").is_in(["RW", "CF", "LW"]))
                 .then(pl.lit("F"))
                 .otherwise(pl.col("playerRole"))
+                .alias("playerRole")
             )
 
         possession_team = df.filter(pl.col("is_ball_carrier") == 1)["team"][0]
