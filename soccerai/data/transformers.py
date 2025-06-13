@@ -86,3 +86,30 @@ class GoalLocationTransformer(BaseTransformer):
             )
 
         return result
+
+
+class AngleTransformer(BaseTransformer):
+    def __init__(self, output: str = "default", fill_strategy="mean"):
+        super().__init__(output)
+        self.fill_strategy = fill_strategy
+        self.fill_value_ = None
+
+    def fit(self, X, y=None):
+        if self.fill_strategy == "mean":
+            self.fill_value_ = np.nanmean(X)
+        return self
+
+    def transform(self, X):
+        X_filled = np.where(np.isnan(X), self.fill_value_, X)
+        angles = np.radians(np.asarray(X_filled, dtype=float))
+        sin = np.sin(angles)
+        cos = np.cos(angles)
+
+        result = np.column_stack((sin, cos))
+
+        if self.output == "polars":
+            return pl.DataFrame(
+                {"players_sin": result[:, 0], "players_cos": result[:, 1]}
+            )
+
+        return result

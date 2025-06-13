@@ -15,6 +15,7 @@ from torch_geometric_temporal.signal import DynamicGraphTemporalSignal
 from soccerai.data.config import X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
 from soccerai.data.converters import GraphConverter
 from soccerai.data.transformers import (
+    AngleTransformer,
     GoalLocationTransformer,
     PlayerPositionTransformer,
 )
@@ -191,10 +192,18 @@ class WorldCup2022Dataset(InMemoryDataset):
             "age",
         ]
         pos_cols = ["x", "y"]
+        angle_cols = ["direction"]
         exclude_cols = set(
             cat_cols
             + pos_cols
-            + ["gameEventId", "possessionEventId", "label", "gameId", "chain_id"]
+            + angle_cols
+            + [
+                "gameEventId",
+                "possessionEventId",
+                "label",
+                "gameId",
+                "chain_id",
+            ],
         )
         if self.cfg.include_goal_features:
             goal_cols = ["x_goal", "y_goal"]
@@ -220,6 +229,7 @@ class WorldCup2022Dataset(InMemoryDataset):
             ("num", num_pipe, num_cols),
             ("cat", cat_pipe, cat_cols),
             ("player_pos", PlayerPositionTransformer(), pos_cols),
+            ("angles", AngleTransformer(fill_strategy="mean"), angle_cols),
         ]
 
         if self.cfg.include_goal_features:
@@ -249,7 +259,14 @@ class WorldCup2022Dataset(InMemoryDataset):
 
         self.preprocessor = self._create_preprocessor(train_df)
 
-        first = ["x", "y", "is_possession_team_1", "is_ball_carrier_1"]
+        first = [
+            "x",
+            "y",
+            "is_possession_team_1",
+            "is_ball_carrier_1",
+            "players_sin",
+            "players_cos",
+        ]
         train_transformed = reorder_dataframe_cols(
             self.preprocessor.fit_transform(train_df), first
         )
