@@ -144,6 +144,21 @@ class WorldCup2022Dataset(InMemoryDataset):
             ]
         ).drop(["playerName", "playerName_right"])
 
+        if self.cfg.use_macro_roles:
+            df = df.with_columns(
+                pl.when(
+                    pl.col("playerRole").is_in(["DM", "CM", "AM", "LM", "RM", "MCB"])
+                )
+                .then(pl.lit("M"))
+                .when(
+                    pl.col("playerRole").is_in(["RCB", "LCB", "LB", "RB", "LWB", "RWB"])
+                )
+                .then(pl.lit("D"))
+                .when(pl.col("playerRole").is_in(["RW", "CF", "LW"]))
+                .then(pl.lit("F"))
+                .otherwise(pl.col("playerRole"))
+            )
+
         possession_team = df.filter(pl.col("is_ball_carrier") == 1)["team"][0]
 
         df = df.with_columns(
