@@ -7,7 +7,7 @@ import polars as pl
 from loguru import logger
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import KNNImputer, SimpleImputer
-from sklearn.pipeline import Pipeline
+from sklearn.pipeline import FunctionTransformer, Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from torch_geometric.data import InMemoryDataset
 from torch_geometric_temporal.signal import DynamicGraphTemporalSignal
@@ -125,37 +125,50 @@ class WorldCup2022Dataset(InMemoryDataset):
             .filter(pl.col("playerName").is_not_null())
         )
 
-        df = df.with_columns(
-            [
-                # (mm:ss) → s
-                (
+        df = (
+            df.with_columns(
+                [
+                    # (mm:ss) → s
                     (
-                        pl.col("frameTime").str.split(":").list.get(0).cast(pl.UInt16)
-                        * 60
-                        + pl.col("frameTime").str.split(":").list.get(1).cast(pl.UInt16)
-                    ).alias("frameTime")
-                ),
-                (
-                    pl.when(pl.col("playerName") == pl.col("playerName_right"))
-                    .then(1)
-                    .otherwise(0)
-                ).alias("is_ball_carrier"),
-                (pl.col("Weight").str.replace("kg", "").cast(pl.Float64)),
-                (pl.col("height_cm").cast(pl.Float64)),
-                (
-                    pl.when(pl.col("age") < 20)
-                    .then(pl.lit("Under 20"))
-                    .when(pl.col("age") < 29)
-                    .then(pl.lit("20-28"))
-                    .when(pl.col("age") < 35)
-                    .then(pl.lit("29-35"))
-                    .otherwise(pl.lit("35+"))
-                    .alias("age")
-                ),
-                (pl.col("direction").radians().sin().alias("players_sin")),
-                (pl.col("direction").radians().cos().alias("players_cos")),
-            ]
-        ).drop(["playerName", "playerName_right"])
+                        (
+                            pl.col("frameTime")
+                            .str.split(":")
+                            .list.get(0)
+                            .cast(pl.UInt16)
+                            * 60
+                            + pl.col("frameTime")
+                            .str.split(":")
+                            .list.get(1)
+                            .cast(pl.UInt16)
+                        ).alias("frameTime")
+                    ),
+                    (
+                        pl.when(pl.col("playerName") == pl.col("playerName_right"))
+                        .then(1)
+                        .otherwise(0)
+                    ).alias("is_ball_carrier"),
+                    (pl.col("Weight").str.replace("kg", "").cast(pl.Float64)),
+                    (pl.col("height_cm").cast(pl.Float64)),
+                    (
+                        pl.when(pl.col("age") < 20)
+                        .then(pl.lit("Under 20"))
+                        .when(pl.col("age") < 29)
+                        .then(pl.lit("20-28"))
+                        .when(pl.col("age") < 35)
+                        .then(pl.lit("29-35"))
+                        .otherwise(pl.lit("35+"))
+                        .alias("age")
+                    ),
+                    (pl.col("direction").radians().sin().alias("players_sin")),
+                    (pl.col("direction").radians().cos().alias("players_cos")),
+                ]
+            )
+            .with_columns(
+                pl.col("velocity").mul(pl.col("players_sin")).alias("vy"),
+                pl.col("velocity").mul(pl.col("players_cos")).alias("vx"),
+            )
+            .drop(["playerName", "playerName_right", "velocity", "direction"])
+        )
 
         if self.cfg.use_macro_roles:
             df = df.with_columns(
@@ -173,18 +186,21 @@ class WorldCup2022Dataset(InMemoryDataset):
                 .alias("playerRole")
             )
 
-        possession_team = df.filter(pl.col("is_ball_carrier") == 1)["team"][0]
-
-        df = df.with_columns(
-            [
-                (
-                    pl.when(pl.col("team") == possession_team)
-                    .then(1)
-                    .otherwise(0)
-                    .alias("is_possession_team")
-                ),
-            ]
-        )
+        df = (
+            df.with_columns(
+                pl.col("team")
+                .filter(pl.col("is_ball_carrier") == 1)
+                .first()
+                .over(["gameEventId", "possessionEventId"])
+                .alias("possession_team_tmp")
+            )
+            .with_columns(
+                (pl.col("team") == pl.col("possession_team_tmp"))
+                .cast(pl.Int8)
+                .alias("is_possession_team")
+            )
+            .drop("possession_team_tmp")
+        ).drop_nulls(["is_possession_team"])
 
         if self.cfg.include_goal_features:
             is_home_team = df["team"] == "home"
@@ -238,7 +254,7 @@ class WorldCup2022Dataset(InMemoryDataset):
             exclude_cols.update(goal_cols)
 
         if self.cfg.include_ball_features:
-            ball_cols = ["x_ball", "y_ball", "z_ball"]
+            ball_cols = ["x_ball", "y_ball", "z_ball", "height_cm"]
             exclude_cols.update(ball_cols)
 
         num_cols = [c for c in df.columns if c not in exclude_cols]
@@ -257,9 +273,16 @@ class WorldCup2022Dataset(InMemoryDataset):
                 ),
             ]
         )
+
         angle_pipe = Pipeline(
             [
                 ("imputer", KNNImputer(weights="distance")),
+                (
+                    "keep_cols",
+                    FunctionTransformer(
+                        func=lambda X: X.select(angle_cols),
+                    ),
+                ),
             ]
         )
 
@@ -290,7 +313,7 @@ class WorldCup2022Dataset(InMemoryDataset):
                 (
                     "ball_loc",
                     ball_loc_pipe,
-                    pos_cols + ["height_cm"] + ball_cols,
+                    pos_cols + ball_cols,
                 )
             )
 
@@ -321,8 +344,10 @@ class WorldCup2022Dataset(InMemoryDataset):
             "y",
             "is_possession_team_1",
             "is_ball_carrier_1",
-            "players_sin",
+            "vx",
+            "vy",
             "players_cos",
+            "players_sin",
         ]
         train_transformed = reorder_dataframe_cols(
             preprocessor.fit_transform(train_df), first
