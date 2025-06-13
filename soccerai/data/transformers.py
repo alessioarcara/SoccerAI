@@ -107,6 +107,10 @@ class BallLocationTransformer(BaseTransformer):
         x_ball = coords[:, 3]
         y_ball = coords[:, 4]
         z_ball = coords[:, 5]
+        cos_ball = coords[:, 6]
+        sin_ball = coords[:, 7]
+        cos = coords[:, 8]
+        sin = coords[:, 9]
 
         #  planar distance between player and ball
         ball_dist = np.hypot(x_ball - x, y_ball - y) + 1e-6
@@ -116,12 +120,16 @@ class BallLocationTransformer(BaseTransformer):
         # vertical offset relative to the player height
         dz = 2.0 / (1.0 + np.exp(-(z_ball - z))) - 1.0  # [-1, 1]
 
-        result = np.column_stack((ball_dist_normed, dz))
+        # cosine similarity between ball direction and players directions
+        ball_direction_sim = cos_ball * cos + sin_ball * sin
+
+        result = np.column_stack((ball_dist_normed, dz, ball_direction_sim))
 
         if self.output == "polars":
             return pl.DataFrame(
                 {
                     "ball_dist": result[:, 0],
                     "dz": result[:, 1],
+                    "ball_direction_sim": result[:, 2],
                 }
             )

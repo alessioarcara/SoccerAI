@@ -107,6 +107,19 @@ class WorldCup2022Dataset(InMemoryDataset):
             "playerId",
         ]
         df = df.drop(cols_to_drop)
+
+        df = (
+            df.with_columns(
+                (pl.col("direction").radians().cos().alias("cos")),
+                (pl.col("direction").radians().sin().alias("sin")),
+            )
+            .with_columns(
+                pl.col("velocity").mul(pl.col("cos")).alias("vx"),
+                pl.col("velocity").mul(pl.col("sin")).alias("vy"),
+            )
+            .drop(["velocity", "direction"])
+        )
+
         if self.cfg.include_ball_features:
             df = df.with_columns(
                 *[
@@ -115,7 +128,7 @@ class WorldCup2022Dataset(InMemoryDataset):
                     .first()
                     .over("gameEventId", "possessionEventId")
                     .alias(f"{c}_ball")
-                    for c in ["x", "y", "z"]
+                    for c in ["x", "y", "z", "cos", "sin"]
                 ]
             ).drop("z")
 
@@ -125,50 +138,35 @@ class WorldCup2022Dataset(InMemoryDataset):
             .filter(pl.col("playerName").is_not_null())
         )
 
-        df = (
-            df.with_columns(
-                [
-                    # (mm:ss) → s
+        df = df.with_columns(
+            [
+                # (mm:ss) → s
+                (
                     (
-                        (
-                            pl.col("frameTime")
-                            .str.split(":")
-                            .list.get(0)
-                            .cast(pl.UInt16)
-                            * 60
-                            + pl.col("frameTime")
-                            .str.split(":")
-                            .list.get(1)
-                            .cast(pl.UInt16)
-                        ).alias("frameTime")
-                    ),
-                    (
-                        pl.when(pl.col("playerName") == pl.col("playerName_right"))
-                        .then(1)
-                        .otherwise(0)
-                    ).alias("is_ball_carrier"),
-                    (pl.col("Weight").str.replace("kg", "").cast(pl.Float64)),
-                    (pl.col("height_cm").cast(pl.Float64)),
-                    (
-                        pl.when(pl.col("age") < 20)
-                        .then(pl.lit("Under 20"))
-                        .when(pl.col("age") < 29)
-                        .then(pl.lit("20-28"))
-                        .when(pl.col("age") < 35)
-                        .then(pl.lit("29-35"))
-                        .otherwise(pl.lit("35+"))
-                        .alias("age")
-                    ),
-                    (pl.col("direction").radians().sin().alias("players_sin")),
-                    (pl.col("direction").radians().cos().alias("players_cos")),
-                ]
-            )
-            .with_columns(
-                pl.col("velocity").mul(pl.col("players_sin")).alias("vy"),
-                pl.col("velocity").mul(pl.col("players_cos")).alias("vx"),
-            )
-            .drop(["playerName", "playerName_right", "velocity", "direction"])
-        )
+                        pl.col("frameTime").str.split(":").list.get(0).cast(pl.UInt16)
+                        * 60
+                        + pl.col("frameTime").str.split(":").list.get(1).cast(pl.UInt16)
+                    ).alias("frameTime")
+                ),
+                (
+                    pl.when(pl.col("playerName") == pl.col("playerName_right"))
+                    .then(1)
+                    .otherwise(0)
+                ).alias("is_ball_carrier"),
+                (pl.col("Weight").str.replace("kg", "").cast(pl.Float64)),
+                (pl.col("height_cm").cast(pl.Float64)),
+                (
+                    pl.when(pl.col("age") < 20)
+                    .then(pl.lit("Under 20"))
+                    .when(pl.col("age") < 29)
+                    .then(pl.lit("20-28"))
+                    .when(pl.col("age") < 35)
+                    .then(pl.lit("29-35"))
+                    .otherwise(pl.lit("35+"))
+                    .alias("age")
+                ),
+            ]
+        ).drop(["playerName", "playerName_right"])
 
         if self.cfg.use_macro_roles:
             df = df.with_columns(
@@ -235,7 +233,7 @@ class WorldCup2022Dataset(InMemoryDataset):
             "age",
         ]
         pos_cols = ["x", "y"]
-        angle_cols = ["players_sin", "players_cos"]
+        angle_cols = ["cos", "sin"]
         exclude_cols = set(
             cat_cols
             + pos_cols
@@ -254,7 +252,14 @@ class WorldCup2022Dataset(InMemoryDataset):
             exclude_cols.update(goal_cols)
 
         if self.cfg.include_ball_features:
-            ball_cols = ["x_ball", "y_ball", "z_ball", "height_cm"]
+            ball_cols = [
+                "x_ball",
+                "y_ball",
+                "z_ball",
+                "height_cm",
+                "cos_ball",
+                "sin_ball",
+            ]
             exclude_cols.update(ball_cols)
 
         num_cols = [c for c in df.columns if c not in exclude_cols]
@@ -313,7 +318,7 @@ class WorldCup2022Dataset(InMemoryDataset):
                 (
                     "ball_loc",
                     ball_loc_pipe,
-                    pos_cols + ball_cols,
+                    pos_cols + ball_cols + angle_cols,
                 )
             )
 
@@ -346,8 +351,8 @@ class WorldCup2022Dataset(InMemoryDataset):
             "is_ball_carrier_1",
             "vx",
             "vy",
-            "players_cos",
-            "players_sin",
+            "cos",
+            "sin",
         ]
         train_transformed = reorder_dataframe_cols(
             preprocessor.fit_transform(train_df), first
