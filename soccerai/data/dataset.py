@@ -263,10 +263,17 @@ class WorldCup2022Dataset(InMemoryDataset):
                 )
             )
         if self.cfg.include_ball_features:
+            ball_loc_pipe = Pipeline(
+                steps=[
+                    ("imputer", SimpleImputer(strategy="mean")),
+                    ("ball_loc", BallLocationTransformer()),
+                ]
+            )
+
             transformers.append(
                 (
                     "ball_loc",
-                    BallLocationTransformer(),
+                    ball_loc_pipe,
                     pos_cols + ["height_cm"] + ball_cols,
                 )
             )

@@ -93,13 +93,11 @@ class BallLocationTransformer(BaseTransformer):
         self,
         pitch_length: float = 105.0,
         pitch_width: float = 68.0,
-        air_threshold_m: float = 3.0,
         output: str = "default",
     ):
         super().__init__(output)
         self.pitch_length = pitch_length
         self.pitch_width = pitch_width
-        self.air_threshold_m = air_threshold_m
 
     def transform(self, X):
         coords = np.asarray(X, dtype=float)
@@ -110,26 +108,21 @@ class BallLocationTransformer(BaseTransformer):
         y_ball = coords[:, 4]
         z_ball = coords[:, 5]
 
-        dx = x_ball - x
-        dy = y_ball - y
-        dz = z_ball - z
+        #  planar distance between player and ball
+        ball_dist = np.hypot(x_ball - x, y_ball - y) + 1e-6
+        pitch_diag = np.hypot(self.pitch_length, self.pitch_width)
+        ball_dist_normed = ball_dist / pitch_diag
 
-        ball_dist = np.hypot(dx, dy) + 1e-6
+        # vertical offset relative to the player height
+        dz = 2.0 / (1.0 + np.exp(-(z_ball - z))) - 1.0  # [-1, 1]
 
-        norm = np.hypot(self.pitch_length, self.pitch_width)
-        ball_dist_normed = ball_dist / norm
-        dz_normed = dz / self.air_threshold_m
-        dz_clipped = np.clip(dz_normed, 0.0, 1.0)
-        is_in_air = (dz > self.air_threshold_m).astype(float)
-
-        result = np.column_stack((ball_dist_normed, dz_clipped, is_in_air))
+        result = np.column_stack((ball_dist_normed, dz))
 
         if self.output == "polars":
             return pl.DataFrame(
                 {
                     "ball_dist": result[:, 0],
                     "dz": result[:, 1],
-                    "is_in_air": result[:, 2],
                 }
             )
 
