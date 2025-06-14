@@ -5,7 +5,6 @@ import torch
 from loguru import logger
 from torch_geometric.loader import DataLoader, PrefetchLoader
 from torch_geometric.nn import summary
-from torchvision.transforms import Compose
 
 from soccerai.data.converters import create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
@@ -17,7 +16,6 @@ from soccerai.training.metrics import (
 )
 from soccerai.training.trainer import TemporalTrainer, Trainer
 from soccerai.training.trainer_config import build_cfg
-from soccerai.training.transforms import RandomHorizontalFlip, RandomVerticalFlip
 from soccerai.training.utils import fix_random
 
 NUM_WORKERS = (os.cpu_count() or 1) - 1
@@ -36,13 +34,14 @@ def main(args):
         force_reload=args.reload,
         split="train",
         cfg=cfg.data,
-        transform=Compose([RandomHorizontalFlip(p=0.5), RandomVerticalFlip(p=0.5)]),
+        random_state=cfg.seed,
     )
     val_ds = WorldCup2022Dataset(
         root="soccerai/data/resources",
         converter=converter,
         split="val",
         cfg=cfg.data,
+        random_state=cfg.seed,
     )
 
     logger.success(
@@ -99,7 +98,7 @@ def main(args):
             metrics=[
                 BinaryConfusionMatrix(),
                 BinaryPrecisionRecallCurve(),
-                PositiveFrameCollector(),
+                PositiveFrameCollector(train_ds.feature_names),
             ],
         )
 

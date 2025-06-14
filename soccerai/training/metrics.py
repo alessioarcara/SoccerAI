@@ -139,7 +139,13 @@ class BinaryPrecisionRecallCurve(Metric):
 
 
 class PositiveFrameCollector(Metric):
-    def __init__(self, thr: float = 0.5, max_samples: int = 12):
+    def __init__(
+        self,
+        feature_names: List[str],
+        thr: float = 0.5,
+        max_samples: int = 12,
+    ):
+        self.feature_names = feature_names
         self.thr = thr
         self.storage: TopKStorage[Batch] = TopKStorage(max_samples)
 
@@ -187,14 +193,18 @@ class PositiveFrameCollector(Metric):
         for ax, (score, graph) in zip(axes, entries):
             node_features = graph.x.detach().cpu().numpy()
 
-            coords = node_features[:, :2]
-            teams = node_features[:, 2].astype(int)
-            has_ball = node_features[:, 3].astype(bool)
+            x_col_idx = self.feature_names.index("x")
+            possession_team_col_idx = self.feature_names.index("is_possession_team_1")
+            ball_carrier_col_idx = self.feature_names.index("is_ball_carrier_1")
+
+            xy_coords = node_features[:, x_col_idx : x_col_idx + 2]
+            teams = node_features[:, possession_team_col_idx].astype(int)
+            has_ball = node_features[:, ball_carrier_col_idx].astype(bool)
 
             face_colours = np.where(teams == 0, "red", "blue")
             edge_colours = np.where(has_ball, "white", face_colours)
 
-            ax.scatter(*coords.T, c=face_colours, ec=edge_colours, s=150)
+            ax.scatter(*xy_coords.T, c=face_colours, ec=edge_colours, s=150)
             ax.set_title(f"Prob: {float(score):.3f}", fontsize=14, pad=5)
             ax.axis("off")
             ax.invert_yaxis()

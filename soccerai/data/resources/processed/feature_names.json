@@ -41,5 +41,8 @@
     "age_35+",
     "goal_dist",
     "goal_cos",
-    "goal_sin"
+    "goal_sin",
+    "ball_dist",
+    "dz",
+    "is_in_air"
 ]
