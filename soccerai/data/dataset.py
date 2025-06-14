@@ -6,14 +6,21 @@ from typing import List, Sequence
 import polars as pl
 from loguru import logger
 from sklearn.compose import ColumnTransformer
-from sklearn.impute import KNNImputer, SimpleImputer
+from sklearn.decomposition import PCA
+from sklearn.ensemble import ExtraTreesRegressor
+from sklearn.experimental import enable_iterative_imputer  # noqa: F401
+from sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, PowerTransformer, StandardScaler
+from sklearn.preprocessing import (
+    OneHotEncoder,
+    PowerTransformer,
+    QuantileTransformer,
+)
 from torch_geometric.data import InMemoryDataset
 from torch_geometric_temporal.signal import DynamicGraphTemporalSignal
 from torchvision.transforms import Compose
 
-from soccerai.data.config import X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
+from soccerai.data.config import SHOOTING_STATS, X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
 from soccerai.data.converters import GraphConverter
 from soccerai.data.transformers import (
     BallLocationTransformer,
@@ -34,10 +41,12 @@ class WorldCup2022Dataset(InMemoryDataset):
         split: str,
         cfg: DataConfig,
         force_reload: bool = False,
+        random_state: int = 0,
     ):
         self.converter = converter
         self.split = split
         self.cfg = cfg
+        self.random_state = random_state
         super().__init__(root=root, transform=None, force_reload=force_reload)
 
         data_path_idx = 0 if self.split == "train" else 1
@@ -272,18 +281,51 @@ class WorldCup2022Dataset(InMemoryDataset):
         num_cols = [c for c in df.columns if c not in exclude_cols]
 
         # Pipelines ------------------------------------------------------- #
-        num_pipe = Pipeline(
-            [
-                ("imputer", SimpleImputer(strategy="mean")),
-                ("scaler", StandardScaler()),
-            ]  # TODO: ?
-        )
+        if self.cfg.use_regression_imputing:
+            et_est = ExtraTreesRegressor(
+                n_estimators=100,
+                min_samples_leaf=2,
+                n_jobs=-1,
+                random_state=self.random_state,
+            )
+            imputer = IterativeImputer(
+                estimator=et_est,
+                max_iter=10,
+                initial_strategy="median",
+                random_state=self.random_state,
+            )
+        else:
+            imputer = SimpleImputer(strategy="median")
+
+        numeric_steps = [
+            ("imputer", imputer),
+            ("scaler", QuantileTransformer(output_distribution="normal")),
+        ]
+
+        if self.cfg.use_pca_on_roster_cols:
+            numeric_steps.append(
+                (
+                    "roster_pca",
+                    ColumnTransformer(
+                        [
+                            (
+                                "roster_subset",
+                                PCA(n_components=0.95, random_state=self.random_state),
+                                SHOOTING_STATS,
+                            )
+                        ],
+                        remainder="passthrough",
+                        verbose_feature_names_out=False,
+                    ),
+                ),
+            )
+        num_pipe = Pipeline(steps=numeric_steps)
         cat_pipe = Pipeline(
             [
                 (
                     "imputer",
                     SimpleImputer(strategy="constant", fill_value="unknown"),
-                ),  # TODO: ?
+                ),
                 (
                     "onehot",
                     OneHotEncoder(
@@ -329,7 +371,7 @@ class WorldCup2022Dataset(InMemoryDataset):
         if self.cfg.include_ball_features:
             ball_loc_pipe = Pipeline(
                 steps=[
-                    ("imputer", SimpleImputer(strategy="mean")),  # TODO: ?
+                    ("imputer", SimpleImputer(strategy="median")),
                     ("ball_loc", BallLocationTransformer()),
                     (
                         "diff_speed_norm",

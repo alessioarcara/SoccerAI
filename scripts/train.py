@@ -34,12 +34,14 @@ def main(args):
         force_reload=args.reload,
         split="train",
         cfg=cfg.data,
+        random_state=cfg.seed,
     )
     val_ds = WorldCup2022Dataset(
         root="soccerai/data/resources",
         converter=converter,
         split="val",
         cfg=cfg.data,
+        random_state=cfg.seed,
     )
 
     logger.success(

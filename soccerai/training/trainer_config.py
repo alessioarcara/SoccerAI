@@ -25,6 +25,8 @@ class DataConfig(BaseModel):
     include_ball_features: bool
     use_macro_roles: bool
     use_augmentations: bool
+    use_regression_imputing: bool
+    use_pca_on_roster_cols: bool
     connection_mode: str
 
 
