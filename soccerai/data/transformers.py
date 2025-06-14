@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Sequence, Union
 
 import numpy as np
 import polars as pl
@@ -22,8 +22,15 @@ class BaseTransformer(BaseEstimator, TransformerMixin):
             raise ValueError(f"Unsupported output type: {transform}")
         return self
 
+    def _maybe_polars(
+        self, data: np.ndarray, columns: Sequence[str]
+    ) -> Union[np.ndarray, pl.DataFrame]:
+        if self.output == "polars":
+            return pl.DataFrame({c: data[:, i] for i, c in enumerate(columns)})
+        return data
 
-class PlayerPositionTransformer(BaseTransformer):
+
+class PlayerLocationTransformer(BaseTransformer):
     def __init__(
         self,
         pitch_length: float = 105.0,
@@ -36,13 +43,18 @@ class PlayerPositionTransformer(BaseTransformer):
 
     def transform(self, X):
         coords = np.asarray(X, dtype=float)
-        x_normed = np.clip(coords[:, 0] / self.pitch_length, 0.0, 1.0)
-        y_normed = np.clip(coords[:, 1] / self.pitch_width, 0.0, 1.0)
-        result = np.column_stack((x_normed, y_normed))
+        x = coords[:, 0]
+        y = coords[:, 1]
+        cos = coords[:, 2]
+        sin = coords[:, 3]
+        vx = coords[:, 4]
+        vy = coords[:, 5]
 
-        if self.output == "polars":
-            return pl.DataFrame({"x": result[:, 0], "y": result[:, 1]})
-        return result
+        x_normed = np.clip(x / self.pitch_length, 0.0, 1.0)
+        y_normed = np.clip(y / self.pitch_width, 0.0, 1.0)
+
+        res = np.column_stack((x_normed, y_normed, cos, sin, vx, vy))
+        return self._maybe_polars(res, ["x", "y", "cos", "sin", "vx", "vy"])
 
 
 class GoalLocationTransformer(BaseTransformer):
@@ -55,6 +67,7 @@ class GoalLocationTransformer(BaseTransformer):
         super().__init__(output)
         self.pitch_length = pitch_length
         self.pitch_width = pitch_width
+        self.pitch_diag = float(np.hypot(pitch_length, pitch_width))
 
     def transform(self, X):
         coords = np.asarray(X, dtype=float)
@@ -67,25 +80,13 @@ class GoalLocationTransformer(BaseTransformer):
         dy = y_goal - y
 
         goal_dist = np.hypot(dx, dy) + 1e-6
+        goal_dist_normed = goal_dist / self.pitch_diag
 
-        cos_theta = dx / goal_dist
-        sin_theta = dy / goal_dist
+        goal_cos = dx / goal_dist
+        goal_sin = dy / goal_dist
 
-        norm = np.hypot(self.pitch_length, self.pitch_width)
-        goal_dist_normed = goal_dist / norm
-
-        result = np.column_stack((goal_dist_normed, cos_theta, sin_theta))
-
-        if self.output == "polars":
-            return pl.DataFrame(
-                {
-                    "goal_dist": result[:, 0],
-                    "goal_cos": result[:, 1],
-                    "goal_sin": result[:, 2],
-                }
-            )
-
-        return result
+        res = np.column_stack((goal_dist_normed, goal_cos, goal_sin))
+        return self._maybe_polars(res, ["goal_dist", "goal_cos", "goal_sin"])
 
 
 class BallLocationTransformer(BaseTransformer):
@@ -98,28 +99,28 @@ class BallLocationTransformer(BaseTransformer):
         super().__init__(output)
         self.pitch_length = pitch_length
         self.pitch_width = pitch_width
+        self.pitch_diag = float(np.hypot(pitch_length, pitch_width))
 
     def transform(self, X):
         coords = np.asarray(X, dtype=float)
         x = coords[:, 0]
         y = coords[:, 1]
-        z = coords[:, 2] / 100.0  # height_cm -> height_m
+        z = coords[:, 2] / 100.0  # cm -> m
         cos = coords[:, 3]
         sin = coords[:, 4]
-        # vx = coords[:, 5]
-        # vy = coords[:, 6]
+        vx = coords[:, 5]
+        vy = coords[:, 6]
         x_ball = coords[:, 7]
         y_ball = coords[:, 8]
         z_ball = coords[:, 9]
         cos_ball = coords[:, 10]
         sin_ball = coords[:, 11]
-        # vx_ball = coords[:, 12]
-        # vy_ball = coords[:, 13]
+        vx_ball = coords[:, 12]
+        vy_ball = coords[:, 13]
 
-        #  planar distance between player and ball
+        # planar distance between player and ball
         ball_dist = np.hypot(x_ball - x, y_ball - y) + 1e-6
-        pitch_diag = np.hypot(self.pitch_length, self.pitch_width)
-        ball_dist_normed = ball_dist / pitch_diag
+        ball_dist_normed = ball_dist / self.pitch_diag
 
         # vertical offset relative to the player height
         dz = 2.0 / (1.0 + np.exp(-(z_ball - z))) - 1.0  # [-1, 1]
@@ -127,13 +128,11 @@ class BallLocationTransformer(BaseTransformer):
         # cosine similarity between ball direction and players directions
         ball_direction_sim = cos_ball * cos + sin_ball * sin
 
-        result = np.column_stack((ball_dist_normed, dz, ball_direction_sim))
+        # difference between each player speed and the ball speed
+        dvx = vx_ball - vx
+        dvy = vy_ball - vy
 
-        if self.output == "polars":
-            return pl.DataFrame(
-                {
-                    "ball_dist": result[:, 0],
-                    "dz": result[:, 1],
-                    "ball_direction_sim": result[:, 2],
-                }
-            )
+        res = np.column_stack((ball_dist_normed, dz, ball_direction_sim, dvx, dvy))
+        return self._maybe_polars(
+            res, ["ball_dist", "dz", "ball_direction_sim", "dvx", "dvy"]
+        )

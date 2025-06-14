@@ -10,6 +10,8 @@ from torch_geometric.transforms import BaseTransform
 # 5: "vy",
 # 6: "players_cos",
 # 7: "players_sin
+# 8: "goal_cos",
+# 9: "goal_sin
 
 
 class BaseRandomFlip(BaseTransform):
@@ -26,6 +28,7 @@ class RandomHorizontalFlip(BaseRandomFlip):
             data.x[:, 0] = 1.0 - data.x[:, 0]
             data.x[:, 4] = -data.x[:, 4]
             data.x[:, 6] = -data.x[:, 6]
+            # data.x[:, 8] = -data.x[:, 8]
         return data
 
 
@@ -35,4 +38,5 @@ class RandomVerticalFlip(BaseRandomFlip):
             data.x[:, 1] = 1.0 - data.x[:, 1]
             data.x[:, 5] = -data.x[:, 5]
             data.x[:, 7] = -data.x[:, 7]
+            # data.x[:, 9] = -data.x[:, 9]
         return data
