@@ -1,7 +1,7 @@
 import json
 from collections import defaultdict
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import List, Sequence
 
 import polars as pl
 from loguru import logger
@@ -11,6 +11,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, PowerTransformer, StandardScaler
 from torch_geometric.data import InMemoryDataset
 from torch_geometric_temporal.signal import DynamicGraphTemporalSignal
+from torchvision.transforms import Compose
 
 from soccerai.data.config import X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
 from soccerai.data.converters import GraphConverter
@@ -19,8 +20,8 @@ from soccerai.data.transformers import (
     GoalLocationTransformer,
     PlayerLocationTransformer,
 )
-from soccerai.data.utils import reorder_dataframe_cols
 from soccerai.training.trainer_config import DataConfig
+from soccerai.training.transforms import RandomHorizontalFlip, RandomVerticalFlip
 
 
 class WorldCup2022Dataset(InMemoryDataset):
@@ -32,20 +33,28 @@ class WorldCup2022Dataset(InMemoryDataset):
         converter: GraphConverter,
         split: str,
         cfg: DataConfig,
-        transform: Optional[Callable] = None,
         force_reload: bool = False,
     ):
         self.converter = converter
         self.split = split
         self.cfg = cfg
-        super().__init__(root=root, transform=transform, force_reload=force_reload)
+        super().__init__(root=root, transform=None, force_reload=force_reload)
 
         data_path_idx = 0 if self.split == "train" else 1
         self.load(self.processed_paths[data_path_idx])
 
         fp = Path(self.processed_dir) / self.FEATURE_NAMES_FILE
-        self.feature_names = (
-            json.loads(fp.read_text(encoding="utf-8")) if fp.exists() else None
+        self.feature_names: Sequence[str] = json.loads(fp.read_text(encoding="utf-8"))
+
+        self.transform = (
+            Compose(
+                [
+                    RandomHorizontalFlip(self.feature_names, 0.5),
+                    RandomVerticalFlip(self.feature_names, 0.5),
+                ]
+            )
+            if split == "train" and self.cfg.use_augmentations
+            else None
         )
 
     @property
@@ -363,25 +372,8 @@ class WorldCup2022Dataset(InMemoryDataset):
 
         preprocessor = self._create_preprocessor(train_df)
 
-        first = [
-            "x",
-            "y",
-            "is_possession_team_1",
-            "is_ball_carrier_1",
-            "vx",
-            "vy",
-            "cos",
-            "sin",
-        ]
-        if self.cfg.include_goal_features:
-            first.extend(["goal_cos", "goal_sin"])
-        if self.cfg.include_ball_features:
-            first.extend(["dvx", "dvy"])
-
-        train_transformed = reorder_dataframe_cols(
-            preprocessor.fit_transform(train_df), first
-        )
-        val_transformed = reorder_dataframe_cols(preprocessor.transform(val_df), first)
+        train_transformed = preprocessor.fit_transform(train_df)
+        val_transformed = preprocessor.transform(val_df)
 
         train_data_list, feature_names = self.converter.convert_dataframe_to_data_list(
             train_transformed
