@@ -310,7 +310,7 @@ class WorldCup2022Dataset(InMemoryDataset):
                         [
                             (
                                 "roster_subset",
-                                PCA(n_components=0.95, random_state=self.random_state),
+                                PCA(n_components=0.99, random_state=self.random_state),
                                 SHOOTING_STATS,
                             )
                         ],
