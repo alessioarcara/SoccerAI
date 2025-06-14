@@ -104,13 +104,17 @@ class BallLocationTransformer(BaseTransformer):
         x = coords[:, 0]
         y = coords[:, 1]
         z = coords[:, 2] / 100.0  # height_cm -> height_m
-        x_ball = coords[:, 3]
-        y_ball = coords[:, 4]
-        z_ball = coords[:, 5]
-        cos_ball = coords[:, 6]
-        sin_ball = coords[:, 7]
-        cos = coords[:, 8]
-        sin = coords[:, 9]
+        cos = coords[:, 3]
+        sin = coords[:, 4]
+        # vx = coords[:, 5]
+        # vy = coords[:, 6]
+        x_ball = coords[:, 7]
+        y_ball = coords[:, 8]
+        z_ball = coords[:, 9]
+        cos_ball = coords[:, 10]
+        sin_ball = coords[:, 11]
+        # vx_ball = coords[:, 12]
+        # vy_ball = coords[:, 13]
 
         #  planar distance between player and ball
         ball_dist = np.hypot(x_ball - x, y_ball - y) + 1e-6

@@ -128,7 +128,7 @@ class WorldCup2022Dataset(InMemoryDataset):
                     .first()
                     .over("gameEventId", "possessionEventId")
                     .alias(f"{c}_ball")
-                    for c in ["x", "y", "z", "cos", "sin"]
+                    for c in ["x", "y", "z", "cos", "sin", "vx", "vy"]
                 ]
             ).drop("z")
 
@@ -234,10 +234,12 @@ class WorldCup2022Dataset(InMemoryDataset):
         ]
         pos_cols = ["x", "y"]
         angle_cols = ["cos", "sin"]
+        velocity_cols = ["vx", "vy"]
         exclude_cols = set(
             cat_cols
             + pos_cols
             + angle_cols
+            + velocity_cols
             + [
                 "gameEventId",
                 "possessionEventId",
@@ -259,6 +261,8 @@ class WorldCup2022Dataset(InMemoryDataset):
                 "height_cm",
                 "cos_ball",
                 "sin_ball",
+                "vx_ball",
+                "vy_ball",
             ]
             exclude_cols.update(ball_cols)
 
@@ -318,7 +322,7 @@ class WorldCup2022Dataset(InMemoryDataset):
                 (
                     "ball_loc",
                     ball_loc_pipe,
-                    pos_cols + ball_cols + angle_cols,
+                    pos_cols + angle_cols + velocity_cols + ball_cols,
                 )
             )
 
