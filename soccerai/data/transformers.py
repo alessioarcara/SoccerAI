@@ -140,7 +140,11 @@ class BallLocationTransformer(BaseTransformer):
 
 class NonPossessionShootingStatsMask(BaseTransformer):
     def transform(self, X):
-        col_names = X.columns
         data = np.asarray(X, dtype=float)
-        data = data * self.mask
-        return self._maybe_polars(data, col_names)
+
+        features = data[:, :-1]
+        mask = data[:, -1][:, None]
+
+        masked_features = features * mask
+        res = np.concatenate([masked_features, mask], axis=1)
+        return self._maybe_polars(res, X.columns)

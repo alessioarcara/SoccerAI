@@ -1,7 +1,7 @@
 import json
 from collections import defaultdict
 from pathlib import Path
-from typing import List, Sequence
+from typing import List, Sequence, Union
 
 import polars as pl
 from loguru import logger
@@ -242,7 +242,9 @@ class WorldCup2022Dataset(InMemoryDataset):
 
         return df
 
-    def _create_preprocessor(self, df: pl.DataFrame) -> ColumnTransformer:
+    def _create_preprocessor(
+        self, df: pl.DataFrame
+    ) -> Union[ColumnTransformer, Pipeline]:
         # Column groups --------------------------------------------------- #
         cat_cols = [
             "possessionEventType",
@@ -319,30 +321,6 @@ class WorldCup2022Dataset(InMemoryDataset):
                         verbose_feature_names_out=False,
                     ),
                 ),
-            )
-        if self.cfg.mask_non_possession_shooting_stats:
-            if self.cfg.use_pca_on_roster_cols:
-
-                def cols_to_mask(df: pl.DataFrame) -> List[str]:
-                    pca_cols = [c for c in df.columns if c.startswith("pca")]
-                    return pca_cols
-            else:
-                cols_to_mask = SHOOTING_STATS  # type: ignore
-            numeric_steps.append(
-                (
-                    "shooting_stats_mask",
-                    ColumnTransformer(
-                        [
-                            (
-                                "mask",
-                                NonPossessionShootingStatsMask(),
-                                cols_to_mask,
-                            )
-                        ],
-                        remainder="passthrough",
-                        verbose_feature_names_out=False,
-                    ),
-                )
             )
         num_pipe = Pipeline(steps=numeric_steps)
         cat_pipe = Pipeline(
@@ -422,6 +400,35 @@ class WorldCup2022Dataset(InMemoryDataset):
             remainder="passthrough",
             verbose_feature_names_out=False,  # No prefixes
         )
+
+        if self.cfg.mask_non_possession_shooting_stats:
+            if self.cfg.use_pca_on_roster_cols:
+
+                def cols_to_mask(df: pl.DataFrame) -> List[str]:
+                    pca_cols = [c for c in df.columns if c.startswith("pca")]
+                    return pca_cols + ["is_possession_team_1"]
+            else:
+                cols_to_mask = SHOOTING_STATS + ["is_possession_team_1"]  # type: ignore
+
+            prep = Pipeline(
+                [
+                    ("prep", prep),
+                    (
+                        "shooting_stats_mask",
+                        ColumnTransformer(
+                            [
+                                (
+                                    "mask",
+                                    NonPossessionShootingStatsMask(),
+                                    cols_to_mask,
+                                )
+                            ],
+                            remainder="passthrough",
+                            verbose_feature_names_out=False,
+                        ),
+                    ),
+                ]
+            )
 
         prep.set_output(transform="polars")
         return prep
