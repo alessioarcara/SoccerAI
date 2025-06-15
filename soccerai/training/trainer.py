@@ -268,8 +268,13 @@ class Trainer(BaseTrainer):
                 continue
 
             node_masks = []
+            jerseys_list = []
+
             for _, (batch, idx) in entries:
                 data = batch.to_data_list()[idx]
+                jersey_nums = [str(int(n)) for n in data.jersey_num.cpu().numpy()]
+                jerseys_list.append(jersey_nums)
+
                 with torch.enable_grad():
                     exp = explainer(
                         x=data.x.clone().float().requires_grad_(True),
@@ -291,43 +296,19 @@ class Trainer(BaseTrainer):
             plt.close(fig)
 
             video_path = make_heatmap_video_opencv(
-                node_masks, self.feature_names, f"label_{label}", fps=1
+                node_masks,
+                self.feature_names,
+                jerseys_list,
+                label_name=("TP" if label == 1 else "FP"),
+                fps=1,
             )
-            wandb.log({f"explain/video_label_{label}": wandb.Video(video_path, fps=1)})
-
-            if self.cfg.explain.log_best_single:
-                score, (batch, idx) = entries[0]
-                data = batch.to_data_list()[idx]
-                label_name = "True Positive" if label == 1 else "False Positive"
-
-                with torch.enable_grad():
-                    exp_best = explainer(
-                        x=data.x.clone().float().requires_grad_(True),
-                        edge_index=data.edge_index,
-                        u=data.u.clone().float().requires_grad_(True),
-                        edge_weight=data.edge_weight.clone()
-                        .float()
-                        .requires_grad_(True),
+            wandb.log(
+                {
+                    f"explain/video_{'TP' if label == 1 else 'FP'}": wandb.Video(
+                        video_path, fps=1
                     )
-                best_mask = exp_best.node_mask.detach().cpu().numpy()
-
-                fig, ax = plt.subplots(figsize=(10, 8))
-                sns.heatmap(
-                    best_mask,
-                    ax=ax,
-                    cmap="coolwarm",
-                    cbar=False,
-                    xticklabels=self.feature_names,
-                    yticklabels=[str(int(n)) for n in data.jersey_num.cpu().numpy()],
-                )
-                ax.set_title(
-                    f"{label_name} — Best frame (score={score:.3f})", fontsize=14
-                )
-                ax.tick_params(axis="x", rotation=90)
-                ax.set_ylabel("Player Jersey Number", fontsize=12, labelpad=10)
-                plt.tight_layout()
-                wandb.log({f"explain/best_single_label_{label}": wandb.Image(fig)})
-                plt.close(fig)
+                }
+            )
 
 
 class TemporalTrainer(BaseTrainer):

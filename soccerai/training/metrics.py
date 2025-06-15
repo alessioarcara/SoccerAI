@@ -220,7 +220,7 @@ class FrameCollector(Metric):
         )
         axes = axs.flatten()
 
-        for ax, (score, (batch, idx)) in zip(axes, entries):
+        for i, (ax, (score, (batch, idx))) in enumerate(zip(axes, entries), start=1):
             data = batch.to_data_list()[idx]
             feats = data.x.detach().cpu().numpy()
 
@@ -231,13 +231,15 @@ class FrameCollector(Metric):
             face_colours = np.where(teams == 0, "red", "blue")
             edge_colours = np.where(has_ball, "white", face_colours)
 
-            ax.scatter(*coords.T, c=face_colours, ec=edge_colours, s=150)
+            ax.scatter(*coords.T, c=face_colours, ec=edge_colours, s=180)
             self._annotate_jerseys(ax, data)
+
             ax.set_title(
-                f"{'Pos' if self.target_label == 1 else 'Neg'} {score:.2f}",
+                f"Frame {i} — Confidence {score:.2f}",
                 fontsize=12,
                 pad=4,
             )
+
             ax.axis("off")
             ax.invert_yaxis()
 

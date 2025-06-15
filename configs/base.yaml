@@ -9,7 +9,7 @@ model:
 
 trainer:
   bs: 32 
-  n_epochs: 10
+  n_epochs: 50
   lr: 1e-4
   wd: 0.01
   eval_rate: 2
@@ -31,5 +31,4 @@ explain:
     ncols: 4
     figheight: 12.0
     pitch_type: "metricasports"
-    log_best_single: True
 

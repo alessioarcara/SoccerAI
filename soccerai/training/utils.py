@@ -39,6 +39,7 @@ class TopKStorage(Generic[T]):
 def make_heatmap_video_opencv(
     node_masks: List[np.ndarray],
     feature_names: List[str],
+    jersey_nums: List[List[str]],
     label_name: str,
     fps: int = 1,
 ) -> str:
@@ -46,17 +47,20 @@ def make_heatmap_video_opencv(
     frame_paths: List[str] = []
 
     for i, mask in enumerate(node_masks):
-        fig, ax = plt.subplots(figsize=(6, 4))
+        fig, ax = plt.subplots(figsize=(9, 7))
         sns.heatmap(
             mask,
             ax=ax,
             cmap="coolwarm",
-            cbar=True,
+            cbar=False,
             xticklabels=feature_names,
-            yticklabels=False,
+            yticklabels=jersey_nums[i],
         )
-        ax.set_title(f"{label_name} Frame {i + 1}", fontsize=12)
-        ax.set_xlabel("Features")
+
+        ax.tick_params(axis="x", labelsize=8)
+        ax.tick_params(axis="y", labelsize=8)
+        ax.set_title(f"{label_name}_Frame_{i + 1}", fontsize=10)
+        ax.set_ylabel("Player Jersey Number", fontsize=10, labelpad=10)
         plt.tight_layout()
 
         path = os.path.join(tmpdir, f"frame_{i:03d}.png")
