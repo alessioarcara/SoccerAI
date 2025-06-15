@@ -27,6 +27,7 @@ class DataConfig(BaseModel):
     use_augmentations: bool
     use_regression_imputing: bool
     use_pca_on_roster_cols: bool
+    mask_non_possession_shooting_stats: bool
     connection_mode: str
 
 
