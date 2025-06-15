@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import numpy as np
 from torch.utils.data import Dataset
@@ -69,47 +69,89 @@ class TemporalChainsDataset(Dataset):
     def collate(batch: List[DynamicGraphTemporalSignal]):
         T_max = max(c.snapshot_count for c in batch)
 
-        batch_edge_indices: List[np.ndarray] = []
-        batch_edge_weights: List[np.ndarray] = []
-        batch_features: List[np.ndarray] = []
-        batch_targets: List[np.ndarray] = []
-        for c in batch:
-            T = c._set_snapshot_count
+        batch_edge_indices = []
+        batch_edge_weights = []
+        batch_features = []
+        batch_targets = []
+        batch_u = []
+        batch_masks = []
+        batches = []
 
+        for c in batch:
+            T = c.snapshot_count
             pad_frames = T_max - T
 
-            if pad_frames:
-                padded_ei, padded_ew, padded_x, padded_y = pad_chain(c, pad_frames)
-                batch_edge_indices += padded_ei
-                batch_edge_weights += padded_ew
-                batch_features += padded_x
-                batch_targets += padded_y
+            ei, ew, x, y, u = (
+                pad_chain(c, pad_frames)
+                if pad_frames
+                else (c.edge_indices, c.edge_weights, c.features, c.targets, c.u)
+            )
+
+            batch_edge_indices.append(ei)
+            batch_edge_weights.append(ew)
+            batch_features.append(x)
+            batch_targets.append(y)
+            batch_u.append(u)
+            batch_masks.append(np.array([1] * T + [0] * pad_frames))
+
+        # (B, T_max, 2, E) -> (T_max, 2, B*E)
+        batch_edge_indices_np = np.array(batch_edge_indices).reshape((T_max, 2, -1))
+        # (B, T_max, E) -> (T_max, B*E)
+        batch_edge_weights_np = np.array(batch_edge_weights).reshape((T_max, -1))
+        # (B, T_max, N, Node_dim) -> (T_max, B*N, Node_dim)
+        batch_features_np = np.array(batch_features).reshape(
+            (T_max, -1, batch_features[0][0].shape[1])
+        )
+        # (B, T_max, 1, 1) -> (T_max, B*1, 1)
+        batch_targets_np = np.array(batch_targets).reshape(T_max, -1, 1)
+        # (B, T_max, 1, Glob_dim) -> (T_max, B*1, Glob_dim)
+        batch_u_np = np.array(batch_u).reshape(T_max, len(batch), -1)
+        # (B, T_max) -> (T_max, B)
+        batch_masks_np = np.array(batch_masks).T
+
+        # For each time step, build an array that maps every node to the index
+        # of the graph (in `batch`) it belongs to. This is equivalent to the
+        # `batch` vector used in PyG for graphs, but replicated over time.
+        for _ in range(T_max):
+            timestep_batch = np.concatenate(
+                [
+                    np.full(batch[0].features[0].shape[0], i, dtype=np.int64)
+                    for i in range(len(batch))
+                ]
+            )
+            batches.append(timestep_batch)
 
         return DynamicGraphTemporalSignalBatch(
-            edge_indices=batch_edge_indices,
-            edge_weights=batch_edge_weights,
-            features=batch_features,
-            targets=batch_targets,
+            edge_indices=batch_edge_indices_np,
+            edge_weights=batch_edge_weights_np,
+            features=batch_features_np,
+            targets=batch_targets_np,
+            batches=batches,
+            masks=batch_masks_np,
+            u=batch_u_np,
         )
 
 
 def pad_chain(
     c: DynamicGraphTemporalSignal, num_pad_frames: int
-) -> Tuple[Sequence[np.ndarray], ...]:
+) -> Tuple[List[np.ndarray], ...]:
     pad_ei = np.zeros_like(c.edge_indices[0])
     pad_ew = np.zeros_like(c.edge_weights[0])
     pad_x = np.zeros_like(c.features[0])
     pad_y = np.zeros_like(c.targets[0])
+    pad_u = np.zeros_like(c.u[0])
 
     padded_ei = list(c.edge_indices)
     padded_ew = list(c.edge_weights)
     padded_x = list(c.features)
     padded_y = list(c.targets)
+    padded_u = list(c.u)
 
     for _ in range(num_pad_frames):
         padded_ei.append(pad_ei)
         padded_ew.append(pad_ew)
         padded_x.append(pad_x)
         padded_y.append(pad_y)
+        padded_u.append(pad_u)
 
-    return padded_ei, padded_ew, padded_x, padded_y
+    return padded_ei, padded_ew, padded_x, padded_y, padded_u
