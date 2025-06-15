@@ -31,6 +31,10 @@ class TemporalChainsDataset(Dataset):
 
     @staticmethod
     def from_worldcup_dataset(dataset: WorldCup2022Dataset) -> TemporalChainsDataset:
+        transform = dataset.transform
+        if dataset.transform is not None:
+            dataset.transform = None
+
         buckets = defaultdict(list)
         for data in dataset:
             chain_id = int(data.chain_id.item())
@@ -56,6 +60,4 @@ class TemporalChainsDataset(Dataset):
                 )
             )
 
-        return TemporalChainsDataset(
-            temporal_chains=chains, transform=dataset.transform
-        )
+        return TemporalChainsDataset(temporal_chains=chains, transform=transform)
