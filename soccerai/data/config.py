@@ -133,3 +133,13 @@ SHOOTING_STATS = [
 X_GOAL_RIGHT = 105.0
 X_GOAL_LEFT = 0.0
 Y_GOAL = 34.0
+
+
+DEFENSIVE_STATS = [
+    "tackles",
+    "tackles_won",
+    "blocks",
+    "interceptions",
+    "clearances",
+    "errors",
+]

@@ -9,7 +9,7 @@ model:
 
 trainer:
   bs: 32 
-  n_epochs: 20
+  n_epochs: 30
   lr: 1e-4
   wd: 0.01
   eval_rate: 2
@@ -22,6 +22,7 @@ data:
   use_augmentations: False
   use_regression_imputing: False
   use_pca_on_roster_cols: False 
-  mask_non_possession_shooting_stats: False 
+  mask_non_possession_shooting_stats: True 
+  mask_attacker_defensive_stats: True
   connection_mode: "bipartite"
   val_ratio: 0.2
