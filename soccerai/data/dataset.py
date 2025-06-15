@@ -25,8 +25,8 @@ from soccerai.data.converters import GraphConverter
 from soccerai.data.transformers import (
     BallLocationTransformer,
     GoalLocationTransformer,
+    NonPossessionShootingStatsMask,
     PlayerLocationTransformer,
-    PossessionShootingMask,
 )
 from soccerai.training.trainer_config import DataConfig
 from soccerai.training.transforms import RandomHorizontalFlip, RandomVerticalFlip
@@ -219,17 +219,6 @@ class WorldCup2022Dataset(InMemoryDataset):
             .drop("possession_team_tmp")
         ).drop_nulls(["is_possession_team"])
 
-        if self.cfg.mask_shooting_stats_non_possession:
-            df = df.with_columns(
-                [
-                    pl.when(pl.col("is_possession_team") == 1)
-                    .then(pl.col(col_name))
-                    .otherwise(0)
-                    .alias(col_name)
-                    for col_name in SHOOTING_STATS
-                ]
-            )
-
         is_home_team = df["team"] == "home"
         is_second_half = df["frameTime"] > df["startPeriod2"]
 
@@ -253,7 +242,7 @@ class WorldCup2022Dataset(InMemoryDataset):
 
         return df
 
-    def _create_preprocessor(self, df: pl.DataFrame) -> ColumnTransformer | Pipeline:
+    def _create_preprocessor(self, df: pl.DataFrame) -> ColumnTransformer:
         # Column groups --------------------------------------------------- #
         cat_cols = [
             "possessionEventType",
@@ -317,11 +306,11 @@ class WorldCup2022Dataset(InMemoryDataset):
         if self.cfg.use_pca_on_roster_cols:
             numeric_steps.append(
                 (
-                    "roster_pca",
+                    "shooting_stats_pca",
                     ColumnTransformer(
                         [
                             (
-                                "roster_subset",
+                                "subset",
                                 PCA(n_components=0.99, random_state=self.random_state),
                                 SHOOTING_STATS,
                             )
@@ -330,6 +319,30 @@ class WorldCup2022Dataset(InMemoryDataset):
                         verbose_feature_names_out=False,
                     ),
                 ),
+            )
+        if self.cfg.mask_non_possession_shooting_stats:
+            if self.cfg.use_pca_on_roster_cols:
+
+                def cols_to_mask(df: pl.DataFrame) -> List[str]:
+                    pca_cols = [c for c in df.columns if c.startswith("pca")]
+                    return pca_cols
+            else:
+                cols_to_mask = SHOOTING_STATS  # type: ignore
+            numeric_steps.append(
+                (
+                    "shooting_stats_mask",
+                    ColumnTransformer(
+                        [
+                            (
+                                "mask",
+                                NonPossessionShootingStatsMask(),
+                                cols_to_mask,
+                            )
+                        ],
+                        remainder="passthrough",
+                        verbose_feature_names_out=False,
+                    ),
+                )
             )
         num_pipe = Pipeline(steps=numeric_steps)
         cat_pipe = Pipeline(
@@ -411,16 +424,6 @@ class WorldCup2022Dataset(InMemoryDataset):
         )
 
         prep.set_output(transform="polars")
-
-        # gating shooting stats ------------------------------- #
-        if self.cfg.mask_shooting_stats_non_possession:
-            return Pipeline(
-                [
-                    ("prep", prep),
-                    ("gating", PossessionShootingMask(SHOOTING_STATS)),
-                ]
-            )
-
         return prep
 
     def process(self):

@@ -1,28 +1,8 @@
-from typing import List, Optional, Sequence, Union
+from typing import Optional, Sequence, Union
 
 import numpy as np
 import polars as pl
 from sklearn.base import BaseEstimator, TransformerMixin
-
-
-class PossessionShootingMask(BaseEstimator, TransformerMixin):
-    def __init__(
-        self, shoot_cols: List[str], possess_col: str = "is_possession_team_1"
-    ):
-        self.shoot_cols = shoot_cols
-        self.possess_col = possess_col
-
-    def fit(self, X, y=None):
-        return self
-
-    def transform(self, X):
-        if not isinstance(X, pl.DataFrame):
-            raise TypeError(
-                "PossessionShootingMask expects a polars.DataFrame as input"
-            )
-        mask = X[self.possess_col]
-        updates = [(X[c] * mask).alias(c) for c in self.shoot_cols]
-        return X.with_columns(updates)
 
 
 class BaseTransformer(BaseEstimator, TransformerMixin):
@@ -62,13 +42,13 @@ class PlayerLocationTransformer(BaseTransformer):
         self.pitch_width = pitch_width
 
     def transform(self, X):
-        coords = np.asarray(X, dtype=float)
-        x = coords[:, 0]
-        y = coords[:, 1]
-        cos = coords[:, 2]
-        sin = coords[:, 3]
-        vx = coords[:, 4]
-        vy = coords[:, 5]
+        data = np.asarray(X, dtype=float)
+        x = data[:, 0]
+        y = data[:, 1]
+        cos = data[:, 2]
+        sin = data[:, 3]
+        vx = data[:, 4]
+        vy = data[:, 5]
 
         x_normed = np.clip(x / self.pitch_length, 0.0, 1.0)
         y_normed = np.clip(y / self.pitch_width, 0.0, 1.0)
@@ -90,11 +70,11 @@ class GoalLocationTransformer(BaseTransformer):
         self.pitch_diag = float(np.hypot(pitch_length, pitch_width))
 
     def transform(self, X):
-        coords = np.asarray(X, dtype=float)
-        x = coords[:, 0]
-        y = coords[:, 1]
-        x_goal = coords[:, 2]
-        y_goal = coords[:, 3]
+        data = np.asarray(X, dtype=float)
+        x = data[:, 0]
+        y = data[:, 1]
+        x_goal = data[:, 2]
+        y_goal = data[:, 3]
 
         dx = x_goal - x
         dy = y_goal - y
@@ -122,21 +102,21 @@ class BallLocationTransformer(BaseTransformer):
         self.pitch_diag = float(np.hypot(pitch_length, pitch_width))
 
     def transform(self, X):
-        coords = np.asarray(X, dtype=float)
-        x = coords[:, 0]
-        y = coords[:, 1]
-        z = coords[:, 2] / 100.0  # cm -> m
-        cos = coords[:, 3]
-        sin = coords[:, 4]
-        vx = coords[:, 5]
-        vy = coords[:, 6]
-        x_ball = coords[:, 7]
-        y_ball = coords[:, 8]
-        z_ball = coords[:, 9]
-        cos_ball = coords[:, 10]
-        sin_ball = coords[:, 11]
-        vx_ball = coords[:, 12]
-        vy_ball = coords[:, 13]
+        data = np.asarray(X, dtype=float)
+        x = data[:, 0]
+        y = data[:, 1]
+        z = data[:, 2] / 100.0  # cm -> m
+        cos = data[:, 3]
+        sin = data[:, 4]
+        vx = data[:, 5]
+        vy = data[:, 6]
+        x_ball = data[:, 7]
+        y_ball = data[:, 8]
+        z_ball = data[:, 9]
+        cos_ball = data[:, 10]
+        sin_ball = data[:, 11]
+        vx_ball = data[:, 12]
+        vy_ball = data[:, 13]
 
         # planar distance between player and ball
         ball_dist = np.hypot(x_ball - x, y_ball - y) + 1e-6
@@ -156,3 +136,11 @@ class BallLocationTransformer(BaseTransformer):
         return self._maybe_polars(
             res, ["ball_dist", "dz", "ball_direction_sim", "dvx", "dvy"]
         )
+
+
+class NonPossessionShootingStatsMask(BaseTransformer):
+    def transform(self, X):
+        col_names = X.columns
+        data = np.asarray(X, dtype=float)
+        data = data * self.mask
+        return self._maybe_polars(data, col_names)
