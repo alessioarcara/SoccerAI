@@ -31,6 +31,9 @@ class TemporalChainsDataset(Dataset):
 
     @staticmethod
     def from_worldcup_dataset(dataset: WorldCup2022Dataset) -> TemporalChainsDataset:
+        tmp_transform = dataset.transform
+        dataset.transform = None
+
         buckets = defaultdict(list)
         for data in dataset:
             chain_id = int(data.chain_id.item())
@@ -56,9 +59,7 @@ class TemporalChainsDataset(Dataset):
                 )
             )
 
-        return TemporalChainsDataset(
-            temporal_chains=chains, transform=dataset.transform
-        )
+        return TemporalChainsDataset(temporal_chains=chains, transform=tmp_transform)
 
     @staticmethod
     def collate(chains: List[DynamicGraphTemporalSignal]):
