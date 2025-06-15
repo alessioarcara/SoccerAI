@@ -1,4 +1,3 @@
-import random
 from abc import ABC, abstractmethod
 from typing import Any, Collection, Dict, List, Optional, Tuple
 
@@ -327,8 +326,3 @@ class TemporalTrainer(BaseTrainer):
         preds_probs = torch.sigmoid(out)
         true_labels = signal[0].y.cpu().long()
         return loss, preds_probs, true_labels
-
-    def _on_epoch_start(self):
-        train_iterable = self._get_data_iterable("train")
-        assert train_iterable is not None
-        random.shuffle(train_iterable)
