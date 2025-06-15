@@ -46,15 +46,16 @@ class RostersEnricher:
 
         fbref_id = fbref.get_player_id(self._driver, player_name, player_team)
         fbref_html = fbref.get_html(self._driver, player_name, fbref_id)
-        fbref_stats = fbref.extract_metastats(fbref_html)
-        logger.debug(fbref_stats)
+        fbref_meta = fbref.extract_metastats(fbref_html)
 
         if player_role == "GK":
-            fbref_shoot_stats = {key: 0 for key in SHOOTING_STATS}
+            fbref_shoot = {k: 0 for k in SHOOTING_STATS}
         else:
-            fbref_shoot_stats = fbref.extract_shoot_stats(fbref_html, num_years_back=3)
+            fbref_shoot = fbref.extract_shoot_stats(fbref_html)
 
-        combined_stats = fbref_stats | fbref_shoot_stats | combined_stats
+        fbref_def = fbref.extract_defensive_stats(fbref_html)
+
+        combined_stats = fbref_meta | fbref_shoot | fbref_def | combined_stats
 
         player.update(combined_stats)
         return player

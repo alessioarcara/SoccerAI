@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.common.by import By
 
-from soccerai.data.config import SHOOTING_STATS, TEAM_ABBREVS
+from soccerai.data.config import DEFENSIVE_STATS, SHOOTING_STATS, TEAM_ABBREVS
 from soccerai.data.scraping.utils import normalize
 
 
@@ -139,7 +139,7 @@ def extract_metastats(html: str) -> Dict:
     return data
 
 
-def compute_shooting_stats_average(
+def compute_stats_average(
     season_data: List[Tuple[str, Dict]],
     num_years_back: int = 3,
     min_minutes_90s: float = 5.0,
@@ -186,53 +186,50 @@ def compute_shooting_stats_average(
     }
 
 
-def extract_shoot_stats(
-    html_file: str, num_years_back: int = 3, min_minute_90s: float = 5.0
-) -> dict:
+def extract_table_stats(
+    html_file: str,
+    table_id: str,
+    stat_keys: List[str],
+    num_years_back: int = 3,
+    min_minute_90s: float = 5.0,
+) -> Dict:
     soup = BeautifulSoup(html_file, "html.parser")
-    div_all_stats = soup.find("div", id="all_stats_shooting")
-
-    if not div_all_stats:
+    div_stats = soup.find("div", id=table_id)
+    if not div_stats:
         return {}
 
-    table = div_all_stats.find("table")
-    if not table:
-        return {}
+    table = div_stats.find("table")
+    tbody = table.find("tbody") if table else None
+    rows = tbody.find_all("tr") if tbody else []
 
-    tbody = table.find("tbody")
-    if not tbody:
-        return {}
-
-    rows = tbody.find_all("tr")
-
-    season_data = []
+    season_data: List[Tuple[str, Dict]] = []
     for row in rows:
         season_th = row.find("th", {"data-stat": "year_id"})
         if not season_th:
             continue
-
         season = season_th.get_text(strip=True)
-        data_cells = row.find_all("td")
-        if not data_cells:
-            continue
 
         stats = {}
-        for cell in data_cells:
-            stat_name = cell.get("data-stat")
-            stat_value = cell.get_text(strip=True)
+        for cell in row.find_all("td"):
+            k = cell.get("data-stat")
+            v = cell.get_text(strip=True)
             try:
-                value = float(stat_value)
+                stats[k] = float(v)
             except ValueError:
-                value = None
-
-            stats[stat_name] = value
-
+                stats[k] = None
         season_data.append((season, stats))
 
-    averaged_stats = compute_shooting_stats_average(
-        season_data, num_years_back=num_years_back, min_minutes_90s=min_minute_90s
+    avg = compute_stats_average(
+        season_data,
+        num_years_back=num_years_back,
+        min_minutes_90s=min_minute_90s,
     )
+    return {k: avg.get(k) for k in stat_keys}
 
-    filtered_stats = {key: averaged_stats.get(key) for key in SHOOTING_STATS}
 
-    return filtered_stats
+def extract_shoot_stats(html, **kwargs):
+    return extract_table_stats(html, "all_stats_shooting", SHOOTING_STATS, **kwargs)
+
+
+def extract_defensive_stats(html, **kwargs):
+    return extract_table_stats(html, "all_stats_defense", DEFENSIVE_STATS, **kwargs)
