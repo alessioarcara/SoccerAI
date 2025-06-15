@@ -59,3 +59,12 @@ class TemporalChainsDataset(Dataset):
         return TemporalChainsDataset(
             temporal_chains=chains, transform=dataset.transform
         )
+
+    @staticmethod
+    def collate(chains: List[DynamicGraphTemporalSignal]):
+        #        T_max = max(chain.snapshot_count for c in chains)
+
+        # for c in chains:
+        #     T = c._set_snapshot_count
+        # print(batch)
+        pass

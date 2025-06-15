@@ -1,4 +1,3 @@
-import random
 from abc import ABC, abstractmethod
 from typing import Any, Collection, Dict, List, Optional, Tuple
 
@@ -268,17 +267,17 @@ class TemporalTrainer(BaseTrainer):
         self,
         cfg: Config,
         model: nn.Module,
-        train_signals: Signals,
+        train_loader: Signals,
         device: str,
-        val_signals: Optional[Signals] = None,
+        val_loader: Optional[Signals] = None,
         metrics: List[Metric] = [],
     ) -> None:
         super().__init__(cfg, model, device, metrics)
-        self.train_signals = train_signals
-        self.val_signals = val_signals
+        self.train_loader = train_loader
+        self.val_loader = val_loader
 
     def _get_data_iterable(self, split: str) -> Optional[Collection[Any]]:
-        return self.train_signals if split == "train" else self.val_signals
+        return self.train_loader if split == "train" else self.val_loader
 
     def _compute_signal_loss_and_last_pred(
         self, signal: Discrete_Signal
@@ -327,8 +326,3 @@ class TemporalTrainer(BaseTrainer):
         preds_probs = torch.sigmoid(out)
         true_labels = signal[0].y.cpu().long()
         return loss, preds_probs, true_labels
-
-    def _on_epoch_start(self):
-        train_iterable = self._get_data_iterable("train")
-        assert train_iterable is not None
-        random.shuffle(train_iterable)
