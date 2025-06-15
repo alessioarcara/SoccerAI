@@ -1,8 +1,28 @@
-from typing import Optional, Sequence, Union
+from typing import List, Optional, Sequence, Union
 
 import numpy as np
 import polars as pl
 from sklearn.base import BaseEstimator, TransformerMixin
+
+
+class PossessionShootingMask(BaseEstimator, TransformerMixin):
+    def __init__(
+        self, shoot_cols: List[str], possess_col: str = "is_possession_team_1"
+    ):
+        self.shoot_cols = shoot_cols
+        self.possess_col = possess_col
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        if not isinstance(X, pl.DataFrame):
+            raise TypeError(
+                "PossessionShootingMask expects a polars.DataFrame as input"
+            )
+        mask = X[self.possess_col]
+        updates = [(X[c] * mask).alias(c) for c in self.shoot_cols]
+        return X.with_columns(updates)
 
 
 class BaseTransformer(BaseEstimator, TransformerMixin):

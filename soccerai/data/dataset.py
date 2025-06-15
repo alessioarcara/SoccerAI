@@ -26,6 +26,7 @@ from soccerai.data.transformers import (
     BallLocationTransformer,
     GoalLocationTransformer,
     PlayerLocationTransformer,
+    PossessionShootingMask,
 )
 from soccerai.training.trainer_config import DataConfig
 from soccerai.training.transforms import RandomHorizontalFlip, RandomVerticalFlip
@@ -218,6 +219,17 @@ class WorldCup2022Dataset(InMemoryDataset):
             .drop("possession_team_tmp")
         ).drop_nulls(["is_possession_team"])
 
+        if self.cfg.mask_shooting_stats_non_possession:
+            df = df.with_columns(
+                [
+                    pl.when(pl.col("is_possession_team") == 1)
+                    .then(pl.col(col_name))
+                    .otherwise(0)
+                    .alias(col_name)
+                    for col_name in SHOOTING_STATS
+                ]
+            )
+
         is_home_team = df["team"] == "home"
         is_second_half = df["frameTime"] > df["startPeriod2"]
 
@@ -241,7 +253,7 @@ class WorldCup2022Dataset(InMemoryDataset):
 
         return df
 
-    def _create_preprocessor(self, df: pl.DataFrame) -> ColumnTransformer:
+    def _create_preprocessor(self, df: pl.DataFrame) -> ColumnTransformer | Pipeline:
         # Column groups --------------------------------------------------- #
         cat_cols = [
             "possessionEventType",
@@ -399,6 +411,16 @@ class WorldCup2022Dataset(InMemoryDataset):
         )
 
         prep.set_output(transform="polars")
+
+        # gating shooting stats ------------------------------- #
+        if self.cfg.mask_shooting_stats_non_possession:
+            return Pipeline(
+                [
+                    ("prep", prep),
+                    ("gating", PossessionShootingMask(SHOOTING_STATS)),
+                ]
+            )
+
         return prep
 
     def process(self):
