@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from loguru import logger
 from torch.optim import AdamW
 from torch.utils.data.dataloader import DataLoader as TorchDataLoader
@@ -254,29 +255,52 @@ class TemporalTrainer(BaseTrainer):
     def _compute_signal_loss_and_last_pred(
         self, signal: Discrete_Signal
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        T = signal.snapshot_count
-        weights = torch.tensor(
-            [self.cfg.trainer.gamma ** (T - 1 - t) for t in range(T)],
-            device=self.device,
-        )
-        weights /= weights.sum()
+        # T = signal.snapshot_count
+        # weights = torch.tensor(
+        #     [self.cfg.trainer.gamma ** (T - 1 - t) for t in range(T)],
+        #     device=self.device,
+        # )
+        # weights /= weights.sum()
 
-        loss = torch.scalar_tensor(0.0, device=self.device)
+        loss = torch.zeros((), device=self.device)
+        valid_sum = 0
         h = None
+        last_pred = None
 
         for t, snapshot in enumerate(signal):
+            x = snapshot.x.to(self.device, non_blocking=True).float()
+            y = snapshot.y.to(self.device, non_blocking=True).float()
+            edge_index = snapshot.edge_index.to(self.device, non_blocking=True).long()
+            edge_attr = snapshot.edge_attr.to(self.device, non_blocking=True).float()
+            u = snapshot.u.to(self.device, non_blocking=True).float()
+            batch = snapshot.batch.to(self.device, non_blocking=True).long()
+            mask = snapshot.masks.to(self.device, non_blocking=True).bool()
+
             out, h = self.model(
-                x=snapshot.x,
-                edge_index=snapshot.edge_index,
-                edge_weight=snapshot.edge_attr,
-                edge_attr=snapshot.edge_attr,
-                u=snapshot.u,
+                x=x,
+                edge_index=edge_index,
+                edge_weight=edge_attr,
+                edge_attr=edge_attr,
+                u=u,
+                batch=batch,
+                batch_size=snapshot.num_graphs,
                 prev_h=h,
             )
 
-            loss += weights[t] * self.criterion(out, snapshot.y)
+            if last_pred is None:
+                last_pred = torch.zeros_like(out)
 
-        return loss, out
+            last_pred[mask] = out[mask]
+
+            loss += (
+                F.binary_cross_entropy_with_logits(out, y, reduction="none")
+                * mask.unsqueeze(1)
+            ).sum()
+            valid_sum += mask.sum()
+
+        loss /= valid_sum
+
+        return loss, last_pred
 
     def _train_step(self, batch: Discrete_Signal) -> torch.Tensor:
         self.optim.zero_grad(set_to_none=True)
