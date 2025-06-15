@@ -8,6 +8,7 @@ from torch_geometric.nn import summary
 
 from soccerai.data.converters import create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
+from soccerai.data.temporal_dataset import TemporalChainsDataset
 from soccerai.models.model import create_model
 from soccerai.training.metrics import (
     BinaryConfusionMatrix,
@@ -53,8 +54,8 @@ def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if cfg.use_temporal:
-        train_signals = train_ds.to_temporal_iterators()
-        val_signals = val_ds.to_temporal_iterators()
+        train_signals = TemporalChainsDataset.from_worldcup_dataset(train_ds)
+        val_signals = TemporalChainsDataset.from_worldcup_dataset(val_ds)
         trainer = TemporalTrainer(
             cfg=cfg,
             model=model,

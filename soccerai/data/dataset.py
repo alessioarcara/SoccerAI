@@ -1,5 +1,4 @@
 import json
-from collections import defaultdict
 from pathlib import Path
 from typing import List, Sequence
 
@@ -17,7 +16,6 @@ from sklearn.preprocessing import (
     QuantileTransformer,
 )
 from torch_geometric.data import InMemoryDataset
-from torch_geometric_temporal.signal import DynamicGraphTemporalSignal
 from torchvision.transforms import Compose
 
 from soccerai.data.config import SHOOTING_STATS, X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
@@ -430,31 +428,3 @@ class WorldCup2022Dataset(InMemoryDataset):
 
         fp = Path(self.processed_dir) / self.FEATURE_NAMES_FILE
         fp.write_text(json.dumps(feature_names, ensure_ascii=False, indent=4))
-
-    def to_temporal_iterators(self) -> List[DynamicGraphTemporalSignal]:
-        buckets = defaultdict(list)
-        for data in self:
-            chain_id = int(data.chain_id.item())
-            buckets[chain_id].append(data)
-
-        chains = []
-        for chain_id, frames in buckets.items():
-            ordered = sorted(frames, key=lambda f: float(f.frame_time.item()))
-
-            edge_indices = [f.edge_index.numpy() for f in ordered]
-            node_features = [f.x.numpy() for f in ordered]
-            global_features = [f.u.numpy() for f in ordered]
-            targets = [f.y.numpy() for f in ordered]
-            edge_weights = [f.edge_weight.numpy() for f in ordered]
-
-            chains.append(
-                DynamicGraphTemporalSignal(
-                    edge_indices=edge_indices,
-                    edge_weights=edge_weights,
-                    features=node_features,
-                    targets=targets,
-                    u=global_features,
-                )
-            )
-
-        return chains
