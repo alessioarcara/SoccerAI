@@ -54,8 +54,11 @@ class RostersEnricher:
             fbref_shoot = fbref.extract_shoot_stats(fbref_html)
 
         fbref_def = fbref.extract_defensive_stats(fbref_html)
+        fbref_pass_stats = fbref.extract_passing_stats(fbref_html, num_years_back=3)
 
-        combined_stats = fbref_meta | fbref_shoot | fbref_def | combined_stats
+        combined_stats = (
+            fbref_meta | fbref_shoot | fbref_def | fbref_pass_stats | combined_stats
+        )
 
         player.update(combined_stats)
         return player

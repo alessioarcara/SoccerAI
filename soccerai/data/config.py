@@ -143,3 +143,17 @@ DEFENSIVE_STATS = [
     "clearances",
     "errors",
 ]
+
+
+PASSING_STATS = [
+    "passes_completed",
+    "passes_total_distance",
+    "passes_progressive_distance",
+    "progressive_passes",
+    "passes_into_final_third",
+    "passes_into_penalty_area",
+    "assists",
+    "passes_completed_short",
+    "passes_completed_medium",
+    "passes_completed_long",
+]

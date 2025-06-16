@@ -7,7 +7,12 @@ from bs4 import BeautifulSoup
 from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.common.by import By
 
-from soccerai.data.config import DEFENSIVE_STATS, SHOOTING_STATS, TEAM_ABBREVS
+from soccerai.data.config import (
+    DEFENSIVE_STATS,
+    PASSING_STATS,
+    SHOOTING_STATS,
+    TEAM_ABBREVS,
+)
 from soccerai.data.scraping.utils import normalize
 
 
@@ -285,3 +290,12 @@ def extract_shoot_stats(html, **kwargs):
 
 def extract_defensive_stats(html, **kwargs):
     return extract_table_stats(html, "all_stats_defense", DEFENSIVE_STATS, **kwargs)
+
+
+def extract_passing_stats(html: str, **kwargs):
+    return extract_table_stats(
+        html,
+        "all_stats_passing",
+        PASSING_STATS,
+        **kwargs,
+    )
