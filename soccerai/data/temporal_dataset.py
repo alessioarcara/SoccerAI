@@ -94,34 +94,27 @@ class TemporalChainsDataset(Dataset):
             batch_u.append(u)
             batch_masks.append(np.array([1] * T + [0] * pad_frames))
 
-        # (B, T_max, 2, E) -> (T_max, 2, B*E)
-        # batch_edge_indices_np = np.array(batch_edge_indices).reshape((T_max, 2, -1))
-        batch_edge_indices_np = (
-            np.array(batch_edge_indices).transpose(1, 2, 0, 3).reshape(T_max, 2, -1)
-        )
-        # (B, T_max, E) -> (T_max, B*E)
-        # batch_edge_weights_np = np.array(batch_edge_weights).reshape((T_max, -1))
-        batch_edge_weights_np = (
-            np.array(batch_edge_weights).transpose(1, 0, 2).reshape(T_max, -1)
-        )
-        # (B, T_max, N, Node_dim) -> (T_max, B*N, Node_dim)
-        # batch_features_np = np.array(batch_features).reshape(
-        #     (T_max, -1, batch_features[0][0].shape[1])
-        # )
-        batch_features_np = (
-            np.array(batch_features)
-            .transpose(1, 0, 2, 3)
-            .reshape(T_max, -1, batch_features[0][0].shape[-1])
-        )
-        # (B, T_max, 1, 1) -> (T_max, B, 1)
-        batch_targets_np = np.squeeze(
-            np.moveaxis(np.array(batch_targets), 0, 1), axis=2
-        )
-        # (B, T_max, 1, Glob_dim) -> (T_max, B*1, Glob_dim)
-        # batch_u_np = np.array(batch_u).reshape(T_max, len(batch), -1)
-        batch_u_np = np.array(batch_u).transpose(1, 0, 2, 3).squeeze(axis=2)
-        # (B, T_max) -> (T_max, B)
-        batch_masks_np = np.array(batch_masks).T
+        arr_ei = np.array(batch_edge_indices)  # (B, T_max, 2, E)
+        arr_ei = arr_ei.transpose(1, 2, 0, 3)  # (T_max, 2, B, E)
+        batch_edge_indices_np = arr_ei.reshape(T_max, 2, -1)
+
+        arr_ew = np.array(batch_edge_weights)  # (B, T_max, E)
+        arr_ew = arr_ew.transpose(1, 0, 2)  # (T_max, B, E)
+        batch_edge_weights_np = arr_ew.reshape(T_max, -1)
+
+        arr_x = np.array(batch_features)  # (B, T_max, N, Node_dim)
+        arr_x = arr_x.transpose(1, 0, 2, 3)  # (T_max, B, N, Node_dim)
+        batch_features_np = arr_x.reshape(T_max, -1, arr_x.shape[-1])
+
+        arr_y = np.array(batch_targets)  # (B, T_max, 1, 1)
+        arr_y = arr_y.transpose(1, 0, 2, 3)  # (T_max, B, 1, 1)
+        batch_targets_np = np.squeeze(arr_y, axis=2)  # (T_max, B, 1)
+
+        arr_u = np.array(batch_u)  # (B, T_max, 1, Glob_dim)
+        arr_u = arr_u.transpose(1, 0, 2, 3)  # (T_max, B, 1, Glob_dim)
+        batch_u_np = np.squeeze(arr_u, axis=2)  # (T_max, B, Glob_dim)
+
+        batch_masks_np = np.array(batch_masks).T  # (T_max, B)
 
         # For each time step, build an array that maps every node to the index
         # of the graph (in `batch`) it belongs to. This is equivalent to the
