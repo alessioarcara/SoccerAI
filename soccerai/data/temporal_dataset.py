@@ -95,17 +95,31 @@ class TemporalChainsDataset(Dataset):
             batch_masks.append(np.array([1] * T + [0] * pad_frames))
 
         # (B, T_max, 2, E) -> (T_max, 2, B*E)
-        batch_edge_indices_np = np.array(batch_edge_indices).reshape((T_max, 2, -1))
-        # (B, T_max, E) -> (T_max, B*E)
-        batch_edge_weights_np = np.array(batch_edge_weights).reshape((T_max, -1))
-        # (B, T_max, N, Node_dim) -> (T_max, B*N, Node_dim)
-        batch_features_np = np.array(batch_features).reshape(
-            (T_max, -1, batch_features[0][0].shape[1])
+        # batch_edge_indices_np = np.array(batch_edge_indices).reshape((T_max, 2, -1))
+        batch_edge_indices_np = (
+            np.array(batch_edge_indices).transpose(1, 2, 0, 3).reshape(T_max, 2, -1)
         )
-        # (B, T_max, 1, 1) -> (T_max, B*1, 1)
-        batch_targets_np = np.array(batch_targets).reshape(T_max, -1, 1)
+        # (B, T_max, E) -> (T_max, B*E)
+        # batch_edge_weights_np = np.array(batch_edge_weights).reshape((T_max, -1))
+        batch_edge_weights_np = (
+            np.array(batch_edge_weights).transpose(1, 0, 2).reshape(T_max, -1)
+        )
+        # (B, T_max, N, Node_dim) -> (T_max, B*N, Node_dim)
+        # batch_features_np = np.array(batch_features).reshape(
+        #     (T_max, -1, batch_features[0][0].shape[1])
+        # )
+        batch_features_np = (
+            np.array(batch_features)
+            .transpose(1, 0, 2, 3)
+            .reshape(T_max, -1, batch_features[0][0].shape[-1])
+        )
+        # (B, T_max, 1, 1) -> (T_max, B, 1)
+        batch_targets_np = np.squeeze(
+            np.moveaxis(np.array(batch_targets), 0, 1), axis=2
+        )
         # (B, T_max, 1, Glob_dim) -> (T_max, B*1, Glob_dim)
-        batch_u_np = np.array(batch_u).reshape(T_max, len(batch), -1)
+        # batch_u_np = np.array(batch_u).reshape(T_max, len(batch), -1)
+        batch_u_np = np.array(batch_u).transpose(1, 0, 2, 3).squeeze(axis=2)
         # (B, T_max) -> (T_max, B)
         batch_masks_np = np.array(batch_masks).T
 
