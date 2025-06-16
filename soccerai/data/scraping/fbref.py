@@ -192,7 +192,7 @@ def extract_table_stats(
     stat_keys: List[str],
     num_years_back: int = 3,
     min_minute_90s: float = 5.0,
-) -> Dict:
+) -> Dict[str, Optional[float]]:
     soup = BeautifulSoup(html_file, "html.parser")
     div_stats = soup.find("div", id=table_id)
     if not div_stats:
@@ -202,14 +202,14 @@ def extract_table_stats(
     tbody = table.find("tbody") if table else None
     rows = tbody.find_all("tr") if tbody else []
 
-    season_data: List[Tuple[str, Dict]] = []
+    season_data: List[Tuple[str, Dict[str, Optional[float]]]] = []
     for row in rows:
         season_th = row.find("th", {"data-stat": "year_id"})
         if not season_th:
             continue
         season = season_th.get_text(strip=True)
 
-        stats = {}
+        stats: Dict[str, Optional[float]] = {}
         for cell in row.find_all("td"):
             k = cell.get("data-stat")
             v = cell.get_text(strip=True)
@@ -217,6 +217,7 @@ def extract_table_stats(
                 stats[k] = float(v)
             except ValueError:
                 stats[k] = None
+
         season_data.append((season, stats))
 
     avg = compute_stats_average(

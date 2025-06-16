@@ -444,7 +444,7 @@ class WorldCup2022Dataset(InMemoryDataset):
                             [
                                 (
                                     "mask",
-                                    NonAttackerDefensiveStatsMask(DEFENSIVE_STATS),
+                                    NonAttackerDefensiveStatsMask(),
                                     DEFENSIVE_STATS + ["is_possession_team_1"],
                                 )
                             ],
