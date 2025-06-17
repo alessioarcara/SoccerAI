@@ -252,15 +252,29 @@ class Trainer(BaseTrainer):
 
 
 class TemporalTrainer(BaseTrainer):
+    def _build_discount_weights(self, signal: Discrete_Signal) -> torch.Tensor:
+        batch_weights = []
+        for i in range(signal[0].num_graphs):
+            T = int(signal.masks[:, i].sum())
+            chain = [self.cfg.trainer.gamma ** (T - 1 - t) for t in range(T)]
+            batch_weights.append(chain)
+
+        max_T = signal.snapshot_count
+        pad_val = 0.0
+        padded = [chain + [pad_val] * (max_T - len(chain)) for chain in batch_weights]
+
+        weights = torch.tensor(padded, dtype=torch.float, device=self.device)
+
+        row_sums = weights.sum(dim=1, keepdim=True).clamp(min=1e-12)
+        weights = weights / row_sums
+
+        return weights.T
+
     def _compute_signal_loss_and_last_pred(
         self, signal: Discrete_Signal
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        # T = signal.snapshot_count
-        # weights = torch.tensor(
-        #     [self.cfg.trainer.gamma ** (T - 1 - t) for t in range(T)],
-        #     device=self.device,
-        # )
-        # weights /= weights.sum()
+        weights = self._build_discount_weights(signal)
+        print(weights)
 
         loss = torch.zeros((), device=self.device)
         valid_sum = 0
@@ -300,6 +314,7 @@ class TemporalTrainer(BaseTrainer):
 
         loss /= valid_sum
 
+        assert last_pred is not None
         return loss, last_pred
 
     def _train_step(self, batch: Discrete_Signal) -> torch.Tensor:
