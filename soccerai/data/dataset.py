@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import List, Sequence
+from typing import List, Sequence, Union
 
 import polars as pl
 from loguru import logger
@@ -23,6 +23,7 @@ from soccerai.data.converters import GraphConverter
 from soccerai.data.transformers import (
     BallLocationTransformer,
     GoalLocationTransformer,
+    NonPossessionShootingStatsMask,
     PlayerLocationTransformer,
 )
 from soccerai.training.trainer_config import DataConfig
@@ -239,7 +240,9 @@ class WorldCup2022Dataset(InMemoryDataset):
 
         return df
 
-    def _create_preprocessor(self, df: pl.DataFrame) -> ColumnTransformer:
+    def _create_preprocessor(
+        self, df: pl.DataFrame
+    ) -> Union[ColumnTransformer, Pipeline]:
         # Column groups --------------------------------------------------- #
         cat_cols = [
             "possessionEventType",
@@ -303,11 +306,11 @@ class WorldCup2022Dataset(InMemoryDataset):
         if self.cfg.use_pca_on_roster_cols:
             numeric_steps.append(
                 (
-                    "roster_pca",
+                    "shooting_stats_pca",
                     ColumnTransformer(
                         [
                             (
-                                "roster_subset",
+                                "subset",
                                 PCA(n_components=0.99, random_state=self.random_state),
                                 SHOOTING_STATS,
                             )
@@ -395,6 +398,35 @@ class WorldCup2022Dataset(InMemoryDataset):
             remainder="passthrough",
             verbose_feature_names_out=False,  # No prefixes
         )
+
+        if self.cfg.mask_non_possession_shooting_stats:
+            if self.cfg.use_pca_on_roster_cols:
+
+                def cols_to_mask(df: pl.DataFrame) -> List[str]:
+                    pca_cols = [c for c in df.columns if c.startswith("pca")]
+                    return pca_cols + ["is_possession_team_1"]
+            else:
+                cols_to_mask = SHOOTING_STATS + ["is_possession_team_1"]  # type: ignore
+
+            prep = Pipeline(
+                [
+                    ("prep", prep),
+                    (
+                        "shooting_stats_mask",
+                        ColumnTransformer(
+                            [
+                                (
+                                    "mask",
+                                    NonPossessionShootingStatsMask(),
+                                    cols_to_mask,
+                                )
+                            ],
+                            remainder="passthrough",
+                            verbose_feature_names_out=False,
+                        ),
+                    ),
+                ]
+            )
 
         prep.set_output(transform="polars")
         return prep
