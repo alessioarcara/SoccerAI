@@ -252,35 +252,34 @@ class Trainer(BaseTrainer):
 
 
 class TemporalTrainer(BaseTrainer):
-    def _build_discount_weights(self, signal: Discrete_Signal) -> torch.Tensor:
-        batch_weights = []
-        for i in range(signal[0].num_graphs):
-            T = int(signal.masks[:, i].sum())
-            chain = [self.cfg.trainer.gamma ** (T - 1 - t) for t in range(T)]
-            batch_weights.append(chain)
-
-        max_T = signal.snapshot_count
-        pad_val = 0.0
-        padded = [chain + [pad_val] * (max_T - len(chain)) for chain in batch_weights]
-
-        weights = torch.tensor(padded, dtype=torch.float, device=self.device)
-
-        row_sums = weights.sum(dim=1, keepdim=True).clamp(min=1e-12)
-        weights = weights / row_sums
-
-        return weights.T
-
     def _compute_signal_loss_and_last_pred(
         self, signal: Discrete_Signal
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        weights = self._build_discount_weights(signal)
-        print(weights)
+        masks = torch.tensor(signal.masks, dtype=torch.bool, device=self.device).T
+        B, T_max = masks.shape
 
-        loss = torch.zeros((), device=self.device)
-        valid_sum = 0
+        # ----------------- Computing discount weights --------------------
+        lengths = masks.sum(dim=1)  # (B,)
+        T = torch.arange(T_max, device=self.device)  # (T_max,)
+
+        # (B, 1) − (T_max,) => (B, T_max) tramite broadcasting
+        exps = (lengths - 1).unsqueeze(1) - T
+
+        weights = torch.where(masks, self.cfg.trainer.gamma ** exps.float(), 0.0)
+        weights /= weights.sum(dim=1, keepdim=True).clamp(min=1e-12)
+
+        weights = weights.T.contiguous()  # (T_max, B)
+        # ------------------------------------------------------------------
+
+        # pred_per_timestep = torch.zeros(
+        #     (T_max, B), dtype=torch.float32, device=self.device
+        # )
+        loss_per_timestep = torch.zeros(
+            (T_max, B), dtype=torch.float32, device=self.device
+        )
+
         h = None
         last_pred = None
-
         for t, snapshot in enumerate(signal):
             x = snapshot.x.to(self.device, non_blocking=True).float()
             y = snapshot.y.to(self.device, non_blocking=True).float()
@@ -306,13 +305,12 @@ class TemporalTrainer(BaseTrainer):
 
             last_pred[mask] = out[mask]
 
-            loss += (
-                F.binary_cross_entropy_with_logits(out, y, reduction="none")
-                * mask.unsqueeze(1)
-            ).sum()
-            valid_sum += mask.sum()
+            # pred_per_timestep[t] = out
+            loss_per_timestep[t] = F.binary_cross_entropy_with_logits(
+                out, y, reduction="none"
+            ).squeeze(1)
 
-        loss /= valid_sum
+        loss = (loss_per_timestep * weights).sum(dim=0).mean()
 
         assert last_pred is not None
         return loss, last_pred
