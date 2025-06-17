@@ -3,9 +3,11 @@ import os
 
 import torch
 from loguru import logger
-from torch_geometric.loader import DataLoader, PrefetchLoader
-from torch_geometric.nn import summary
+from torch.utils.data.dataloader import DataLoader as TorchDataLoader
+from torch_geometric.loader import DataLoader as PyGDataLoader
+from torch_geometric.loader import PrefetchLoader
 
+# from torch_geometric.nn import summary
 from soccerai.data.converters import create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.data.temporal_dataset import TemporalChainsDataset
@@ -53,14 +55,34 @@ def main(args):
     model = create_model(cfg, train_ds)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    common_loader_kwargs = dict(
+        batch_size=cfg.trainer.bs,
+        num_workers=NUM_WORKERS,
+        pin_memory=True,
+        persistent_workers=True,
+    )
+
     if cfg.use_temporal:
-        train_signals = TemporalChainsDataset.from_worldcup_dataset(train_ds)
-        val_signals = TemporalChainsDataset.from_worldcup_dataset(val_ds)
+        train_ds = TemporalChainsDataset.from_worldcup_dataset(train_ds)
+        val_ds = TemporalChainsDataset.from_worldcup_dataset(val_ds)
+
+        train_loader = TorchDataLoader(
+            train_ds,
+            collate_fn=TemporalChainsDataset.collate,
+            shuffle=True,
+            **common_loader_kwargs,
+        )
+        val_loader = TorchDataLoader(
+            val_ds,
+            collate_fn=TemporalChainsDataset.collate,
+            shuffle=False,
+            **common_loader_kwargs,
+        )
         trainer = TemporalTrainer(
             cfg=cfg,
             model=model,
-            train_signals=train_signals,
-            val_signals=val_signals,
+            train_loader=train_loader,
+            val_loader=val_loader,
             device=device,
             metrics=[
                 BinaryConfusionMatrix(),
@@ -68,22 +90,15 @@ def main(args):
             ],
         )
     else:
-        common_loader_kwargs = dict(
-            batch_size=cfg.trainer.bs,
-            num_workers=NUM_WORKERS,
-            pin_memory=True,
-            persistent_workers=True,
-        )
-
         train_loader = PrefetchLoader(
-            DataLoader(
+            PyGDataLoader(
                 train_ds,
                 shuffle=True,
                 **common_loader_kwargs,
             ),
         )
         val_loader = PrefetchLoader(
-            DataLoader(
+            PyGDataLoader(
                 val_ds,
                 shuffle=False,
                 **common_loader_kwargs,
@@ -103,10 +118,10 @@ def main(args):
             ],
         )
 
-    x = torch.rand((22, train_ds.num_features), device=device)
-    edge_index = torch.randint(0, 22, (2, 11 * 22), dtype=torch.long, device=device)
-    u = torch.rand((1, train_ds.num_global_features), device=device)
-    print(summary(model, x, edge_index, u))
+    # x = torch.rand((22, train_ds.num_features), device=device)
+    # edge_index = torch.randint(0, 22, (2, 11 * 22), dtype=torch.long, device=device)
+    # u = torch.rand((1, train_ds.num_global_features), device=device)
+    # print(summary(model, x, edge_index, u))
     trainer.train(args.name)
 
 

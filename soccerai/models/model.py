@@ -73,19 +73,22 @@ class GCRNN(nn.Module):
         u: torch.Tensor,
         edge_weight: OptTensor = None,
         edge_attr: OptTensor = None,
+        batch: OptTensor = None,
+        batch_size: Optional[int] = None,
         prev_h: OptTensor = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         f = F.relu(self.gcn1(x, edge_index, edge_weight))
+
         if prev_h is None:
             prev_h = torch.zeros_like(f, device=f.device)
 
         z = F.relu(self.gcn2(f + prev_h, edge_index, edge_weight))
 
-        global_emb = F.relu(self.global_proj(u))
-
         h = self.gcrn(torch.concat([z, x], dim=-1), edge_index, edge_weight, prev_h)
 
-        graph_emb = self.mean_pool(z)
+        graph_emb = self.mean_pool(z, index=batch, dim_size=batch_size)
+        global_emb = F.relu(self.global_proj(u))
+
         fused_emb = torch.cat([graph_emb, global_emb], dim=-1)
         out = self.head(fused_emb)
 
