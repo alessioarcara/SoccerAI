@@ -14,12 +14,21 @@ from soccerai.data.dataset import WorldCup2022Dataset
 
 
 class TemporalChainsDataset(Dataset):
+    """
+    Groups frames that belong to the same possession chain into a single
+    temporal example
+    """
+
     def __init__(
         self,
         temporal_chains: List[DynamicGraphTemporalSignal],
+        num_features: int,
+        num_global_features: int,
         transform: Optional[Callable] = None,
     ):
         self.temporal_chains = temporal_chains
+        self.num_features = num_features
+        self.num_global_features = num_global_features
         self.transform = transform
 
     def __len__(self) -> int:
@@ -63,7 +72,9 @@ class TemporalChainsDataset(Dataset):
                 )
             )
 
-        return TemporalChainsDataset(temporal_chains=chains, transform=tmp_transform)
+        return TemporalChainsDataset(
+            chains, dataset.num_features, dataset.num_global_features, tmp_transform
+        )
 
     @staticmethod
     def collate(batch: List[DynamicGraphTemporalSignal]):

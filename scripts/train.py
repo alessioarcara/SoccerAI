@@ -6,8 +6,8 @@ from loguru import logger
 from torch.utils.data.dataloader import DataLoader as TorchDataLoader
 from torch_geometric.loader import DataLoader as PyGDataLoader
 from torch_geometric.loader import PrefetchLoader
+from torch_geometric.nn import summary
 
-# from torch_geometric.nn import summary
 from soccerai.data.converters import create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.data.temporal_dataset import TemporalChainsDataset
@@ -19,42 +19,38 @@ from soccerai.training.metrics import (
 )
 from soccerai.training.trainer import TemporalTrainer, Trainer
 from soccerai.training.trainer_config import build_cfg
-from soccerai.training.utils import fix_random
+from soccerai.training.utils import build_dummy_inputs, fix_random
+
+CONFIG_PATH = "configs/base.yaml"
+
+torch.set_float32_matmul_precision("high")
 
 NUM_WORKERS = (os.cpu_count() or 1) - 1
-CONFIG_PATH = "configs/base.yaml"
-torch.set_float32_matmul_precision("high")
 
 
 def main(args):
     cfg = build_cfg(CONFIG_PATH)
     fix_random(cfg.seed)
-    converter = create_graph_converter(cfg.data.connection_mode)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    train_ds = WorldCup2022Dataset(
+    converter = create_graph_converter(cfg.data.connection_mode)
+    ds_kwargs = dict(
         root="soccerai/data/resources",
         converter=converter,
-        force_reload=args.reload,
-        split="train",
         cfg=cfg.data,
         random_state=cfg.seed,
     )
-    val_ds = WorldCup2022Dataset(
-        root="soccerai/data/resources",
-        converter=converter,
-        split="val",
-        cfg=cfg.data,
-        random_state=cfg.seed,
-    )
+
+    train_ds = WorldCup2022Dataset(split="train", force_reload=args.reload, **ds_kwargs)
+    val_ds = WorldCup2022Dataset(split="val", **ds_kwargs)
 
     logger.success(
         "Datasets loaded successfully → train graphs: {}, val graphs: {}",
         len(train_ds),
         len(val_ds),
     )
-    model = create_model(cfg, train_ds)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    model = create_model(cfg, train_ds)
     common_loader_kwargs = dict(
         batch_size=cfg.trainer.bs,
         num_workers=NUM_WORKERS,
@@ -89,6 +85,7 @@ def main(args):
                 BinaryPrecisionRecallCurve(),
             ],
         )
+
     else:
         train_loader = PrefetchLoader(
             PyGDataLoader(
@@ -118,10 +115,18 @@ def main(args):
             ],
         )
 
-    # x = torch.rand((22, train_ds.num_features), device=device)
-    # edge_index = torch.randint(0, 22, (2, 11 * 22), dtype=torch.long, device=device)
-    # u = torch.rand((1, train_ds.num_global_features), device=device)
-    # print(summary(model, x, edge_index, u))
+    print(
+        summary(
+            model,
+            **build_dummy_inputs(
+                cfg.trainer.bs,
+                train_ds.num_features,
+                train_ds.num_global_features,
+                device,
+            ),
+        )
+    )
+
     trainer.train(args.name)
 
 
