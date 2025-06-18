@@ -1,5 +1,6 @@
 import argparse
 import os
+from pathlib import Path
 
 import torch
 from loguru import logger
@@ -19,12 +20,13 @@ from soccerai.training.trainer_config import build_cfg
 from soccerai.training.utils import fix_random
 
 NUM_WORKERS = (os.cpu_count() or 1) - 1
-CONFIG_PATH = "configs/base.yaml"
+CONFIG_DIR = Path("configs")
+BASE_CONFIG_FILENAME = CONFIG_DIR / "base.yaml"
 torch.set_float32_matmul_precision("high")
 
 
 def main(args):
-    cfg = build_cfg(CONFIG_PATH)
+    cfg = build_cfg(str(BASE_CONFIG_FILENAME))
     fix_random(cfg.seed)
     converter = create_graph_converter(cfg.data.connection_mode)
 

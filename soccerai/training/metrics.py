@@ -10,7 +10,7 @@ from mplsoccer import Pitch
 from torch_geometric.data import Batch, Data
 from torchmetrics.functional.classification import binary_precision_recall_curve
 
-from soccerai.training.trainer_config import ExplainConfig
+from soccerai.training.trainer_config import Config, MetricsConfig
 from soccerai.training.utils import TopKStorage
 
 T = TypeVar("T")
@@ -37,15 +37,14 @@ class Metric(ABC):
 
 
 class BinaryConfusionMatrix(Metric):
-    def __init__(self, thr: float = 0.5, beta: float = 1):
-        self.thr = thr
-        self.beta = beta
+    def __init__(self, cfg: MetricsConfig):
+        self.cfg = cfg
         self.reset()
 
     def update(
         self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
     ) -> None:
-        preds_labels_flat = (preds_probs >= self.thr).view(-1).long()
+        preds_labels_flat = (preds_probs >= self.cfg.thr).view(-1).long()
         true_labels_flat = true_labels.view(-1).long()
 
         for t, p in zip(true_labels_flat, preds_labels_flat):
@@ -63,10 +62,10 @@ class BinaryConfusionMatrix(Metric):
         results.append(("accuracy", accuracy))
 
         # Fbeta-score
-        beta2 = self.beta**2
+        beta2 = self.cfg.fbeta**2
         denom = (1 + beta2) * tp + beta2 * fn + fp
         fbeta = ((1 + beta2) * tp / denom) if denom > 0 else 0.0
-        results.append((f"f{self.beta}_score", fbeta))
+        results.append((f"f{self.cfg.fbeta}_score", fbeta))
 
         return results
 
@@ -145,15 +144,11 @@ class FrameCollector(Metric):
     def __init__(
         self,
         target_label: int,
-        explain_cfg: ExplainConfig,
+        cfg: Config,
     ):
+        self.cfg = cfg
         self.target_label = target_label
-        self.thr = explain_cfg.thr
-        self.storage: TopKStorage = TopKStorage(explain_cfg.n_frames)
-        self.grid_nrows = explain_cfg.grid_nrows
-        self.grid_ncols = explain_cfg.grid_ncols
-        self.grid_figheight = explain_cfg.grid_figheight
-        self.grid_pitch_type = explain_cfg.grid_pitch_type
+        self.storage: TopKStorage = TopKStorage(self.cfg.collector.n_frames)
 
     def update(
         self,
@@ -164,12 +159,11 @@ class FrameCollector(Metric):
         probs = preds_probs.detach().cpu().numpy().ravel()
         labels = true_labels.detach().cpu().numpy().ravel()
 
-        if self.target_label == 1:
-            idxs = np.where((probs >= self.thr) & (labels == 1))[0]
-        else:
-            idxs = np.where((probs >= self.thr) & (labels == 0))[0]
+        indices = np.where(
+            (probs >= self.cfg.metrics.thr) & (labels == self.target_label)
+        )[0]
 
-        for i in idxs:
+        for i in indices:
             self.storage.add((float(probs[i]), (batch, i)))
 
     def compute(self) -> List[Tuple[str, float]]:
@@ -200,7 +194,7 @@ class FrameCollector(Metric):
             return None
 
         pitch = Pitch(
-            pitch_type=self.grid_pitch_type,
+            pitch_type="metricasports",
             pitch_length=105,
             pitch_width=68,
             pitch_color="grass",
@@ -209,15 +203,16 @@ class FrameCollector(Metric):
         )
 
         fig, axs = pitch.grid(
-            nrows=self.grid_nrows,
-            ncols=self.grid_ncols,
-            figheight=self.grid_figheight,
+            nrows=self.cfg.collector.n_rows,
+            ncols=self.cfg.collector.n_cols,
+            figheight=self.cfg.collector.fig_height,
             grid_height=0.95,
             grid_width=0.95,
             bottom=0.025,
             endnote_height=0,
             title_height=0,
         )
+
         axes = axs.flatten()
 
         for i, (ax, (score, (batch, idx))) in enumerate(zip(axes, entries), start=1):

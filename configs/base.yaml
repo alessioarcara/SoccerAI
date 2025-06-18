@@ -23,12 +23,12 @@ data:
   val_ratio: 0.2
 
 
-explain:
+collector:
   n_frames: 12         
-  thr: 0.5             
-  grid:
-    nrows: 3
-    ncols: 4
-    figheight: 12.0
-    pitch_type: "metricasports"
+  n_rows: 3
+  n_cols: 4
+  fig_height: 12.0
 
+metrics:
+  thr: 0.5
+  fbeta: 1.0
