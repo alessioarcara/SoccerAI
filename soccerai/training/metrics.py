@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple, TypeVar
+from typing import Generic, List, Optional, Sequence, Tuple, TypeVar
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -37,8 +37,9 @@ class Metric(ABC):
 
 
 class BinaryConfusionMatrix(Metric):
-    def __init__(self, cfg: MetricsConfig):
+    def __init__(self, cfg: MetricsConfig, ignore_value: Optional[int] = None):
         self.cfg = cfg
+        self.ignore_value = ignore_value
         self.reset()
 
     def update(
@@ -46,6 +47,11 @@ class BinaryConfusionMatrix(Metric):
     ) -> None:
         preds_labels_flat = (preds_probs >= self.cfg.thr).view(-1).long()
         true_labels_flat = true_labels.view(-1).long()
+
+        if self.ignore_value is not None:
+            mask = true_labels_flat != self.ignore_value
+            preds_labels_flat = preds_labels_flat[mask]
+            true_labels_flat = true_labels_flat[mask]
 
         for t, p in zip(true_labels_flat, preds_labels_flat):
             self.cm[t, p] += 1
@@ -92,14 +98,23 @@ class BinaryConfusionMatrix(Metric):
 
 
 class BinaryPrecisionRecallCurve(Metric):
-    def __init__(self):
+    def __init__(self, ignore_value: Optional[int] = None):
+        self.ignore_value = ignore_value
         self.reset()
 
     def update(
         self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
     ) -> None:
-        self.all_preds_probs.append(preds_probs.detach().view(-1).cpu())
-        self.all_true_labels.append(true_labels.detach().view(-1).cpu())
+        preds_flat = preds_probs.detach().view(-1).cpu()
+        labels_flat = true_labels.detach().view(-1).cpu()
+
+        if self.ignore_value is not None:
+            mask = labels_flat != self.ignore_value
+            preds_flat = preds_flat[mask]
+            labels_flat = labels_flat[mask]
+
+        self.all_preds_probs.append(preds_flat)
+        self.all_true_labels.append(labels_flat)
 
     def compute(self) -> List[Tuple[str, float]]:
         return []
@@ -140,18 +155,25 @@ class BinaryPrecisionRecallCurve(Metric):
         return "Precision-Recall Curve", fig
 
 
-class FrameCollector(Metric):
-    def __init__(
-        self,
-        target_label: int,
-        cfg: Config,
-        feature_names: List[str],
-    ):
+class Collector(Metric, Generic[T]):
+    def __init__(self, target_label: int, cfg: Config, feature_names: Sequence[str]):
         self.cfg = cfg
-        self.feature_names = feature_names
         self.target_label = target_label
-        self.storage: TopKStorage = TopKStorage(self.cfg.collector.n_frames)
+        self.feature_names = feature_names
+        self.storage: TopKStorage[T] = TopKStorage(self.cfg.collector.n_frames)
 
+    @property
+    def frames(self) -> List[Tuple[float, T]]:
+        return self._fetch_frames()
+
+    @abstractmethod
+    def _fetch_frames(self) -> List[Tuple[float, T]]: ...
+
+    def __len__(self) -> int:
+        return len(self.frames)
+
+
+class FrameCollector(Collector[Batch]):
     def update(
         self,
         preds_probs: torch.Tensor,
@@ -241,3 +263,11 @@ class FrameCollector(Metric):
             ax.set_visible(False)
 
         return f"{'tp' if self.target_label == 1 else 'fp'}_frames", fig
+
+    def _fetch_frames(self) -> List[Tuple[float, Batch]]:
+        return self.storage.get_all_entries()
+
+
+# class ChainCollector(Collector):
+#     return [ciascun ultimo frame positivo per ciascuna catena salvata]
+#     pass

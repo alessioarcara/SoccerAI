@@ -84,9 +84,10 @@ def main(args):
             val_loader=val_loader,
             device=device,
             metrics=[
-                BinaryConfusionMatrix(cfg.metrics),
-                BinaryPrecisionRecallCurve(),
+                BinaryConfusionMatrix(cfg.metrics, -1),
+                BinaryPrecisionRecallCurve(-1),
             ],
+            callbacks=[ExplainerCallback()],
         )
 
     else:

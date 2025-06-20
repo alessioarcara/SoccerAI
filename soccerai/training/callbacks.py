@@ -7,7 +7,7 @@ from loguru import logger
 from torch_geometric.explain import Explainer, GNNExplainer
 
 import wandb
-from soccerai.training.metrics import FrameCollector
+from soccerai.training.metrics import Collector
 from soccerai.training.utils import (
     fig_to_numpy,
     plot_average_feature_importance,
@@ -21,8 +21,8 @@ class Callback(ABC):
 
 class ExplainerCallback(Callback):
     def on_train_end(self, trainer):
-        collectors = [m for m in trainer.metrics if isinstance(m, FrameCollector)]
-        if not collectors or all(len(c.storage._items) == 0 for c in collectors):
+        collectors = [m for m in trainer.metrics if isinstance(m, Collector)]
+        if not collectors or all(len(c) == 0 for c in collectors):
             logger.warning("Nothing to explain")
             return
 
@@ -42,14 +42,14 @@ class ExplainerCallback(Callback):
         for c in collectors:
             pos_type = "TP" if c.target_label == 1 else "FP"
 
-            entries = c.storage.get_all_entries()
-            num_entries = len(entries)
+            collected_frames = c.frames
+            num_frames = len(c)
 
-            if num_entries == 0:
+            if num_frames == 0:
                 continue
 
-            node_masks, frames = [], []
-            for i, (_, data) in enumerate(entries):
+            node_masks, figs_np = [], []
+            for i, (_, data) in enumerate(collected_frames):
                 data = data.clone()
                 data.x = data.x.float().requires_grad_(True)
                 data.u = data.u.float().requires_grad_(True)
@@ -63,7 +63,7 @@ class ExplainerCallback(Callback):
                     )
 
                     node_masks.append(explanation.node_mask.detach().cpu().numpy())
-                    frames.append(
+                    figs_np.append(
                         fig_to_numpy(
                             plot_player_feature_importance(
                                 node_masks[i],
@@ -75,7 +75,7 @@ class ExplainerCallback(Callback):
                         )
                     )
 
-            video_np = np.stack(frames).transpose(0, 3, 1, 2)
+            video_np = np.stack(figs_np).transpose(0, 3, 1, 2)
             wandb.log(
                 {
                     f"explain/video_{pos_type}": wandb.Video(
@@ -87,7 +87,7 @@ class ExplainerCallback(Callback):
             fig = plot_average_feature_importance(
                 node_masks,
                 trainer.feature_names,
-                num_entries,
+                num_frames,
             )
             wandb.log(
                 {f"explain/{pos_type}_average_feature_importance": wandb.Image(fig)}
