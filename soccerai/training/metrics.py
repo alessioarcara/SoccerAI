@@ -7,7 +7,7 @@ import seaborn as sns
 import torch
 from matplotlib.collections import LineCollection
 from mplsoccer import Pitch
-from torch_geometric.data import Batch
+from torch_geometric.data import Batch, Data
 from torch_geometric_temporal.signal import Discrete_Signal
 from torchmetrics.functional.classification import binary_precision_recall_curve
 
@@ -295,7 +295,10 @@ class ChainCollector(Collector[Tuple[np.ndarray, Discrete_Signal]]):
     def plot(self):
         pass
 
-    def _fetch_frames(self):
-        # Last data of each collected chain
-        final_snapshots = [entry[1][1][-1] for entry in self.storage.get_all_entries()]
-        return Batch.from_data_list(final_snapshots)
+    # def _fetch_frames(self):
+    #     # Last data of each collected chain
+    #     final_snapshots = [entry[1][1][-1] for entry in self.storage.get_all_entries()]
+    #     return Batch.from_data_list(final_snapshots)
+
+    def _fetch_frames(self) -> List[Tuple[float, Tuple[np.ndarray, List[Data]]]]:
+        return self.storage.get_all_entries()

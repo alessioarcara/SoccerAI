@@ -133,6 +133,6 @@ def extract_chain(batch: Discrete_Signal, chain_idx: int) -> List[Data]:
         u = snapshot.u[chain_idx]
         y = snapshot.y[chain_idx]
 
-        return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, u=u, y=y)
+        return Data(x=x, edge_index=edge_index, edge_weight=edge_attr, u=u, y=y)
 
     return [_extract_graph(batch[t]) for t in range(batch.snapshot_count)]

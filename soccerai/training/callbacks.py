@@ -7,7 +7,7 @@ from loguru import logger
 from torch_geometric.explain import Explainer, GNNExplainer
 
 import wandb
-from soccerai.training.metrics import Collector
+from soccerai.training.metrics import ChainCollector, Collector
 from soccerai.training.utils import (
     fig_to_numpy,
     plot_average_feature_importance,
@@ -93,3 +93,65 @@ class ExplainerCallback(Callback):
                 {f"explain/{pos_type}_average_feature_importance": wandb.Image(fig)}
             )
             plt.close(fig)
+
+
+class BestChainExplainerCallback(Callback):
+    def on_train_end(self, trainer):
+        chain_collectors = [m for m in trainer.metrics if isinstance(m, ChainCollector)]
+        if not chain_collectors:
+            return
+
+        explainer = Explainer(
+            model=trainer.model,
+            algorithm=GNNExplainer(epochs=200),
+            explanation_type="model",
+            node_mask_type="attributes",
+            edge_mask_type="object",
+            model_config=dict(
+                mode="binary_classification",
+                task_level="graph",
+                return_type="raw",
+            ),
+        )
+
+        for c in chain_collectors:
+            entries = c.frames  # List[(score, (probs_seq, frames_list))]
+            if not entries:
+                continue
+
+            best_confidence, (_, best_chain) = entries[0]
+
+            frames_np = []
+            for t, data in enumerate(best_chain):
+                d = data.clone().to(trainer.device)
+                d.x = d.x.float().requires_grad_(True)
+                d.u = d.u.float().requires_grad_(True)
+                d.edge_weight = d.edge_weight.float()
+
+                with torch.enable_grad():
+                    explanation = explainer(
+                        x=d.x,
+                        edge_index=d.edge_index,
+                        u=d.u,
+                        edge_weight=d.edge_weight,
+                    )
+
+                mask = explanation.node_mask.detach().cpu().numpy()
+                fig = plot_player_feature_importance(
+                    mask,
+                    d.jersey_numbers.cpu().numpy(),
+                    trainer.feature_names,
+                    title=f"Best Chain — Frame {t + 1}",
+                    confidence=best_confidence,
+                )
+                frames_np.append(fig_to_numpy(fig))
+                plt.close(fig)
+
+            video_np = np.stack(frames_np).transpose(0, 3, 1, 2)
+            wandb.log(
+                {
+                    f"explain/temporal_best_chain_label_{c.target_label}": wandb.Video(
+                        video_np, fps=1, format="mp4"
+                    )
+                }
+            )
