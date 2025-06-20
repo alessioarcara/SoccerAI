@@ -246,5 +246,5 @@ class TemporalTrainer(BaseTrainer):
     def _eval_step(self, batch: Discrete_Signal) -> BatchEvalResult:
         loss, out = self._compute_signal_loss_and_last_pred(batch)
         preds_probs = torch.sigmoid(out)
-        true_labels = torch.from_numpy(batch.targets).long().squeeze(2)
+        true_labels = torch.from_numpy(batch.targets).long().squeeze(2).contiguous()
         return loss, preds_probs, true_labels

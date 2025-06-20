@@ -12,7 +12,7 @@ from torch_geometric_temporal.signal import Discrete_Signal
 from torchmetrics.functional.classification import binary_precision_recall_curve
 
 from soccerai.training.trainer_config import Config, MetricsConfig
-from soccerai.training.utils import TopKStorage
+from soccerai.training.utils import TopKStorage, extract_chain
 
 T = TypeVar("T")
 
@@ -269,14 +269,33 @@ class FrameCollector(Collector[Batch]):
         return self.storage.get_all_entries()
 
 
-class ChainCollector(Collector[Discrete_Signal]):
+class ChainCollector(Collector[Tuple[np.ndarray, Discrete_Signal]]):
     def update(
         self,
         preds_probs: torch.Tensor,
         true_labels: torch.Tensor,
         item: Discrete_Signal,
     ) -> None:
+        probs_np = preds_probs.detach().cpu().numpy()
+        labels_np = true_labels.detach().cpu().numpy()
+
+        last_t = item.masks.sum(axis=0) - 1  # (B,)
+
+        for i, t in enumerate(last_t):
+            conf = probs_np[t, i]
+
+            if (conf > self.cfg.metrics.thr) & (labels_np[0, i] == self.target_label):
+                self.storage.add(
+                    (
+                        float(conf),
+                        (probs_np[:t, i], extract_chain(item[:t], i)),
+                    )
+                )
+
+    def plot(self):
         pass
 
     def _fetch_frames(self):
-        pass
+        # Last data of each collected chain
+        final_snapshots = [entry[1][1][-1] for entry in self.storage.get_all_entries()]
+        return Batch.from_data_list(final_snapshots)
