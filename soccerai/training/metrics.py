@@ -20,7 +20,7 @@ T = TypeVar("T")
 class Metric(ABC):
     @abstractmethod
     def update(
-        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
+        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, item: Batch
     ) -> None:
         pass
 
@@ -43,7 +43,7 @@ class BinaryConfusionMatrix(Metric):
         self.reset()
 
     def update(
-        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
+        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, item: Batch
     ) -> None:
         preds_labels_flat = (preds_probs >= self.cfg.thr).view(-1).long()
         true_labels_flat = true_labels.view(-1).long()
@@ -97,7 +97,7 @@ class BinaryPrecisionRecallCurve(Metric):
         self.reset()
 
     def update(
-        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
+        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, item: Batch
     ) -> None:
         self.all_preds_probs.append(preds_probs.detach().view(-1).cpu())
         self.all_true_labels.append(true_labels.detach().view(-1).cpu())
@@ -158,13 +158,19 @@ class Collector(Metric, Generic[T]):
     def __len__(self) -> int:
         return len(self.frames)
 
+    def compute(self) -> List[Tuple[str, float]]:
+        return []
+
+    def reset(self) -> None:
+        self.storage.clear()
+
 
 class FrameCollector(Collector[Batch]):
     def update(
         self,
         preds_probs: torch.Tensor,
         true_labels: torch.Tensor,
-        batch: Batch,
+        item: Batch,
     ) -> None:
         probs_np = preds_probs.detach().cpu().numpy()
         labels_np = true_labels.detach().cpu().numpy()
@@ -174,13 +180,7 @@ class FrameCollector(Collector[Batch]):
         )[0]
 
         for i in indices:
-            self.storage.add((float(probs_np[i]), batch[i]))
-
-    def compute(self) -> List[Tuple[str, float]]:
-        return []
-
-    def reset(self) -> None:
-        self.storage.clear()
+            self.storage.add((float(probs_np[i]), item[i]))
 
     def plot(self) -> Optional[Tuple[str, plt.Figure]]:
         entries = self.storage.get_all_entries()
@@ -254,5 +254,26 @@ class FrameCollector(Collector[Batch]):
         return self.storage.get_all_entries()
 
 
+# indices = np.where(
+#     (probs_np >= self.cfg.metrics.thr) & (labels_np == self.target_label)
+# )[0]
+
+# for i in indices:
+#     self.storage.add((float(probs_np[i]), item[i]))
+
+
 class ChainCollector(Collector[Discrete_Signal]):
-    pass
+    def update(
+        self,
+        preds_probs: torch.Tensor,
+        true_labels: torch.Tensor,
+        item: Discrete_Signal,
+    ) -> None:
+        # probs_np = preds_probs.detach().cpu().numpy()
+        # labels_np = true_labels.detach().cpu().numpy()
+
+        # masks = item.masks
+        pass
+
+    def _fetch_frames(self):
+        pass

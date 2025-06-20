@@ -17,6 +17,7 @@ from soccerai.training.callbacks import ExplainerCallback
 from soccerai.training.metrics import (
     BinaryConfusionMatrix,
     BinaryPrecisionRecallCurve,
+    ChainCollector,
     FrameCollector,
 )
 from soccerai.training.trainer import TemporalTrainer, Trainer
@@ -86,6 +87,7 @@ def main(args):
             metrics=[
                 BinaryConfusionMatrix(cfg.metrics),
                 BinaryPrecisionRecallCurve(),
+                ChainCollector(0, cfg, train_ds.feature_names),
             ],
         )
 
