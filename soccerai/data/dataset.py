@@ -111,7 +111,6 @@ class WorldCup2022Dataset(InMemoryDataset):
             "endTime",
             "index_right",
             "gameId_right",
-            "jerseyNum",
             "visibility",
             "videoUrl",
             "homeTeamName",
@@ -266,6 +265,7 @@ class WorldCup2022Dataset(InMemoryDataset):
             "label",
             "gameId",
             "chain_id",
+            "jerseyNum",
         }
         if self.cfg.include_ball_features:
             ball_cols = [

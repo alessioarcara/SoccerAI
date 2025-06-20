@@ -1,19 +1,20 @@
 project_name: "soccerai"
 seed: 42
-use_temporal: True 
+use_temporal: False 
+
 model:
-  model_name: "gcrnn"
+  model_name: "gcn"
   dmid: 256
   dhid: 128
 
 trainer:
   bs: 32 
-  n_epochs: 20
+  n_epochs: 10
   lr: 1e-4
   wd: 0.01
   eval_rate: 2
   gamma: 0.9
-
+  
 data:
   include_goal_features: True 
   include_ball_features: True 
@@ -24,3 +25,15 @@ data:
   mask_non_possession_shooting_stats: False 
   connection_mode: "bipartite"
   val_ratio: 0.2
+
+collector:
+  n_frames: 12         
+  n_rows: 3
+  n_cols: 4
+  fig_height: 12.0
+
+metrics:
+  thr: 0.5
+  fbeta: 1.0
+
+

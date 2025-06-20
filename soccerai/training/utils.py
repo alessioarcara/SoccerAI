@@ -1,6 +1,10 @@
-from typing import Any, Dict, Generic, List, Tuple, TypeVar
+from typing import Any, Dict, Generic, List, Sequence, Tuple, TypeVar
 
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
 import torch
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from torch_geometric.seed import seed_everything
 
 T = TypeVar("T")
@@ -28,6 +32,64 @@ class TopKStorage(Generic[T]):
 
     def get_all_entries(self) -> List[Tuple[float, T]]:
         return list(self._items)
+
+
+def plot_player_feature_importance(
+    node_mask: np.ndarray,
+    jersey_numbers: np.ndarray,
+    feature_names: Sequence[str],
+    positive_type: str,
+    frame_idx: int,
+) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=(9, 7))
+    sns.heatmap(
+        node_mask,
+        ax=ax,
+        cmap="coolwarm",
+        cbar=False,
+        xticklabels=feature_names,
+        yticklabels=[str(int(num)) for num in jersey_numbers],
+    )
+    ax.set_title(f"{positive_type}_Frame_{frame_idx}", fontsize=14)
+    ax.tick_params(axis="x", rotation=90)
+    ax.set_ylabel("Player Jersey Number", fontsize=10, labelpad=10)
+    plt.tight_layout()
+    return fig
+
+
+def fig_to_numpy(
+    fig: plt.Figure,
+) -> np.ndarray:
+    canvas = FigureCanvasAgg(fig)
+    canvas.draw()
+    buf = canvas.buffer_rgba()
+    img_np = np.asarray(buf)
+    plt.close(fig)
+    return img_np
+
+
+def plot_average_feature_importance(
+    node_masks: List[np.ndarray],
+    feature_names: Sequence[str],
+    num_frames: int,
+) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=(10, 6))
+    average_feature_importance = np.stack(node_masks).mean(axis=1)
+    ax.boxplot(
+        average_feature_importance,
+        vert=False,
+        flierprops=dict(marker="o", markersize=4, alpha=0.6),
+        patch_artist=True,
+        boxprops=dict(facecolor="lightblue", edgecolor="gray"),
+        medianprops=dict(color="orange", linewidth=2),
+        tick_labels=feature_names,
+    )
+    ax.set_title(
+        f"Feature importance over {num_frames} frames",
+        fontsize=14,
+    )
+    plt.tight_layout()
+    return fig
 
 
 def build_dummy_inputs(

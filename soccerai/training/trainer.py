@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 import matplotlib.pyplot as plt
-import seaborn as sns
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,13 +9,19 @@ from loguru import logger
 from torch.optim import AdamW
 from torch.utils.data.dataloader import DataLoader as TorchDataLoader
 from torch_geometric.data import Batch
-from torch_geometric.explain import Explainer, GNNExplainer
 from torch_geometric_temporal.signal import Discrete_Signal
 from tqdm import tqdm
 
 import wandb
-from soccerai.training.metrics import Metric, PositiveFrameCollector
+from soccerai.training.callbacks import Callback
+from soccerai.training.metrics import Metric
 from soccerai.training.trainer_config import Config
+
+
+class BatchEvalResult(NamedTuple):
+    loss: torch.Tensor
+    probas: torch.Tensor
+    targets: torch.Tensor
 
 
 class BaseTrainer(ABC):
@@ -28,7 +33,8 @@ class BaseTrainer(ABC):
         device: str,
         feature_names: Optional[Sequence[str]] = None,
         val_loader: Optional[TorchDataLoader] = None,
-        metrics: List[Metric] = [],
+        metrics: Optional[List[Metric]] = None,
+        callbacks: Optional[List[Callback]] = None,
     ) -> None:
         self.cfg = cfg
         self.device = device
@@ -36,8 +42,9 @@ class BaseTrainer(ABC):
         # self.model = torch.compile(self.model)  # type: ignore[arg-type]
         self.train_loader = train_loader
         self.val_loader = val_loader
-        self.feature_names: List[str] = list(feature_names or [])
-        self.metrics: List[Metric] = metrics or []
+        self.feature_names = feature_names or []
+        self.metrics = metrics or []
+        self.callbacks = callbacks or []
         self.criterion = nn.BCEWithLogitsLoss()
         self.optim = AdamW(
             self.model.parameters(),
@@ -53,7 +60,7 @@ class BaseTrainer(ABC):
         ...
 
     @abstractmethod
-    def _eval_step(self, item: Any) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _eval_step(self, item: Any) -> BatchEvalResult:
         """
         Returns: (loss, prediction_probabilities, true_labels)
         """
@@ -62,17 +69,12 @@ class BaseTrainer(ABC):
     def _get_data_iterable(self, split: str) -> Optional[TorchDataLoader]:
         return self.train_loader if split == "train" else self.val_loader
 
-    def _on_epoch_start(self) -> None:
-        """
-        Hook called at the start of each epoch.
-        """
-        self.model.train()
-
     def _on_training_end(self) -> None:
         """
         Hook called at the end of training.
         """
-        ...
+        for cb in self.callbacks:
+            cb.on_train_end(self)
 
     def train(self, run_name: str):
         wandb.init(
@@ -83,8 +85,6 @@ class BaseTrainer(ABC):
             for epoch in tqdm(
                 range(1, self.cfg.trainer.n_epochs + 1), desc="Epoch", colour="green"
             ):
-                self._on_epoch_start()
-
                 train_iterable = self._get_data_iterable("train")
                 assert train_iterable is not None
 
@@ -170,9 +170,7 @@ class Trainer(BaseTrainer):
         self.optim.step()
         return loss
 
-    def _eval_step(
-        self, batch: Batch
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _eval_step(self, batch: Batch) -> BatchEvalResult:
         out = self.model(
             x=batch.x,
             edge_index=batch.edge_index,
@@ -185,70 +183,7 @@ class Trainer(BaseTrainer):
         loss = self.criterion(out, batch.y)
         preds_probs = torch.sigmoid(out)
         true_labels = batch.y.cpu().long()
-        return loss, preds_probs, true_labels
-
-    def _on_training_end(self):
-        self._explain()
-
-    def _explain(self) -> None:
-        if (
-            not (
-                pfc := next(
-                    (m for m in self.metrics if isinstance(m, PositiveFrameCollector)),
-                    None,
-                )
-            )
-            or not pfc.storage._items
-        ):
-            logger.warning("Nothing to explain")
-            return
-
-        _, data = pfc.storage._items[0]
-
-        explainer = Explainer(
-            model=self.model,
-            algorithm=GNNExplainer(epochs=200),
-            explanation_type="model",
-            node_mask_type="attributes",
-            edge_mask_type="object",
-            model_config=dict(
-                mode="binary_classification",
-                task_level="graph",
-                return_type="raw",
-            ),
-        )
-
-        with torch.enable_grad():
-            x = data.x.clone().float().requires_grad_(True)
-            u = data.u.clone().float().requires_grad_(True)
-            edge_index = data.edge_index.clone()
-            edge_weight = data.edge_weight.clone().float().requires_grad_(True)
-
-            explanation = explainer(
-                x=x,
-                edge_index=edge_index,
-                u=u,
-                edge_weight=edge_weight,
-            )
-
-        node_mask = explanation.node_mask.detach().cpu().numpy()
-
-        fig, ax = plt.subplots(figsize=(10, 6))
-
-        sns.heatmap(
-            node_mask,
-            ax=ax,
-            cmap="coolwarm",
-            cbar=False,
-            xticklabels=self.feature_names,
-        )
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=90, ha="center", fontsize=10)
-        ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=9)
-
-        fig.tight_layout()
-
-        wandb.log({"explain/node_feats_heatmap": wandb.Image(fig)})
-        plt.close(fig)
+        return BatchEvalResult(loss, preds_probs, true_labels)
 
 
 class TemporalTrainer(BaseTrainer):
@@ -322,10 +257,8 @@ class TemporalTrainer(BaseTrainer):
         self.optim.step()
         return loss
 
-    def _eval_step(
-        self, batch: Discrete_Signal
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _eval_step(self, batch: Discrete_Signal) -> BatchEvalResult:
         loss, out = self._compute_signal_loss_and_last_pred(batch)
         preds_probs = torch.sigmoid(out)
         true_labels = batch[0].y.cpu().long()
-        return loss, preds_probs, true_labels
+        return BatchEvalResult(loss, preds_probs, true_labels)

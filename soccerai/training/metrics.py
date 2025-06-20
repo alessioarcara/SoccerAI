@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, TypeVar
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,7 +10,10 @@ from mplsoccer import Pitch
 from torch_geometric.data import Batch
 from torchmetrics.functional.classification import binary_precision_recall_curve
 
+from soccerai.training.trainer_config import Config, MetricsConfig
 from soccerai.training.utils import TopKStorage
+
+T = TypeVar("T")
 
 
 class Metric(ABC):
@@ -34,15 +37,14 @@ class Metric(ABC):
 
 
 class BinaryConfusionMatrix(Metric):
-    def __init__(self, thr: float = 0.5, beta: float = 1):
-        self.thr = thr
-        self.beta = beta
+    def __init__(self, cfg: MetricsConfig):
+        self.cfg = cfg
         self.reset()
 
     def update(
         self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
     ) -> None:
-        preds_labels_flat = (preds_probs >= self.thr).view(-1).long()
+        preds_labels_flat = (preds_probs >= self.cfg.thr).view(-1).long()
         true_labels_flat = true_labels.view(-1).long()
 
         for t, p in zip(true_labels_flat, preds_labels_flat):
@@ -60,10 +62,10 @@ class BinaryConfusionMatrix(Metric):
         results.append(("accuracy", accuracy))
 
         # Fbeta-score
-        beta2 = self.beta**2
+        beta2 = self.cfg.fbeta**2
         denom = (1 + beta2) * tp + beta2 * fn + fp
         fbeta = ((1 + beta2) * tp / denom) if denom > 0 else 0.0
-        results.append((f"f{self.beta}_score", fbeta))
+        results.append((f"f{self.cfg.fbeta}_score", fbeta))
 
         return results
 
@@ -138,27 +140,33 @@ class BinaryPrecisionRecallCurve(Metric):
         return "Precision-Recall Curve", fig
 
 
-class PositiveFrameCollector(Metric):
+class FrameCollector(Metric):
     def __init__(
         self,
+        target_label: int,
+        cfg: Config,
         feature_names: List[str],
-        thr: float = 0.5,
-        max_samples: int = 12,
     ):
+        self.cfg = cfg
         self.feature_names = feature_names
-        self.thr = thr
-        self.storage: TopKStorage[Batch] = TopKStorage(max_samples)
+        self.target_label = target_label
+        self.storage: TopKStorage = TopKStorage(self.cfg.collector.n_frames)
 
     def update(
-        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
+        self,
+        preds_probs: torch.Tensor,
+        true_labels: torch.Tensor,
+        batch: Batch,
     ) -> None:
         probs_np = preds_probs.detach().cpu().numpy()
         labels_np = true_labels.detach().cpu().numpy()
 
-        pos_indices = np.where((probs_np > self.thr) & (labels_np == 1))[0]
+        indices = np.where(
+            (probs_np >= self.cfg.metrics.thr) & (labels_np == self.target_label)
+        )[0]
 
-        for i in pos_indices:
-            self.storage.add((probs_np[i], batch[i]))
+        for i in indices:
+            self.storage.add((float(probs_np[i]), batch[i]))
 
     def compute(self) -> List[Tuple[str, float]]:
         return []
@@ -167,6 +175,15 @@ class PositiveFrameCollector(Metric):
         self.storage.clear()
 
     def plot(self) -> Optional[Tuple[str, plt.Figure]]:
+        entries = self.storage.get_all_entries()
+
+        if not entries:
+            return None
+
+        x_col_idx = self.feature_names.index("x")
+        possession_team_col_idx = self.feature_names.index("is_possession_team_1")
+        ball_carrier_col_idx = self.feature_names.index("is_ball_carrier_1")
+
         pitch = Pitch(
             pitch_type="metricasports",
             pitch_length=105,
@@ -175,27 +192,21 @@ class PositiveFrameCollector(Metric):
             line_color="white",
             linewidth=2,
         )
-
         fig, axs = pitch.grid(
-            nrows=3,
-            ncols=4,
-            figheight=12,
+            nrows=self.cfg.collector.n_rows,
+            ncols=self.cfg.collector.n_cols,
+            figheight=self.cfg.collector.fig_height,
             grid_height=0.95,
             grid_width=0.95,
             bottom=0.025,
             endnote_height=0,
             title_height=0,
         )
-
         axes = axs.flatten()
-        entries = self.storage.get_all_entries()
 
-        for ax, (score, graph) in zip(axes, entries):
-            node_features = graph.x.detach().cpu().numpy()
-
-            x_col_idx = self.feature_names.index("x")
-            possession_team_col_idx = self.feature_names.index("is_possession_team_1")
-            ball_carrier_col_idx = self.feature_names.index("is_ball_carrier_1")
+        for i, (ax, (score, data)) in enumerate(zip(axes, entries), start=1):
+            node_features = data.x.detach().cpu().numpy()
+            jersey_numbers = data.jersey_numbers.detach().cpu().numpy()
 
             xy_coords = node_features[:, x_col_idx : x_col_idx + 2]
             teams = node_features[:, possession_team_col_idx].astype(int)
@@ -204,12 +215,29 @@ class PositiveFrameCollector(Metric):
             face_colours = np.where(teams == 0, "red", "blue")
             edge_colours = np.where(has_ball, "white", face_colours)
 
-            ax.scatter(*xy_coords.T, c=face_colours, ec=edge_colours, s=150)
-            ax.set_title(f"Prob: {float(score):.3f}", fontsize=14, pad=5)
+            ax.scatter(*xy_coords.T, c=face_colours, ec=edge_colours, s=200)
+
+            for (xi, yi), jersey_num in zip(xy_coords, jersey_numbers):
+                ax.text(
+                    xi,
+                    yi,
+                    str(jersey_num),
+                    fontsize=8,
+                    fontweight="bold",
+                    ha="center",
+                    va="center",
+                    color="white",
+                )
+
+            ax.set_title(
+                f"Frame {i} — Conf. {score:.2f}",
+                fontsize=12,
+                pad=4,
+            )
             ax.axis("off")
             ax.invert_yaxis()
 
         for ax in axes[len(entries) :]:
             ax.set_visible(False)
 
-        return "positive_frames", fig
+        return f"{'tp' if self.target_label == 1 else 'fp'}_frames", fig

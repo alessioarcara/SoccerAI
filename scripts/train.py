@@ -1,5 +1,6 @@
 import argparse
 import os
+from pathlib import Path
 
 import torch
 from loguru import logger
@@ -12,16 +13,18 @@ from soccerai.data.converters import create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.data.temporal_dataset import TemporalChainsDataset
 from soccerai.models.model import create_model
+from soccerai.training.callbacks import ExplainerCallback
 from soccerai.training.metrics import (
     BinaryConfusionMatrix,
     BinaryPrecisionRecallCurve,
-    PositiveFrameCollector,
+    FrameCollector,
 )
 from soccerai.training.trainer import TemporalTrainer, Trainer
 from soccerai.training.trainer_config import build_cfg
 from soccerai.training.utils import build_dummy_inputs, fix_random
 
-CONFIG_PATH = "configs/base.yaml"
+CONFIG_DIR = Path("configs")
+BASE_CONFIG_FILENAME = CONFIG_DIR / "base.yaml"
 
 torch.set_float32_matmul_precision("high")
 
@@ -29,7 +32,7 @@ NUM_WORKERS = (os.cpu_count() or 1) - 1
 
 
 def main(args):
-    cfg = build_cfg(CONFIG_PATH)
+    cfg = build_cfg(str(BASE_CONFIG_FILENAME))
     fix_random(cfg.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -81,7 +84,7 @@ def main(args):
             val_loader=val_loader,
             device=device,
             metrics=[
-                BinaryConfusionMatrix(),
+                BinaryConfusionMatrix(cfg.metrics),
                 BinaryPrecisionRecallCurve(),
             ],
         )
@@ -101,6 +104,7 @@ def main(args):
                 **common_loader_kwargs,
             ),
         )
+
         trainer = Trainer(
             cfg=cfg,
             model=model,
@@ -109,10 +113,12 @@ def main(args):
             device=device,
             feature_names=train_ds.feature_names,
             metrics=[
-                BinaryConfusionMatrix(),
+                BinaryConfusionMatrix(cfg.metrics),
                 BinaryPrecisionRecallCurve(),
-                PositiveFrameCollector(train_ds.feature_names),
+                FrameCollector(1, cfg, train_ds.feature_names),
+                FrameCollector(0, cfg, train_ds.feature_names),
             ],
+            callbacks=[ExplainerCallback()],
         )
 
     print(
