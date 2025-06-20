@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import matplotlib.pyplot as plt
 import torch
@@ -17,11 +17,7 @@ from soccerai.training.callbacks import Callback
 from soccerai.training.metrics import Metric
 from soccerai.training.trainer_config import Config
 
-
-class BatchEvalResult(NamedTuple):
-    loss: torch.Tensor
-    probas: torch.Tensor
-    targets: torch.Tensor
+BatchEvalResult = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
 
 class BaseTrainer(ABC):
@@ -183,7 +179,7 @@ class Trainer(BaseTrainer):
         loss = self.criterion(out, batch.y)
         preds_probs = torch.sigmoid(out)
         true_labels = batch.y.cpu().long()
-        return BatchEvalResult(loss, preds_probs, true_labels)
+        return loss, preds_probs, true_labels
 
 
 class TemporalTrainer(BaseTrainer):
@@ -261,4 +257,4 @@ class TemporalTrainer(BaseTrainer):
         loss, out = self._compute_signal_loss_and_last_pred(batch)
         preds_probs = torch.sigmoid(out)
         true_labels = batch[0].y.cpu().long()
-        return BatchEvalResult(loss, preds_probs, true_labels)
+        return loss, preds_probs, true_labels

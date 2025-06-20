@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple, TypeVar
+from typing import Generic, List, Optional, Sequence, Tuple, TypeVar
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -8,6 +8,7 @@ import torch
 from matplotlib.collections import LineCollection
 from mplsoccer import Pitch
 from torch_geometric.data import Batch
+from torch_geometric_temporal.signal import Discrete_Signal
 from torchmetrics.functional.classification import binary_precision_recall_curve
 
 from soccerai.training.trainer_config import Config, MetricsConfig
@@ -140,18 +141,25 @@ class BinaryPrecisionRecallCurve(Metric):
         return "Precision-Recall Curve", fig
 
 
-class FrameCollector(Metric):
-    def __init__(
-        self,
-        target_label: int,
-        cfg: Config,
-        feature_names: List[str],
-    ):
+class Collector(Metric, Generic[T]):
+    def __init__(self, target_label: int, cfg: Config, feature_names: Sequence[str]):
         self.cfg = cfg
-        self.feature_names = feature_names
         self.target_label = target_label
-        self.storage: TopKStorage = TopKStorage(self.cfg.collector.n_frames)
+        self.feature_names = feature_names
+        self.storage: TopKStorage[T] = TopKStorage(self.cfg.collector.n_frames)
 
+    @property
+    def frames(self) -> List[Tuple[float, T]]:
+        return self._fetch_frames()
+
+    @abstractmethod
+    def _fetch_frames(self) -> List[Tuple[float, T]]: ...
+
+    def __len__(self) -> int:
+        return len(self.frames)
+
+
+class FrameCollector(Collector[Batch]):
     def update(
         self,
         preds_probs: torch.Tensor,
@@ -241,3 +249,10 @@ class FrameCollector(Metric):
             ax.set_visible(False)
 
         return f"{'tp' if self.target_label == 1 else 'fp'}_frames", fig
+
+    def _fetch_frames(self):
+        return self.storage.get_all_entries()
+
+
+class ChainCollector(Collector[Discrete_Signal]):
+    pass
