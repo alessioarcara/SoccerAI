@@ -227,7 +227,7 @@ class TemporalTrainer(BaseTrainer):
                 prev_h=h,
             )
 
-            pred_per_timestep[t] = out
+            pred_per_timestep[t] = out.squeeze(-1)
             loss_per_timestep[t] = F.binary_cross_entropy_with_logits(
                 out, y, reduction="none"
             ).squeeze(1)
@@ -246,5 +246,5 @@ class TemporalTrainer(BaseTrainer):
     def _eval_step(self, batch: Discrete_Signal) -> BatchEvalResult:
         loss, out = self._compute_signal_loss_and_last_pred(batch)
         preds_probs = torch.sigmoid(out)
-        true_labels = batch[0].y.cpu().long()
+        true_labels = torch.from_numpy(batch.targets).long().squeeze(2)
         return loss, preds_probs, true_labels

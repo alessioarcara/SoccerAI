@@ -162,7 +162,7 @@ def pad_chain(
     pad_ei = np.zeros_like(c.edge_indices[0])
     pad_ew = np.zeros_like(c.edge_weights[0])
     pad_x = np.zeros_like(c.features[0])
-    pad_y = np.zeros_like(c.targets[0])
+    pad_y = np.full_like(c.targets[0], -1)
     pad_u = np.zeros_like(c.u[0])
 
     padded_ei = list(c.edge_indices)

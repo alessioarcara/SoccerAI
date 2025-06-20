@@ -38,8 +38,9 @@ class Metric(ABC):
 
 
 class BinaryConfusionMatrix(Metric):
-    def __init__(self, cfg: MetricsConfig):
+    def __init__(self, cfg: MetricsConfig, ignore_value: Optional[int] = None):
         self.cfg = cfg
+        self.ignore_value = ignore_value
         self.reset()
 
     def update(
@@ -47,6 +48,11 @@ class BinaryConfusionMatrix(Metric):
     ) -> None:
         preds_labels_flat = (preds_probs >= self.cfg.thr).view(-1).long()
         true_labels_flat = true_labels.view(-1).long()
+
+        if self.ignore_value is not None:
+            mask = true_labels_flat != self.ignore_value
+            preds_labels_flat = preds_labels_flat[mask]
+            true_labels_flat = true_labels_flat[mask]
 
         for t, p in zip(true_labels_flat, preds_labels_flat):
             self.cm[t, p] += 1
@@ -93,14 +99,23 @@ class BinaryConfusionMatrix(Metric):
 
 
 class BinaryPrecisionRecallCurve(Metric):
-    def __init__(self):
+    def __init__(self, ignore_value: Optional[int] = None):
+        self.ignore_value = ignore_value
         self.reset()
 
     def update(
         self, preds_probs: torch.Tensor, true_labels: torch.Tensor, item: Batch
     ) -> None:
-        self.all_preds_probs.append(preds_probs.detach().view(-1).cpu())
-        self.all_true_labels.append(true_labels.detach().view(-1).cpu())
+        preds_flat = preds_probs.detach().view(-1).cpu()
+        labels_flat = true_labels.detach().view(-1).cpu()
+
+        if self.ignore_value is not None:
+            mask = labels_flat != self.ignore_value
+            preds_flat = preds_flat[mask]
+            labels_flat = labels_flat[mask]
+
+        self.all_preds_probs.append(preds_flat)
+        self.all_true_labels.append(labels_flat)
 
     def compute(self) -> List[Tuple[str, float]]:
         return []
@@ -254,14 +269,6 @@ class FrameCollector(Collector[Batch]):
         return self.storage.get_all_entries()
 
 
-# indices = np.where(
-#     (probs_np >= self.cfg.metrics.thr) & (labels_np == self.target_label)
-# )[0]
-
-# for i in indices:
-#     self.storage.add((float(probs_np[i]), item[i]))
-
-
 class ChainCollector(Collector[Discrete_Signal]):
     def update(
         self,
@@ -269,10 +276,6 @@ class ChainCollector(Collector[Discrete_Signal]):
         true_labels: torch.Tensor,
         item: Discrete_Signal,
     ) -> None:
-        # probs_np = preds_probs.detach().cpu().numpy()
-        # labels_np = true_labels.detach().cpu().numpy()
-
-        # masks = item.masks
         pass
 
     def _fetch_frames(self):

@@ -85,10 +85,11 @@ def main(args):
             val_loader=val_loader,
             device=device,
             metrics=[
-                BinaryConfusionMatrix(cfg.metrics),
-                BinaryPrecisionRecallCurve(),
+                BinaryConfusionMatrix(cfg.metrics, -1),
+                BinaryPrecisionRecallCurve(-1),
                 ChainCollector(0, cfg, train_ds.feature_names),
             ],
+            callbacks=[ExplainerCallback()],
         )
 
     else:
