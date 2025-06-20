@@ -206,15 +206,15 @@ class TemporalTrainer(BaseTrainer):
         weights = weights.T.contiguous()  # (T_max, B)
         # ------------------------------------------------------------------
 
-        # pred_per_timestep = torch.zeros(
-        #     (T_max, B), dtype=torch.float32, device=self.device
-        # )
-        loss_per_timestep = torch.zeros(
+        pred_per_timestep = torch.zeros(
             (T_max, B), dtype=torch.float32, device=self.device
         )
 
+        loss_per_timestep = torch.zeros_like(
+            pred_per_timestep, dtype=torch.float32, device=self.device
+        )
+
         h = None
-        last_pred = None
         for t, snapshot in enumerate(signal):
             x = snapshot.x.to(self.device, non_blocking=True).float()
             y = snapshot.y.to(self.device, non_blocking=True).float()
@@ -222,7 +222,6 @@ class TemporalTrainer(BaseTrainer):
             edge_attr = snapshot.edge_attr.to(self.device, non_blocking=True).float()
             u = snapshot.u.to(self.device, non_blocking=True).float()
             batch = snapshot.batch.to(self.device, non_blocking=True).long()
-            mask = snapshot.masks.to(self.device, non_blocking=True).bool()
 
             out, h = self.model(
                 x=x,
@@ -235,20 +234,14 @@ class TemporalTrainer(BaseTrainer):
                 prev_h=h,
             )
 
-            if last_pred is None:
-                last_pred = torch.zeros_like(out)
-
-            last_pred[mask] = out[mask]
-
-            # pred_per_timestep[t] = out
+            pred_per_timestep[t] = out.squeeze(-1)
             loss_per_timestep[t] = F.binary_cross_entropy_with_logits(
                 out, y, reduction="none"
             ).squeeze(1)
 
         loss = (loss_per_timestep * weights).sum(dim=0).mean()
 
-        assert last_pred is not None
-        return loss, last_pred
+        return loss, pred_per_timestep
 
     def _train_step(self, batch: Discrete_Signal) -> torch.Tensor:
         self.optim.zero_grad(set_to_none=True)
@@ -260,5 +253,5 @@ class TemporalTrainer(BaseTrainer):
     def _eval_step(self, batch: Discrete_Signal) -> BatchEvalResult:
         loss, out = self._compute_signal_loss_and_last_pred(batch)
         preds_probs = torch.sigmoid(out)
-        true_labels = batch[0].y.cpu().long()
+        true_labels = torch.tensor(batch.targets, dtype=torch.long).contiguous()
         return BatchEvalResult(loss, preds_probs, true_labels)
