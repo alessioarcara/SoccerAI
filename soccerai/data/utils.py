@@ -2,7 +2,7 @@ import json
 import os
 import subprocess
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import polars as pl
 
@@ -110,9 +110,3 @@ def save_accepted_chains(
 
     with open(output_file, "w") as f:
         json.dump(all_accepted, f)
-
-
-def reorder_dataframe_cols(df: pl.DataFrame, first: Iterable[str]) -> pl.DataFrame:
-    first = list(first)
-    rest = [c for c in df.columns if c not in first]
-    return df.select(first + rest)

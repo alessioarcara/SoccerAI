@@ -7,7 +7,7 @@ import seaborn as sns
 import torch
 from matplotlib.collections import LineCollection
 from mplsoccer import Pitch
-from torch_geometric.data import Batch, Data
+from torch_geometric.data import Batch
 from torchmetrics.functional.classification import binary_precision_recall_curve
 
 from soccerai.training.trainer_config import Config, MetricsConfig
@@ -145,8 +145,10 @@ class FrameCollector(Metric):
         self,
         target_label: int,
         cfg: Config,
+        feature_names: List[str],
     ):
         self.cfg = cfg
+        self.feature_names = feature_names
         self.target_label = target_label
         self.storage: TopKStorage = TopKStorage(self.cfg.collector.n_frames)
 
@@ -156,15 +158,15 @@ class FrameCollector(Metric):
         true_labels: torch.Tensor,
         batch: Batch,
     ) -> None:
-        probs = preds_probs.detach().cpu().numpy().ravel()
-        labels = true_labels.detach().cpu().numpy().ravel()
+        probs_np = preds_probs.detach().cpu().numpy()
+        labels_np = true_labels.detach().cpu().numpy()
 
         indices = np.where(
-            (probs >= self.cfg.metrics.thr) & (labels == self.target_label)
+            (probs_np >= self.cfg.metrics.thr) & (labels_np == self.target_label)
         )[0]
 
         for i in indices:
-            self.storage.add((float(probs[i]), (batch, i)))
+            self.storage.add((float(probs_np[i]), batch[i]))
 
     def compute(self) -> List[Tuple[str, float]]:
         return []
@@ -172,26 +174,15 @@ class FrameCollector(Metric):
     def reset(self) -> None:
         self.storage.clear()
 
-    def _annotate_jerseys(self, ax: plt.Axes, data: Data) -> None:
-        coords = data.x[:, :2].detach().cpu().numpy()
-        jersey_nums = data.jersey_num.detach().cpu().numpy()
-
-        for (x_i, y_i), num in zip(coords, jersey_nums):
-            ax.text(
-                x_i,
-                y_i,
-                str(int(num)),
-                fontsize=8,
-                fontweight="bold",
-                ha="center",
-                va="center",
-                color="white",
-            )
-
     def plot(self) -> Optional[Tuple[str, plt.Figure]]:
         entries = self.storage.get_all_entries()
+
         if not entries:
             return None
+
+        x_col_idx = self.feature_names.index("x")
+        possession_team_col_idx = self.feature_names.index("is_possession_team_1")
+        ball_carrier_col_idx = self.feature_names.index("is_ball_carrier_1")
 
         pitch = Pitch(
             pitch_type="metricasports",
@@ -201,7 +192,6 @@ class FrameCollector(Metric):
             line_color="white",
             linewidth=2,
         )
-
         fig, axs = pitch.grid(
             nrows=self.cfg.collector.n_rows,
             ncols=self.cfg.collector.n_cols,
@@ -212,38 +202,42 @@ class FrameCollector(Metric):
             endnote_height=0,
             title_height=0,
         )
-
         axes = axs.flatten()
 
-        for i, (ax, (score, (batch, idx))) in enumerate(zip(axes, entries), start=1):
-            data = batch.to_data_list()[idx]
-            feats = data.x.detach().cpu().numpy()
+        for i, (ax, (score, data)) in enumerate(zip(axes, entries), start=1):
+            node_features = data.x.detach().cpu().numpy()
+            jersey_numbers = data.jersey_numbers.detach().cpu().numpy()
 
-            coords = feats[:, :2]
-            teams = feats[:, 2].astype(int)
-            has_ball = feats[:, 3].astype(bool)
+            xy_coords = node_features[:, x_col_idx : x_col_idx + 2]
+            teams = node_features[:, possession_team_col_idx].astype(int)
+            has_ball = node_features[:, ball_carrier_col_idx].astype(bool)
 
             face_colours = np.where(teams == 0, "red", "blue")
             edge_colours = np.where(has_ball, "white", face_colours)
 
-            ax.scatter(*coords.T, c=face_colours, ec=edge_colours, s=180)
-            self._annotate_jerseys(ax, data)
+            ax.scatter(*xy_coords.T, c=face_colours, ec=edge_colours, s=200)
+
+            for (xi, yi), jersey_num in zip(xy_coords, jersey_numbers):
+                ax.text(
+                    xi,
+                    yi,
+                    str(jersey_num),
+                    fontsize=8,
+                    fontweight="bold",
+                    ha="center",
+                    va="center",
+                    color="white",
+                )
 
             ax.set_title(
-                f"Frame {i} — Confidence {score:.2f}",
+                f"Frame {i} — Conf. {score:.2f}",
                 fontsize=12,
                 pad=4,
             )
-
             ax.axis("off")
             ax.invert_yaxis()
 
         for ax in axes[len(entries) :]:
             ax.set_visible(False)
 
-        key = (
-            "true_positive_frames"
-            if self.target_label == 1
-            else "false_positive_frames"
-        )
-        return key, fig
+        return f"{'tp' if self.target_label == 1 else 'fp'}_frames", fig

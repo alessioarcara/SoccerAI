@@ -9,19 +9,22 @@ model:
 
 trainer:
   bs: 32 
-  n_epochs: 50
+  n_epochs: 10
   lr: 1e-4
   wd: 0.01
   eval_rate: 2
   gamma: 0.9
   
-
 data:
   include_goal_features: True 
+  include_ball_features: True 
   use_macro_roles: True 
+  use_augmentations: False
+  use_regression_imputing: False
+  use_pca_on_roster_cols: False 
+  mask_non_possession_shooting_stats: False 
   connection_mode: "bipartite"
   val_ratio: 0.2
-
 
 collector:
   n_frames: 12         
@@ -32,3 +35,5 @@ collector:
 metrics:
   thr: 0.5
   fbeta: 1.0
+
+

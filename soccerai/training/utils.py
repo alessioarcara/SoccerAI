@@ -1,12 +1,10 @@
-import os
-import tempfile
-from typing import Generic, List, Tuple, TypeVar
+from typing import Any, Dict, Generic, List, Sequence, Tuple, TypeVar
 
-import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 import torch
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 from torch_geometric.seed import seed_everything
 
 T = TypeVar("T")
@@ -36,77 +34,77 @@ class TopKStorage(Generic[T]):
         return list(self._items)
 
 
-def make_heatmap_video_opencv(
+def plot_player_feature_importance(
+    node_mask: np.ndarray,
+    jersey_numbers: np.ndarray,
+    feature_names: Sequence[str],
+    positive_type: str,
+    frame_idx: int,
+) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=(9, 7))
+    sns.heatmap(
+        node_mask,
+        ax=ax,
+        cmap="coolwarm",
+        cbar=False,
+        xticklabels=feature_names,
+        yticklabels=[str(int(num)) for num in jersey_numbers],
+    )
+    ax.set_title(f"{positive_type}_Frame_{frame_idx}", fontsize=14)
+    ax.tick_params(axis="x", rotation=90)
+    ax.set_ylabel("Player Jersey Number", fontsize=10, labelpad=10)
+    plt.tight_layout()
+    return fig
+
+
+def fig_to_numpy(
+    fig: plt.Figure,
+) -> np.ndarray:
+    canvas = FigureCanvasAgg(fig)
+    canvas.draw()
+    buf = canvas.buffer_rgba()
+    img_np = np.asarray(buf)
+    plt.close(fig)
+    return img_np
+
+
+def plot_average_feature_importance(
     node_masks: List[np.ndarray],
-    feature_names: List[str],
-    jersey_nums: List[List[str]],
-    label_name: str,
-    fps: int = 1,
-) -> str:
-    tmpdir = tempfile.mkdtemp(prefix="explainer_vid_")
-    frame_paths: List[str] = []
-
-    for i, mask in enumerate(node_masks):
-        fig, ax = plt.subplots(figsize=(9, 7))
-        sns.heatmap(
-            mask,
-            ax=ax,
-            cmap="coolwarm",
-            cbar=False,
-            xticklabels=feature_names,
-            yticklabels=jersey_nums[i],
-        )
-
-        ax.tick_params(axis="x", labelsize=8)
-        ax.tick_params(axis="y", labelsize=8)
-        ax.set_title(f"{label_name}_Frame_{i + 1}", fontsize=10)
-        ax.set_ylabel("Player Jersey Number", fontsize=10, labelpad=10)
-        plt.tight_layout()
-
-        path = os.path.join(tmpdir, f"frame_{i:03d}.png")
-        fig.savefig(path, dpi=150)
-        plt.close(fig)
-        frame_paths.append(path)
-
-    first = cv2.imread(frame_paths[0])
-    h, w, _ = first.shape
-
-    fourcc = cv2.VideoWriter_fourcc(*"VP90")
-    video_path = os.path.join(tmpdir, f"{label_name}.webm")
-    writer = cv2.VideoWriter(video_path, fourcc, fps, (w, h))
-
-    for fp in frame_paths:
-        img = cv2.imread(fp)
-        writer.write(img)
-    writer.release()
-
-    return video_path
-
-
-def plot_feature_importance_distribution(
-    node_masks: List[np.ndarray],
-    feature_names: List[str],
-    label_name: str,
-    actual_n: int,
-) -> Tuple[str, plt.Figure]:
-    per_frame_importance = np.stack(node_masks).mean(axis=1)
+    feature_names: Sequence[str],
+    num_frames: int,
+) -> plt.Figure:
     fig, ax = plt.subplots(figsize=(10, 6))
+    average_feature_importance = np.stack(node_masks).mean(axis=1)
     ax.boxplot(
-        per_frame_importance,
+        average_feature_importance,
         vert=False,
         flierprops=dict(marker="o", markersize=4, alpha=0.6),
         patch_artist=True,
         boxprops=dict(facecolor="lightblue", edgecolor="gray"),
         medianprops=dict(color="orange", linewidth=2),
+        tick_labels=feature_names,
     )
-    ax.set_yticks(np.arange(1, len(feature_names) + 1))
-    ax.set_yticklabels(feature_names)
-    ax.set_xlabel("Feature Importance")
     ax.set_title(
-        f"Feature importance distribution ({label_name}, over {actual_n} frames)",
+        f"Feature importance over {num_frames} frames",
         fontsize=14,
     )
     plt.tight_layout()
+    return fig
 
-    key = f"explain/feature_importance_box_{label_name.replace(' ', '_').lower()}"
-    return key, fig
+
+def build_dummy_inputs(
+    bs: int, feat_dim: int, glob_dim: int, device: torch.device
+) -> Dict[str, Any]:
+    """
+    Creates random tensors to feed `torch_geometric.nn.summary`.
+    """
+    num_nodes_total = 22 * bs
+    num_edges_total = 11 * 22 * bs
+
+    x = torch.rand((num_nodes_total, feat_dim), device=device)
+    edge_index = torch.randint(
+        0, num_nodes_total, (2, num_edges_total), dtype=torch.long, device=device
+    )
+    u = torch.rand((bs, glob_dim), device=device)
+    batch = torch.tensor([[i] * 22 for i in range(bs)], device=device).view(-1)
+    return dict(x=x, edge_index=edge_index, u=u, batch=batch)

@@ -1,25 +1,33 @@
 import json
-from collections import defaultdict
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import List, Sequence, Union
 
 import polars as pl
 from loguru import logger
 from sklearn.compose import ColumnTransformer
-from sklearn.impute import SimpleImputer
+from sklearn.decomposition import PCA
+from sklearn.ensemble import ExtraTreesRegressor
+from sklearn.experimental import enable_iterative_imputer  # noqa: F401
+from sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import (
+    OneHotEncoder,
+    PowerTransformer,
+    QuantileTransformer,
+)
 from torch_geometric.data import InMemoryDataset
-from torch_geometric_temporal.signal import DynamicGraphTemporalSignal
+from torchvision.transforms import Compose
 
-from soccerai.data.config import X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
+from soccerai.data.config import SHOOTING_STATS, X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
 from soccerai.data.converters import GraphConverter
 from soccerai.data.transformers import (
+    BallLocationTransformer,
     GoalLocationTransformer,
-    PlayerPositionTransformer,
+    NonPossessionShootingStatsMask,
+    PlayerLocationTransformer,
 )
-from soccerai.data.utils import reorder_dataframe_cols
 from soccerai.training.trainer_config import DataConfig
+from soccerai.training.transforms import RandomHorizontalFlip, RandomVerticalFlip
 
 
 class WorldCup2022Dataset(InMemoryDataset):
@@ -31,20 +39,30 @@ class WorldCup2022Dataset(InMemoryDataset):
         converter: GraphConverter,
         split: str,
         cfg: DataConfig,
-        transform: Optional[Callable] = None,
         force_reload: bool = False,
+        random_state: int = 0,
     ):
         self.converter = converter
         self.split = split
         self.cfg = cfg
-        super().__init__(root=root, transform=transform, force_reload=force_reload)
+        self.random_state = random_state
+        super().__init__(root=root, transform=None, force_reload=force_reload)
 
         data_path_idx = 0 if self.split == "train" else 1
         self.load(self.processed_paths[data_path_idx])
 
         fp = Path(self.processed_dir) / self.FEATURE_NAMES_FILE
-        self.feature_names = (
-            json.loads(fp.read_text(encoding="utf-8")) if fp.exists() else None
+        self.feature_names: Sequence[str] = json.loads(fp.read_text(encoding="utf-8"))
+
+        self.transform = (
+            Compose(
+                [
+                    RandomHorizontalFlip(self.feature_names, 0.5),
+                    RandomVerticalFlip(self.feature_names, 0.5),
+                ]
+            )
+            if split == "train" and self.cfg.use_augmentations
+            else None
         )
 
     @property
@@ -94,7 +112,6 @@ class WorldCup2022Dataset(InMemoryDataset):
             "index_right",
             "gameId_right",
             "visibility",
-            "z",
             "videoUrl",
             "homeTeamName",
             "awayTeamName",
@@ -106,6 +123,30 @@ class WorldCup2022Dataset(InMemoryDataset):
             "playerId",
         ]
         df = df.drop(cols_to_drop)
+
+        df = (
+            df.with_columns(
+                (pl.col("direction").radians().cos().alias("cos")),
+                (pl.col("direction").radians().sin().alias("sin")),
+            )
+            .with_columns(
+                pl.col("velocity").mul(pl.col("cos")).alias("vx"),
+                pl.col("velocity").mul(pl.col("sin")).alias("vy"),
+            )
+            .drop(["velocity", "direction"])
+        )
+
+        if self.cfg.include_ball_features:
+            df = df.with_columns(
+                *[
+                    pl.col(c)
+                    .filter(pl.col("team").is_null())
+                    .first()
+                    .over("gameEventId", "possessionEventId")
+                    .alias(f"{c}_ball")
+                    for c in ["x", "y", "z", "cos", "sin", "vx", "vy"]
+                ]
+            ).drop("z")
 
         df = (
             df.filter(pl.col("team").is_not_null())
@@ -159,45 +200,49 @@ class WorldCup2022Dataset(InMemoryDataset):
                 .alias("playerRole")
             )
 
-        possession_team = df.filter(pl.col("is_ball_carrier") == 1)["team"][0]
+        df = (
+            df.with_columns(
+                pl.col("team")
+                .filter(pl.col("is_ball_carrier") == 1)
+                .first()
+                .over(["gameEventId", "possessionEventId"])
+                .alias("possession_team_tmp")
+            )
+            .with_columns(
+                (pl.col("team") == pl.col("possession_team_tmp"))
+                .cast(pl.Int8)
+                .alias("is_possession_team")
+            )
+            .drop("possession_team_tmp")
+        ).drop_nulls(["is_possession_team"])
 
+        is_home_team = df["team"] == "home"
+        is_second_half = df["frameTime"] > df["startPeriod2"]
+
+        is_goal_right = (
+            (is_home_team & df["homeTeamStartLeft"] & ~is_second_half)
+            | (is_home_team & ~df["homeTeamStartLeft"] & is_second_half)
+            | (~is_home_team & ~df["homeTeamStartLeft"] & ~is_second_half)
+            | (~is_home_team & df["homeTeamStartLeft"] & is_second_half)
+        )
         df = df.with_columns(
             [
-                (
-                    pl.when(pl.col("team") == possession_team)
-                    .then(1)
-                    .otherwise(0)
-                    .alias("is_possession_team")
-                ),
+                pl.when(is_goal_right)
+                .then(X_GOAL_RIGHT)
+                .otherwise(X_GOAL_LEFT)
+                .alias("x_goal"),
+                pl.lit(Y_GOAL).alias("y_goal"),
             ]
         )
-
-        if self.cfg.include_goal_features:
-            is_home_team = df["team"] == "home"
-            is_second_half = df["frameTime"] > df["startPeriod2"]
-
-            is_goal_right = (
-                (is_home_team & df["homeTeamStartLeft"] & ~is_second_half)
-                | (is_home_team & ~df["homeTeamStartLeft"] & is_second_half)
-                | (~is_home_team & ~df["homeTeamStartLeft"] & ~is_second_half)
-                | (~is_home_team & df["homeTeamStartLeft"] & is_second_half)
-            )
-
-            df = df.with_columns(
-                [
-                    pl.when(is_goal_right)
-                    .then(X_GOAL_RIGHT)
-                    .otherwise(X_GOAL_LEFT)
-                    .alias("x_goal"),
-                    pl.lit(Y_GOAL).alias("y_goal"),
-                ]
-            )
 
         df = df.drop(["team", "homeTeamStartLeft", "startPeriod2"])
 
         return df
 
-    def _create_preprocessor(self, df: pl.DataFrame) -> ColumnTransformer:
+    def _create_preprocessor(
+        self, df: pl.DataFrame
+    ) -> Union[ColumnTransformer, Pipeline]:
+        # Column groups --------------------------------------------------- #
         cat_cols = [
             "possessionEventType",
             "playerRole",
@@ -206,29 +251,82 @@ class WorldCup2022Dataset(InMemoryDataset):
             "age",
         ]
         pos_cols = ["x", "y"]
-        exclude_cols = set(
-            cat_cols
-            + pos_cols
-            + [
-                "gameEventId",
-                "possessionEventId",
-                "label",
-                "gameId",
-                "chain_id",
-                "jerseyNum",
+        goal_cols = ["x_goal", "y_goal"]
+        angle_cols = ["cos", "sin"]
+        velocity_cols = ["vx", "vy"]
+        exclude_cols: set[str] = {
+            *cat_cols,
+            *pos_cols,
+            *goal_cols,
+            *angle_cols,
+            *velocity_cols,
+            "gameEventId",
+            "possessionEventId",
+            "label",
+            "gameId",
+            "chain_id",
+            "jerseyNum",
+        }
+        if self.cfg.include_ball_features:
+            ball_cols = [
+                "x_ball",
+                "y_ball",
+                "z_ball",
+                "height_cm",
+                "cos_ball",
+                "sin_ball",
+                "vx_ball",
+                "vy_ball",
             ]
-        )
-        if self.cfg.include_goal_features:
-            goal_cols = ["x_goal", "y_goal"]
-            exclude_cols.update(goal_cols)
+            exclude_cols.update(ball_cols)
         num_cols = [c for c in df.columns if c not in exclude_cols]
 
-        num_pipe = Pipeline(
-            [("imputer", SimpleImputer(strategy="mean")), ("scaler", StandardScaler())]
-        )
+        # Pipelines ------------------------------------------------------- #
+        if self.cfg.use_regression_imputing:
+            et_est = ExtraTreesRegressor(
+                n_estimators=100,
+                min_samples_leaf=2,
+                n_jobs=-1,
+                random_state=self.random_state,
+            )
+            imputer = IterativeImputer(
+                estimator=et_est,
+                max_iter=10,
+                initial_strategy="median",
+                random_state=self.random_state,
+            )
+        else:
+            imputer = SimpleImputer(strategy="median")
+
+        numeric_steps = [
+            ("imputer", imputer),
+            ("scaler", QuantileTransformer(output_distribution="normal")),
+        ]
+
+        if self.cfg.use_pca_on_roster_cols:
+            numeric_steps.append(
+                (
+                    "shooting_stats_pca",
+                    ColumnTransformer(
+                        [
+                            (
+                                "subset",
+                                PCA(n_components=0.99, random_state=self.random_state),
+                                SHOOTING_STATS,
+                            )
+                        ],
+                        remainder="passthrough",
+                        verbose_feature_names_out=False,
+                    ),
+                ),
+            )
+        num_pipe = Pipeline(steps=numeric_steps)
         cat_pipe = Pipeline(
             [
-                ("imputer", SimpleImputer(strategy="constant", fill_value="unknown")),
+                (
+                    "imputer",
+                    SimpleImputer(strategy="constant", fill_value="unknown"),
+                ),
                 (
                     "onehot",
                     OneHotEncoder(
@@ -237,16 +335,62 @@ class WorldCup2022Dataset(InMemoryDataset):
                 ),
             ]
         )
+        player_pipe = Pipeline(
+            [
+                ("imputer", KNNImputer(weights="distance")),
+                ("player_loc", PlayerLocationTransformer()),
+                (
+                    "speed_norm",
+                    ColumnTransformer(
+                        [("pow", PowerTransformer(), ["vx", "vy"])],
+                        remainder="passthrough",
+                        verbose_feature_names_out=False,
+                    ),
+                ),
+            ]
+        )
 
+        # ColumnTransformer setup ------------------------------------------- #
         transformers = [
             ("num", num_pipe, num_cols),
             ("cat", cat_pipe, cat_cols),
-            ("player_pos", PlayerPositionTransformer(), pos_cols),
+            (
+                "player_loc",
+                player_pipe,
+                pos_cols + angle_cols + velocity_cols + goal_cols,
+            ),
         ]
 
         if self.cfg.include_goal_features:
             transformers.append(
-                ("goal_loc", GoalLocationTransformer(), pos_cols + goal_cols)
+                (
+                    "goal_loc",
+                    GoalLocationTransformer(),
+                    pos_cols + goal_cols,
+                )
+            )
+        if self.cfg.include_ball_features:
+            ball_loc_pipe = Pipeline(
+                steps=[
+                    ("imputer", SimpleImputer(strategy="median")),
+                    ("ball_loc", BallLocationTransformer()),
+                    (
+                        "diff_speed_norm",
+                        ColumnTransformer(
+                            [("pow", PowerTransformer(), ["dvx", "dvy"])],
+                            remainder="passthrough",
+                            verbose_feature_names_out=False,
+                        ),
+                    ),
+                ]
+            )
+
+            transformers.append(
+                (
+                    "ball_pipe",
+                    ball_loc_pipe,
+                    pos_cols + angle_cols + velocity_cols + ball_cols,
+                )
             )
 
         prep = ColumnTransformer(
@@ -254,6 +398,35 @@ class WorldCup2022Dataset(InMemoryDataset):
             remainder="passthrough",
             verbose_feature_names_out=False,  # No prefixes
         )
+
+        if self.cfg.mask_non_possession_shooting_stats:
+            if self.cfg.use_pca_on_roster_cols:
+
+                def cols_to_mask(df: pl.DataFrame) -> List[str]:
+                    pca_cols = [c for c in df.columns if c.startswith("pca")]
+                    return pca_cols + ["is_possession_team_1"]
+            else:
+                cols_to_mask = SHOOTING_STATS + ["is_possession_team_1"]  # type: ignore
+
+            prep = Pipeline(
+                [
+                    ("prep", prep),
+                    (
+                        "shooting_stats_mask",
+                        ColumnTransformer(
+                            [
+                                (
+                                    "mask",
+                                    NonPossessionShootingStatsMask(),
+                                    cols_to_mask,
+                                )
+                            ],
+                            remainder="passthrough",
+                            verbose_feature_names_out=False,
+                        ),
+                    ),
+                ]
+            )
 
         prep.set_output(transform="polars")
         return prep
@@ -269,15 +442,10 @@ class WorldCup2022Dataset(InMemoryDataset):
             val_df.height,
         )
 
-        self.preprocessor = self._create_preprocessor(train_df)
+        preprocessor = self._create_preprocessor(train_df)
 
-        first = ["x", "y", "is_possession_team_1", "is_ball_carrier_1"]
-        train_transformed = reorder_dataframe_cols(
-            self.preprocessor.fit_transform(train_df), first
-        )
-        val_transformed = reorder_dataframe_cols(
-            self.preprocessor.transform(val_df), first
-        )
+        train_transformed = preprocessor.fit_transform(train_df)
+        val_transformed = preprocessor.transform(val_df)
 
         train_data_list, feature_names = self.converter.convert_dataframe_to_data_list(
             train_transformed
@@ -292,31 +460,3 @@ class WorldCup2022Dataset(InMemoryDataset):
 
         fp = Path(self.processed_dir) / self.FEATURE_NAMES_FILE
         fp.write_text(json.dumps(feature_names, ensure_ascii=False, indent=4))
-
-    def to_temporal_iterators(self) -> List[DynamicGraphTemporalSignal]:
-        buckets = defaultdict(list)
-        for data in self:
-            chain_id = int(data.chain_id.item())
-            buckets[chain_id].append(data)
-
-        chains = []
-        for chain_id, frames in buckets.items():
-            ordered = sorted(frames, key=lambda f: float(f.frame_time.item()))
-
-            edge_indices = [f.edge_index.numpy() for f in ordered]
-            node_features = [f.x.numpy() for f in ordered]
-            global_features = [f.u.numpy() for f in ordered]
-            targets = [f.y.numpy() for f in ordered]
-            edge_weights = [f.edge_weight.numpy() for f in ordered]
-
-            chains.append(
-                DynamicGraphTemporalSignal(
-                    edge_indices=edge_indices,
-                    edge_weights=edge_weights,
-                    features=node_features,
-                    targets=targets,
-                    u=global_features,
-                )
-            )
-
-        return chains
