@@ -18,11 +18,18 @@ from sklearn.preprocessing import (
 from torch_geometric.data import InMemoryDataset
 from torchvision.transforms import Compose
 
-from soccerai.data.config import SHOOTING_STATS, X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
+from soccerai.data.config import (
+    DEFENSIVE_STATS,
+    SHOOTING_STATS,
+    X_GOAL_LEFT,
+    X_GOAL_RIGHT,
+    Y_GOAL,
+)
 from soccerai.data.converters import GraphConverter
 from soccerai.data.transformers import (
     BallLocationTransformer,
     GoalLocationTransformer,
+    NonAttackerDefensiveStatsMask,
     NonPossessionShootingStatsMask,
     PlayerLocationTransformer,
 )
@@ -419,6 +426,26 @@ class WorldCup2022Dataset(InMemoryDataset):
                                     "mask",
                                     NonPossessionShootingStatsMask(),
                                     cols_to_mask,
+                                )
+                            ],
+                            remainder="passthrough",
+                            verbose_feature_names_out=False,
+                        ),
+                    ),
+                ]
+            )
+        if self.cfg.mask_attacker_defensive_stats:
+            prep = Pipeline(
+                [
+                    ("prep", prep),
+                    (
+                        "def_stats_mask",
+                        ColumnTransformer(
+                            [
+                                (
+                                    "mask",
+                                    NonAttackerDefensiveStatsMask(),
+                                    DEFENSIVE_STATS + ["is_possession_team_1"],
                                 )
                             ],
                             remainder="passthrough",

@@ -148,3 +148,16 @@ class NonPossessionShootingStatsMask(BaseTransformer):
         masked_features = features * mask
         res = np.concatenate([masked_features, mask], axis=1)
         return self._maybe_polars(res, X.columns)
+
+
+class NonAttackerDefensiveStatsMask(BaseTransformer):
+    def transform(self, X):
+        data = np.asarray(X, dtype=float)
+
+        features = data[:, :-1]
+        roleflag = data[:, -1][:, None]
+
+        masked_features = features * (1.0 - roleflag)
+
+        res = np.concatenate([masked_features, roleflag], axis=1)
+        return self._maybe_polars(res, X.columns)
