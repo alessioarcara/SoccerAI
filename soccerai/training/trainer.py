@@ -1,23 +1,27 @@
 from abc import ABC, abstractmethod
-from typing import Any, Collection, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 import matplotlib.pyplot as plt
-import seaborn as sns
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from loguru import logger
 from torch.optim import AdamW
+from torch.utils.data.dataloader import DataLoader as TorchDataLoader
 from torch_geometric.data import Batch
-from torch_geometric.explain import Explainer, GNNExplainer
-from torch_geometric.loader import DataLoader
 from torch_geometric_temporal.signal import Discrete_Signal
 from tqdm import tqdm
 
 import wandb
-from soccerai.training.metrics import Metric, PositiveFrameCollector
+from soccerai.training.callbacks import Callback
+from soccerai.training.metrics import Metric
 from soccerai.training.trainer_config import Config
 
-Signals = List[Discrete_Signal]
+
+class BatchEvalResult(NamedTuple):
+    loss: torch.Tensor
+    probas: torch.Tensor
+    targets: torch.Tensor
 
 
 class BaseTrainer(ABC):
@@ -25,18 +29,28 @@ class BaseTrainer(ABC):
         self,
         cfg: Config,
         model: nn.Module,
+        train_loader: TorchDataLoader,
         device: str,
-        metrics: List[Metric] = [],
-    ):
+        feature_names: Optional[Sequence[str]] = None,
+        val_loader: Optional[TorchDataLoader] = None,
+        metrics: Optional[List[Metric]] = None,
+        callbacks: Optional[List[Callback]] = None,
+    ) -> None:
         self.cfg = cfg
-        # self.model: nn.Module = torch.compile(model.to(device))  # type: ignore
-        self.model = model.to(device)
         self.device = device
-        self.metrics = metrics
-        self.optim = AdamW(
-            self.model.parameters(), lr=cfg.trainer.lr, weight_decay=cfg.trainer.wd
-        )
+        self.model: nn.Module = model.to(self.device)
+        # self.model = torch.compile(self.model)  # type: ignore[arg-type]
+        self.train_loader = train_loader
+        self.val_loader = val_loader
+        self.feature_names = feature_names or []
+        self.metrics = metrics or []
+        self.callbacks = callbacks or []
         self.criterion = nn.BCEWithLogitsLoss()
+        self.optim = AdamW(
+            self.model.parameters(),
+            lr=self.cfg.trainer.lr,
+            weight_decay=self.cfg.trainer.wd,
+        )
 
     @abstractmethod
     def _train_step(self, item: Any) -> torch.Tensor:
@@ -46,26 +60,21 @@ class BaseTrainer(ABC):
         ...
 
     @abstractmethod
-    def _eval_step(self, item: Any) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _eval_step(self, item: Any) -> BatchEvalResult:
         """
         Returns: (loss, prediction_probabilities, true_labels)
         """
         ...
 
-    @abstractmethod
-    def _get_data_iterable(self, split: str) -> Optional[Collection[Any]]: ...
-
-    def _on_epoch_start(self) -> None:
-        """
-        Hook called at the start of each epoch.
-        """
-        self.model.train()
+    def _get_data_iterable(self, split: str) -> Optional[TorchDataLoader]:
+        return self.train_loader if split == "train" else self.val_loader
 
     def _on_training_end(self) -> None:
         """
         Hook called at the end of training.
         """
-        ...
+        for cb in self.callbacks:
+            cb.on_train_end(self)
 
     def train(self, run_name: str):
         wandb.init(
@@ -76,8 +85,6 @@ class BaseTrainer(ABC):
             for epoch in tqdm(
                 range(1, self.cfg.trainer.n_epochs + 1), desc="Epoch", colour="green"
             ):
-                self._on_epoch_start()
-
                 train_iterable = self._get_data_iterable("train")
                 assert train_iterable is not None
 
@@ -147,24 +154,6 @@ class BaseTrainer(ABC):
 
 
 class Trainer(BaseTrainer):
-    def __init__(
-        self,
-        cfg: Config,
-        model: nn.Module,
-        train_loader: DataLoader,
-        device: str,
-        feature_names: List[str],
-        val_loader: Optional[DataLoader] = None,
-        metrics: List[Metric] = [],
-    ):
-        super().__init__(cfg, model, device, metrics)
-        self.train_loader = train_loader
-        self.val_loader = val_loader
-        self.feature_names = feature_names
-
-    def _get_data_iterable(self, split: str) -> Optional[Collection[Any]]:
-        return self.train_loader if split == "train" else self.val_loader
-
     def _train_step(self, batch: Batch) -> torch.Tensor:
         self.optim.zero_grad(set_to_none=True)
         out = self.model(
@@ -181,9 +170,7 @@ class Trainer(BaseTrainer):
         self.optim.step()
         return loss
 
-    def _eval_step(
-        self, batch: Batch
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _eval_step(self, batch: Batch) -> BatchEvalResult:
         out = self.model(
             x=batch.x,
             edge_index=batch.edge_index,
@@ -196,108 +183,46 @@ class Trainer(BaseTrainer):
         loss = self.criterion(out, batch.y)
         preds_probs = torch.sigmoid(out)
         true_labels = batch.y.cpu().long()
-        return loss, preds_probs, true_labels
-
-    def _on_training_end(self):
-        self._explain()
-
-    def _explain(self) -> None:
-        if (
-            not (
-                pfc := next(
-                    (m for m in self.metrics if isinstance(m, PositiveFrameCollector)),
-                    None,
-                )
-            )
-            or not pfc.storage._items
-        ):
-            logger.warning("Nothing to explain")
-            return
-
-        _, data = pfc.storage._items[0]
-
-        explainer = Explainer(
-            model=self.model,
-            algorithm=GNNExplainer(epochs=200),
-            explanation_type="model",
-            node_mask_type="attributes",
-            edge_mask_type="object",
-            model_config=dict(
-                mode="binary_classification",
-                task_level="graph",
-                return_type="raw",
-            ),
-        )
-
-        with torch.enable_grad():
-            x = data.x.clone().float().requires_grad_(True)
-            u = data.u.clone().float().requires_grad_(True)
-            edge_index = data.edge_index.clone()
-            edge_weight = data.edge_weight.clone().float().requires_grad_(True)
-
-            explanation = explainer(
-                x=x,
-                edge_index=edge_index,
-                u=u,
-                edge_weight=edge_weight,
-            )
-
-        node_mask = explanation.node_mask.detach().cpu().numpy()
-
-        fig, ax = plt.subplots(figsize=(10, 6))
-
-        sns.heatmap(
-            node_mask,
-            ax=ax,
-            cmap="coolwarm",
-            cbar=False,
-            xticklabels=self.feature_names,
-        )
-        ax.set_xticklabels(ax.get_xticklabels(), rotation=90, ha="center", fontsize=10)
-        ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=9)
-
-        fig.tight_layout()
-
-        wandb.log({"explain/node_feats_heatmap": wandb.Image(fig)})
-        plt.close(fig)
+        return BatchEvalResult(loss, preds_probs, true_labels)
 
 
 class TemporalTrainer(BaseTrainer):
-    def __init__(
-        self,
-        cfg: Config,
-        model: nn.Module,
-        train_signals: Signals,
-        device: str,
-        val_signals: Optional[Signals] = None,
-        metrics: List[Metric] = [],
-    ) -> None:
-        super().__init__(cfg, model, device, metrics)
-        self.train_signals = train_signals
-        self.val_signals = val_signals
-
-    def _get_data_iterable(self, split: str) -> Optional[Collection[Any]]:
-        return self.train_signals if split == "train" else self.val_signals
-
     def _compute_signal_loss_and_last_pred(
         self, signal: Discrete_Signal
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        T = signal.snapshot_count
-        weights = torch.tensor(
-            [self.cfg.trainer.gamma ** (T - 1 - t) for t in range(T)],
-            device=self.device,
+        masks = torch.tensor(signal.masks, dtype=torch.bool, device=self.device).T
+        B, T_max = masks.shape
+
+        # ----------------- Computing discount weights --------------------
+        lengths = masks.sum(dim=1)  # (B,)
+        T = torch.arange(T_max, device=self.device)  # (T_max,)
+
+        # (B, 1) − (T_max,) => (B, T_max) tramite broadcasting
+        exps = (lengths - 1).unsqueeze(1) - T
+
+        weights = torch.where(masks, self.cfg.trainer.gamma ** exps.float(), 0.0)
+        weights /= weights.sum(dim=1, keepdim=True).clamp(min=1e-12)
+
+        weights = weights.T.contiguous()  # (T_max, B)
+        # ------------------------------------------------------------------
+
+        # pred_per_timestep = torch.zeros(
+        #     (T_max, B), dtype=torch.float32, device=self.device
+        # )
+        loss_per_timestep = torch.zeros(
+            (T_max, B), dtype=torch.float32, device=self.device
         )
-        weights /= weights.sum()
 
-        loss = torch.scalar_tensor(0.0, device=self.device)
         h = None
-
+        last_pred = None
         for t, snapshot in enumerate(signal):
-            x = snapshot.x.to(self.device, non_blocking=True)
-            y = snapshot.y.to(self.device, non_blocking=True)
-            edge_index = snapshot.edge_index.to(self.device, non_blocking=True)
-            edge_attr = snapshot.edge_attr.to(self.device, non_blocking=True)
-            u = snapshot.u.to(self.device, non_blocking=True)
+            x = snapshot.x.to(self.device, non_blocking=True).float()
+            y = snapshot.y.to(self.device, non_blocking=True).float()
+            edge_index = snapshot.edge_index.to(self.device, non_blocking=True).long()
+            edge_attr = snapshot.edge_attr.to(self.device, non_blocking=True).float()
+            u = snapshot.u.to(self.device, non_blocking=True).float()
+            batch = snapshot.batch.to(self.device, non_blocking=True).long()
+            mask = snapshot.masks.to(self.device, non_blocking=True).bool()
 
             out, h = self.model(
                 x=x,
@@ -305,24 +230,35 @@ class TemporalTrainer(BaseTrainer):
                 edge_weight=edge_attr,
                 edge_attr=edge_attr,
                 u=u,
+                batch=batch,
+                batch_size=snapshot.num_graphs,
                 prev_h=h,
             )
 
-            loss += weights[t] * self.criterion(out, y)
+            if last_pred is None:
+                last_pred = torch.zeros_like(out)
 
-        return loss, out
+            last_pred[mask] = out[mask]
 
-    def _train_step(self, signal: Discrete_Signal) -> torch.Tensor:
+            # pred_per_timestep[t] = out
+            loss_per_timestep[t] = F.binary_cross_entropy_with_logits(
+                out, y, reduction="none"
+            ).squeeze(1)
+
+        loss = (loss_per_timestep * weights).sum(dim=0).mean()
+
+        assert last_pred is not None
+        return loss, last_pred
+
+    def _train_step(self, batch: Discrete_Signal) -> torch.Tensor:
         self.optim.zero_grad(set_to_none=True)
-        loss, _ = self._compute_signal_loss_and_last_pred(signal)
+        loss, _ = self._compute_signal_loss_and_last_pred(batch)
         loss.backward()
         self.optim.step()
         return loss
 
-    def _eval_step(
-        self, signal: Discrete_Signal
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        loss, out = self._compute_signal_loss_and_last_pred(signal)
+    def _eval_step(self, batch: Discrete_Signal) -> BatchEvalResult:
+        loss, out = self._compute_signal_loss_and_last_pred(batch)
         preds_probs = torch.sigmoid(out)
-        true_labels = signal[0].y.cpu().long()
-        return loss, preds_probs, true_labels
+        true_labels = batch[0].y.cpu().long()
+        return BatchEvalResult(loss, preds_probs, true_labels)

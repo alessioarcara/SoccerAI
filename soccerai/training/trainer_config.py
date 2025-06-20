@@ -32,6 +32,18 @@ class DataConfig(BaseModel):
     connection_mode: str
 
 
+class FrameCollectorConfig(BaseModel):
+    n_frames: int
+    n_rows: int
+    n_cols: int
+    fig_height: float
+
+
+class MetricsConfig(BaseModel):
+    thr: float
+    fbeta: float
+
+
 class Config(BaseModel):
     project_name: str
     seed: int
@@ -39,6 +51,8 @@ class Config(BaseModel):
     model: ModelConfig
     trainer: TrainerConfig
     data: DataConfig
+    collector: FrameCollectorConfig
+    metrics: MetricsConfig
 
 
 def _load_yaml(path: str | Path):
