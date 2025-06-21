@@ -148,11 +148,12 @@ class BestChainExplainerCallback(Callback):
 
         for c in chain_collectors:
             pos_type = "TP" if c.target_label == 1 else "FP"
-            entries = c.frames  # List of (score, (probs_seq, List[Data]))
-            if not entries:
+            _, (_, best_chain) = c.highest_confidence_chain
+
+            # List of (score, (probs_seq, List[Data]))
+            if not best_chain:
                 continue
 
-            _, (_, best_chain) = entries[0]
             h = None
             frames_np = []
 

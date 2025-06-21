@@ -20,7 +20,7 @@ T = TypeVar("T")
 class Metric(ABC):
     @abstractmethod
     def update(
-        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, item: Batch
+        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
     ) -> None:
         pass
 
@@ -44,7 +44,7 @@ class BinaryConfusionMatrix(Metric):
         self.reset()
 
     def update(
-        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, item: Batch
+        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
     ) -> None:
         preds_labels_flat = (preds_probs >= self.cfg.thr).view(-1).long()
         true_labels_flat = true_labels.view(-1).long()
@@ -104,7 +104,7 @@ class BinaryPrecisionRecallCurve(Metric):
         self.reset()
 
     def update(
-        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, item: Batch
+        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
     ) -> None:
         preds_flat = preds_probs.detach().view(-1).cpu()
         labels_flat = true_labels.detach().view(-1).cpu()
@@ -171,7 +171,7 @@ class Collector(Metric, Generic[T]):
     def _fetch_frames(self) -> List[Tuple[float, T]]: ...
 
     def __len__(self) -> int:
-        return len(self.frames)
+        return len(self.storage._items)
 
     def compute(self) -> List[Tuple[str, float]]:
         return []
@@ -180,12 +180,12 @@ class Collector(Metric, Generic[T]):
         self.storage.clear()
 
 
-class FrameCollector(Collector[Batch]):
+class FrameCollector(Collector[Data]):
     def update(
         self,
         preds_probs: torch.Tensor,
         true_labels: torch.Tensor,
-        item: Batch,
+        batch: Batch,
     ) -> None:
         probs_np = preds_probs.detach().cpu().numpy()
         labels_np = true_labels.detach().cpu().numpy()
@@ -195,7 +195,7 @@ class FrameCollector(Collector[Batch]):
         )[0]
 
         for i in indices:
-            self.storage.add((float(probs_np[i]), item[i]))
+            self.storage.add((float(probs_np[i]), batch[i]))
 
     def plot(self) -> Optional[Tuple[str, plt.Figure]]:
         entries = self.storage.get_all_entries()
@@ -269,17 +269,17 @@ class FrameCollector(Collector[Batch]):
         return self.storage.get_all_entries()
 
 
-class ChainCollector(Collector[Tuple[np.ndarray, Discrete_Signal]]):
+class ChainCollector(Collector[Tuple[np.ndarray, List[Data]]]):
     def update(
         self,
         preds_probs: torch.Tensor,
         true_labels: torch.Tensor,
-        item: Discrete_Signal,
+        batch: Discrete_Signal,
     ) -> None:
         probs_np = preds_probs.detach().cpu().numpy()
         labels_np = true_labels.detach().cpu().numpy()
 
-        last_t = item.masks.sum(axis=0) - 1  # (B,)
+        last_t = batch.masks.sum(axis=0) - 1  # (B,)
 
         for i, t in enumerate(last_t):
             conf = probs_np[t, i]
@@ -288,17 +288,58 @@ class ChainCollector(Collector[Tuple[np.ndarray, Discrete_Signal]]):
                 self.storage.add(
                     (
                         float(conf),
-                        (probs_np[:t, i], extract_chain(item[:t], i)),
+                        (probs_np[:t, i], extract_chain(batch[:t], i)),
                     )
                 )
 
-    def plot(self):
-        pass
+    def plot(self) -> Optional[Tuple[str, plt.Figure]]:
+        chain_predictions = [entry[1][0] for entry in self.storage.get_all_entries()]
+        if not chain_predictions:
+            return None
 
-    # def _fetch_frames(self):
-    #     # Last data of each collected chain
-    #     final_snapshots = [entry[1][1][-1] for entry in self.storage.get_all_entries()]
-    #     return Batch.from_data_list(final_snapshots)
+        max_len = max(map(len, chain_predictions))
+        padded_chain_predictions = np.asarray(
+            [
+                np.pad(pred, (0, max_len - len(pred)), constant_values=np.nan)
+                for pred in chain_predictions
+            ]
+        )
 
-    def _fetch_frames(self) -> List[Tuple[float, Tuple[np.ndarray, List[Data]]]]:
-        return self.storage.get_all_entries()
+        cell_side = 0.5
+        fig_width = max(4, max_len * cell_side)
+        fig_height = max(2.5, len(chain_predictions) * cell_side)
+        fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+        sns.heatmap(
+            padded_chain_predictions,
+            ax=ax,
+            annot=True,
+            fmt=".2f",
+            cmap="viridis",
+            vmin=0,
+            vmax=1,
+            cbar=False,
+            linewidths=0.5,
+            linecolor="white",
+            square=True,
+        )
+        ax.set_xlabel("Time step")
+        ax.set_ylabel("Chain #")
+        ax.tick_params(axis="both", length=0)
+        ax.set_title(
+            "Temporal evolution of each chain predictions",
+            fontsize=12,
+            pad=10,
+        )
+        fig.tight_layout()
+        return f"{'tp' if self.target_label == 1 else 'fp'}_chains", fig
+
+    def _fetch_frames(self):
+        # Last data of each collected chain
+        return [(entry[0], entry[1][1][-1]) for entry in self.storage.get_all_entries()]
+
+    @property
+    def highest_confidence_chain(self):
+        entries = self.storage.get_all_entries()
+        if not entries:
+            return None, (None, None)
+        return self.storage.get_all_entries()[0]
