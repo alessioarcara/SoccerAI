@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional, Sequence, Tuple
 
 import numpy as np
 from torch.utils.data import Dataset
@@ -24,11 +24,13 @@ class TemporalChainsDataset(Dataset):
         temporal_chains: List[DynamicGraphTemporalSignal],
         num_features: int,
         num_global_features: int,
+        feature_names: Sequence[str],
         transform: Optional[Callable] = None,
     ):
         self.temporal_chains = temporal_chains
         self.num_features = num_features
         self.num_global_features = num_global_features
+        self.feature_names = feature_names
         self.transform = transform
 
     def __len__(self) -> int:
@@ -73,7 +75,11 @@ class TemporalChainsDataset(Dataset):
             )
 
         return TemporalChainsDataset(
-            chains, dataset.num_features, dataset.num_global_features, tmp_transform
+            chains,
+            dataset.num_features,
+            dataset.num_global_features,
+            dataset.feature_names,
+            tmp_transform,
         )
 
     @staticmethod

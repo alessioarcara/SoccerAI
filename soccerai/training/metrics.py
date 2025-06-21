@@ -7,11 +7,12 @@ import seaborn as sns
 import torch
 from matplotlib.collections import LineCollection
 from mplsoccer import Pitch
-from torch_geometric.data import Batch
+from torch_geometric.data import Batch, Data
+from torch_geometric_temporal.signal import Discrete_Signal
 from torchmetrics.functional.classification import binary_precision_recall_curve
 
 from soccerai.training.trainer_config import Config, MetricsConfig
-from soccerai.training.utils import TopKStorage
+from soccerai.training.utils import TopKStorage, extract_chain
 
 T = TypeVar("T")
 
@@ -170,10 +171,16 @@ class Collector(Metric, Generic[T]):
     def _fetch_frames(self) -> List[Tuple[float, T]]: ...
 
     def __len__(self) -> int:
-        return len(self.frames)
+        return len(self.storage._items)
+
+    def compute(self) -> List[Tuple[str, float]]:
+        return []
+
+    def reset(self) -> None:
+        self.storage.clear()
 
 
-class FrameCollector(Collector[Batch]):
+class FrameCollector(Collector[Data]):
     def update(
         self,
         preds_probs: torch.Tensor,
@@ -189,12 +196,6 @@ class FrameCollector(Collector[Batch]):
 
         for i in indices:
             self.storage.add((float(probs_np[i]), batch[i]))
-
-    def compute(self) -> List[Tuple[str, float]]:
-        return []
-
-    def reset(self) -> None:
-        self.storage.clear()
 
     def plot(self) -> Optional[Tuple[str, plt.Figure]]:
         entries = self.storage.get_all_entries()
@@ -264,10 +265,78 @@ class FrameCollector(Collector[Batch]):
 
         return f"{'tp' if self.target_label == 1 else 'fp'}_frames", fig
 
-    def _fetch_frames(self) -> List[Tuple[float, Batch]]:
+    def _fetch_frames(self):
         return self.storage.get_all_entries()
 
 
-# class ChainCollector(Collector):
-#     return [ciascun ultimo frame positivo per ciascuna catena salvata]
-#     pass
+class ChainCollector(Collector[Tuple[np.ndarray, List[Data]]]):
+    def update(
+        self,
+        preds_probs: torch.Tensor,
+        true_labels: torch.Tensor,
+        batch: Discrete_Signal,
+    ) -> None:
+        probs_np = preds_probs.detach().cpu().numpy()
+        labels_np = true_labels.detach().cpu().numpy()
+
+        last_t = batch.masks.sum(axis=0) - 1  # (B,)
+
+        for i, t in enumerate(last_t):
+            conf = probs_np[t, i]
+
+            if (conf > self.cfg.metrics.thr) & (labels_np[0, i] == self.target_label):
+                self.storage.add(
+                    (
+                        float(conf),
+                        (probs_np[:t, i], extract_chain(batch[:t], i)),
+                    )
+                )
+
+    def plot(self) -> Optional[Tuple[str, plt.Figure]]:
+        chain_predictions = [entry[1][0] for entry in self.storage.get_all_entries()]
+        if not chain_predictions:
+            return None
+
+        max_len = max(map(len, chain_predictions))
+        padded_chain_predictions = np.asarray(
+            [
+                np.pad(pred, (0, max_len - len(pred)), constant_values=np.nan)
+                for pred in chain_predictions
+            ]
+        )
+
+        cell_side = 0.5
+        fig_width = max(4, max_len * cell_side)
+        fig_height = max(2.5, len(chain_predictions) * cell_side)
+        fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+        sns.heatmap(
+            padded_chain_predictions,
+            ax=ax,
+            annot=True,
+            fmt=".2f",
+            cmap="viridis",
+            vmin=0,
+            vmax=1,
+            cbar=False,
+            linewidths=0.5,
+            linecolor="white",
+            square=True,
+        )
+        ax.set_xlabel("Time step")
+        ax.set_ylabel("Chain #")
+        ax.tick_params(axis="both", length=0)
+        ax.set_title(
+            "Temporal evolution of each chain predictions",
+            fontsize=12,
+            pad=10,
+        )
+        fig.tight_layout()
+        return f"{'tp' if self.target_label == 1 else 'fp'}_chains", fig
+
+    def _fetch_frames(self):
+        # Last data of each collected chain
+        return [(entry[0], entry[1][1][-1]) for entry in self.storage.get_all_entries()]
+
+    @property
+    def highest_confidence_chain(self):
+        return self.storage.get_all_entries()[0]

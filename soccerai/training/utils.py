@@ -5,7 +5,9 @@ import numpy as np
 import seaborn as sns
 import torch
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+from torch_geometric.data import Batch, Data
 from torch_geometric.seed import seed_everything
+from torch_geometric_temporal import Discrete_Signal
 
 T = TypeVar("T")
 
@@ -108,3 +110,29 @@ def build_dummy_inputs(
     u = torch.rand((bs, glob_dim), device=device)
     batch = torch.tensor([[i] * 22 for i in range(bs)], device=device).view(-1)
     return dict(x=x, edge_index=edge_index, u=u, batch=batch)
+
+
+def extract_chain(batch: Discrete_Signal, chain_idx: int) -> List[Data]:
+    """
+    NOTE - PyTorch Geometric Temporal assembles its batches manually instead of
+    via `Batch.from_data_list`, so helper methods such as `get_example()` or
+    `to_data_list()` raise a RuntimeError when you try to pull out a single
+    graph.  The helper below works around that limitation with a (somewhat
+    hacky) low-level extraction of the i-th graph.
+    """
+
+    def _extract_graph(snapshot: Batch) -> Data:
+        node_mask = snapshot.batch == chain_idx
+        x = snapshot.x[node_mask]
+
+        start_edge_idx = 22 * 11 * chain_idx
+        end_edge_idx = 22 * 11 * (chain_idx + 1)
+        edge_index = snapshot.edge_index[:, start_edge_idx:end_edge_idx]
+        edge_attr = snapshot.edge_attr[start_edge_idx:end_edge_idx]
+
+        u = snapshot.u[chain_idx].unsqueeze(0)
+        y = snapshot.y[chain_idx]
+
+        return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, u=u, y=y)
+
+    return [_extract_graph(batch[t]) for t in range(batch.snapshot_count)]
