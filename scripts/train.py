@@ -55,7 +55,7 @@ def main(args):
     )
 
     model = create_model(cfg, train_ds)
-    common_loader_kwargs = dict(
+    loader_kwargs = dict(
         batch_size=cfg.trainer.bs,
         num_workers=NUM_WORKERS,
         pin_memory=True,
@@ -70,13 +70,13 @@ def main(args):
             train_ds,
             collate_fn=TemporalChainsDataset.collate,
             shuffle=True,
-            **common_loader_kwargs,
+            **loader_kwargs,
         )
         val_loader = TorchDataLoader(
             val_ds,
             collate_fn=TemporalChainsDataset.collate,
             shuffle=False,
-            **common_loader_kwargs,
+            **loader_kwargs,
         )
         trainer = TemporalTrainer(
             cfg=cfg,
@@ -87,6 +87,7 @@ def main(args):
             metrics=[
                 BinaryConfusionMatrix(cfg.metrics, -1),
                 BinaryPrecisionRecallCurve(-1),
+                ChainCollector(1, cfg, train_ds.feature_names),
                 ChainCollector(0, cfg, train_ds.feature_names),
             ],
             callbacks=[ExplainerCallback()],
@@ -97,14 +98,14 @@ def main(args):
             PyGDataLoader(
                 train_ds,
                 shuffle=True,
-                **common_loader_kwargs,
+                **loader_kwargs,
             ),
         )
         val_loader = PrefetchLoader(
             PyGDataLoader(
                 val_ds,
                 shuffle=False,
-                **common_loader_kwargs,
+                **loader_kwargs,
             ),
         )
 
