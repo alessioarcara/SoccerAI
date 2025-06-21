@@ -60,6 +60,7 @@ def main(args):
         num_workers=NUM_WORKERS,
         pin_memory=True,
         persistent_workers=True,
+        prefetch_factor=4,
     )
 
     if cfg.use_temporal:
@@ -84,6 +85,7 @@ def main(args):
             train_loader=train_loader,
             val_loader=val_loader,
             device=device,
+            feature_names=train_ds.feature_names,
             metrics=[
                 BinaryConfusionMatrix(cfg.metrics, -1),
                 BinaryPrecisionRecallCurve(-1),

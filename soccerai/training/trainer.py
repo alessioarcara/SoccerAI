@@ -164,6 +164,7 @@ class Trainer(BaseTrainer):
         loss: torch.Tensor = self.criterion(out, batch.y)
         loss.backward()
         self.optim.step()
+        self.scheduler.step()
         return loss
 
     def _eval_step(self, batch: Batch) -> BatchEvalResult:
@@ -202,35 +203,28 @@ class TemporalTrainer(BaseTrainer):
         weights = weights.T.contiguous()  # (T_max, B)
         # ------------------------------------------------------------------
 
-        pred_per_timestep = torch.zeros(
-            (T_max, B), dtype=torch.float32, device=self.device
-        )
-        loss_per_timestep = torch.zeros_like(pred_per_timestep)
+        loss_per_timestep = torch.empty_like(weights)
+        pred_per_timestep = torch.empty_like(weights)
 
         h = None
         for t, snapshot in enumerate(signal):
-            x = snapshot.x.to(self.device, non_blocking=True).float()
-            y = snapshot.y.to(self.device, non_blocking=True).float()
-            edge_index = snapshot.edge_index.to(self.device, non_blocking=True).long()
-            edge_attr = snapshot.edge_attr.to(self.device, non_blocking=True).float()
-            u = snapshot.u.to(self.device, non_blocking=True).float()
-            batch = snapshot.batch.to(self.device, non_blocking=True).long()
+            snapshot.to(self.device, non_blocking=True)
 
             out, h = self.model(
-                x=x,
-                edge_index=edge_index,
-                edge_weight=edge_attr,
-                edge_attr=edge_attr,
-                u=u,
-                batch=batch,
+                x=snapshot.x,
+                edge_index=snapshot.edge_index,
+                edge_weight=snapshot.edge_attr,
+                edge_attr=snapshot.edge_attr,
+                u=snapshot.u,
+                batch=snapshot.batch,
                 batch_size=snapshot.num_graphs,
                 prev_h=h,
             )
 
-            pred_per_timestep[t] = out.squeeze(-1)
             loss_per_timestep[t] = F.binary_cross_entropy_with_logits(
-                out, y, reduction="none"
+                out, snapshot.y, reduction="none"
             ).squeeze(1)
+            pred_per_timestep[t] = out.squeeze(-1)
 
         loss = (loss_per_timestep * weights).sum(dim=0).mean()
 
