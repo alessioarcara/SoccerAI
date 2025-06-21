@@ -20,7 +20,7 @@ T = TypeVar("T")
 class Metric(ABC):
     @abstractmethod
     def update(
-        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, item: Batch
+        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
     ) -> None:
         pass
 
@@ -44,7 +44,7 @@ class BinaryConfusionMatrix(Metric):
         self.reset()
 
     def update(
-        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, item: Batch
+        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
     ) -> None:
         preds_labels_flat = (preds_probs >= self.cfg.thr).view(-1).long()
         true_labels_flat = true_labels.view(-1).long()
@@ -104,7 +104,7 @@ class BinaryPrecisionRecallCurve(Metric):
         self.reset()
 
     def update(
-        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, item: Batch
+        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
     ) -> None:
         preds_flat = preds_probs.detach().view(-1).cpu()
         labels_flat = true_labels.detach().view(-1).cpu()
@@ -185,7 +185,7 @@ class FrameCollector(Collector[Data]):
         self,
         preds_probs: torch.Tensor,
         true_labels: torch.Tensor,
-        item: Batch,
+        batch: Batch,
     ) -> None:
         probs_np = preds_probs.detach().cpu().numpy()
         labels_np = true_labels.detach().cpu().numpy()
@@ -195,7 +195,7 @@ class FrameCollector(Collector[Data]):
         )[0]
 
         for i in indices:
-            self.storage.add((float(probs_np[i]), item[i]))
+            self.storage.add((float(probs_np[i]), batch[i]))
 
     def plot(self) -> Optional[Tuple[str, plt.Figure]]:
         entries = self.storage.get_all_entries()
@@ -274,12 +274,12 @@ class ChainCollector(Collector[Tuple[np.ndarray, List[Data]]]):
         self,
         preds_probs: torch.Tensor,
         true_labels: torch.Tensor,
-        item: Discrete_Signal,
+        batch: Discrete_Signal,
     ) -> None:
         probs_np = preds_probs.detach().cpu().numpy()
         labels_np = true_labels.detach().cpu().numpy()
 
-        last_t = item.masks.sum(axis=0) - 1  # (B,)
+        last_t = batch.masks.sum(axis=0) - 1  # (B,)
 
         for i, t in enumerate(last_t):
             conf = probs_np[t, i]
@@ -288,7 +288,7 @@ class ChainCollector(Collector[Tuple[np.ndarray, List[Data]]]):
                 self.storage.add(
                     (
                         float(conf),
-                        (probs_np[:t, i], extract_chain(item[:t], i)),
+                        (probs_np[:t, i], extract_chain(batch[:t], i)),
                     )
                 )
 
