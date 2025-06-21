@@ -13,7 +13,7 @@ from soccerai.data.converters import create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.data.temporal_dataset import TemporalChainsDataset
 from soccerai.models.model import create_model
-from soccerai.training.callbacks import ExplainerCallback
+from soccerai.training.callbacks import BestChainExplainerCallback, ExplainerCallback
 from soccerai.training.metrics import (
     BinaryConfusionMatrix,
     BinaryPrecisionRecallCurve,
@@ -88,8 +88,9 @@ def main(args):
                 BinaryConfusionMatrix(cfg.metrics, -1),
                 BinaryPrecisionRecallCurve(-1),
                 ChainCollector(0, cfg, train_ds.feature_names),
+                ChainCollector(1, cfg, train_ds.feature_names),
             ],
-            callbacks=[ExplainerCallback()],
+            callbacks=[BestChainExplainerCallback()],
         )
 
     else:

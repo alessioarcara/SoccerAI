@@ -1,15 +1,15 @@
 project_name: "soccerai"
 seed: 42
-use_temporal: False 
+use_temporal: True 
 
 model:
-  model_name: "gcn"
+  model_name: "gcrnn"
   dmid: 256
   dhid: 128
 
 trainer:
   bs: 32 
-  n_epochs: 10
+  n_epochs: 50
   lr: 1e-4
   wd: 0.01
   eval_rate: 2

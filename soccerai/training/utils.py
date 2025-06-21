@@ -122,7 +122,7 @@ def extract_chain(batch: Discrete_Signal, chain_idx: int) -> List[Data]:
     """
 
     def _extract_graph(snapshot: Batch) -> Data:
-        node_mask = batch == chain_idx
+        node_mask = snapshot.batch == chain_idx
         x = snapshot.x[node_mask]
 
         start_edge_idx = 22 * 11 * chain_idx
@@ -130,7 +130,7 @@ def extract_chain(batch: Discrete_Signal, chain_idx: int) -> List[Data]:
         edge_index = snapshot.edge_index[:, start_edge_idx:end_edge_idx]
         edge_attr = snapshot.edge_attr[start_edge_idx:end_edge_idx]
 
-        u = snapshot.u[chain_idx]
+        u = snapshot.u[chain_idx].unsqueeze(0)
         y = snapshot.y[chain_idx]
 
         return Data(x=x, edge_index=edge_index, edge_weight=edge_attr, u=u, y=y)
