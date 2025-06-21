@@ -6,13 +6,12 @@ import numpy as np
 import seaborn as sns
 import torch
 from matplotlib.collections import LineCollection
-from mplsoccer import Pitch
 from torch_geometric.data import Batch, Data
 from torch_geometric_temporal.signal import Discrete_Signal
 from torchmetrics.functional.classification import binary_precision_recall_curve
 
 from soccerai.training.trainer_config import Config, MetricsConfig
-from soccerai.training.utils import TopKStorage, extract_chain
+from soccerai.training.utils import TopKStorage, extract_chain, plot_pitch_frames_grid
 
 T = TypeVar("T")
 
@@ -33,7 +32,7 @@ class Metric(ABC):
         pass
 
     @abstractmethod
-    def plot(self) -> Optional[Tuple[str, plt.Figure]]:
+    def plot(self) -> List[Tuple[str, plt.Figure]]:
         pass
 
 
@@ -79,7 +78,7 @@ class BinaryConfusionMatrix(Metric):
     def reset(self) -> None:
         self.cm = torch.zeros((2, 2), dtype=torch.int64)
 
-    def plot(self) -> Optional[Tuple[str, plt.Figure]]:
+    def plot(self) -> List[Tuple[str, plt.Figure]]:
         cm_np = self.cm.cpu().numpy()
         fig, ax = plt.subplots(figsize=(8, 6))
         sns.heatmap(
@@ -95,7 +94,7 @@ class BinaryConfusionMatrix(Metric):
         ax.set_ylabel("True Label", fontsize=16)
         ax.tick_params(axis="both", which="major", labelsize=12)
         plt.tight_layout()
-        return "confusion_matrix", fig
+        return [("confusion_matrix", fig)]
 
 
 class BinaryPrecisionRecallCurve(Metric):
@@ -124,7 +123,7 @@ class BinaryPrecisionRecallCurve(Metric):
         self.all_preds_probs = []
         self.all_true_labels = []
 
-    def plot(self) -> Optional[Tuple[str, plt.Figure]]:
+    def plot(self) -> List[Tuple[str, plt.Figure]]:
         all_preds_probs_flat = torch.cat(self.all_preds_probs)
         all_true_labels_flat = torch.cat(self.all_true_labels).long()
         p, r, thresholds = binary_precision_recall_curve(
@@ -153,13 +152,14 @@ class BinaryPrecisionRecallCurve(Metric):
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
         plt.tight_layout()
-        return "Precision-Recall Curve", fig
+        return [("Precision-Recall Curve", fig)]
 
 
 class Collector(Metric, Generic[T]):
     def __init__(self, target_label: int, cfg: Config, feature_names: Sequence[str]):
         self.cfg = cfg
         self.target_label = target_label
+        self.positive_type = "TP" if self.target_label == 1 else "FP"
         self.feature_names = feature_names
         self.storage: TopKStorage[T] = TopKStorage(self.cfg.collector.n_frames)
 
@@ -197,73 +197,17 @@ class FrameCollector(Collector[Data]):
         for i in indices:
             self.storage.add((float(probs_np[i]), batch[i]))
 
-    def plot(self) -> Optional[Tuple[str, plt.Figure]]:
+    def plot(self) -> List[Tuple[str, plt.Figure]]:
         entries = self.storage.get_all_entries()
 
         if not entries:
-            return None
+            return []
 
-        x_col_idx = self.feature_names.index("x")
-        possession_team_col_idx = self.feature_names.index("is_possession_team_1")
-        ball_carrier_col_idx = self.feature_names.index("is_ball_carrier_1")
-
-        pitch = Pitch(
-            pitch_type="metricasports",
-            pitch_length=105,
-            pitch_width=68,
-            pitch_color="grass",
-            line_color="white",
-            linewidth=2,
+        fig = plot_pitch_frames_grid(
+            entries, self.feature_names, self.cfg.pitch_grid.model_dump()
         )
-        fig, axs = pitch.grid(
-            nrows=self.cfg.collector.n_rows,
-            ncols=self.cfg.collector.n_cols,
-            figheight=self.cfg.collector.fig_height,
-            grid_height=0.95,
-            grid_width=0.95,
-            bottom=0.025,
-            endnote_height=0,
-            title_height=0,
-        )
-        axes = axs.flatten()
 
-        for i, (ax, (score, data)) in enumerate(zip(axes, entries), start=1):
-            node_features = data.x.detach().cpu().numpy()
-            jersey_numbers = data.jersey_numbers.detach().cpu().numpy()
-
-            xy_coords = node_features[:, x_col_idx : x_col_idx + 2]
-            teams = node_features[:, possession_team_col_idx].astype(int)
-            has_ball = node_features[:, ball_carrier_col_idx].astype(bool)
-
-            face_colours = np.where(teams == 0, "red", "blue")
-            edge_colours = np.where(has_ball, "white", face_colours)
-
-            ax.scatter(*xy_coords.T, c=face_colours, ec=edge_colours, s=200)
-
-            for (xi, yi), jersey_num in zip(xy_coords, jersey_numbers):
-                ax.text(
-                    xi,
-                    yi,
-                    str(jersey_num),
-                    fontsize=8,
-                    fontweight="bold",
-                    ha="center",
-                    va="center",
-                    color="white",
-                )
-
-            ax.set_title(
-                f"Frame {i} — Conf. {score:.2f}",
-                fontsize=12,
-                pad=4,
-            )
-            ax.axis("off")
-            ax.invert_yaxis()
-
-        for ax in axes[len(entries) :]:
-            ax.set_visible(False)
-
-        return f"{'tp' if self.target_label == 1 else 'fp'}_frames", fig
+        return [(f"{self.positive_type}_frames", fig)]
 
     def _fetch_frames(self):
         return self.storage.get_all_entries()
@@ -279,23 +223,25 @@ class ChainCollector(Collector[Tuple[np.ndarray, List[Data]]]):
         probs_np = preds_probs.detach().cpu().numpy()
         labels_np = true_labels.detach().cpu().numpy()
 
-        last_t = batch.masks.sum(axis=0) - 1  # (B,)
+        last_t = batch.masks.sum(axis=0)  # (B,)
 
         for i, t in enumerate(last_t):
-            conf = probs_np[t, i]
+            conf = probs_np[t - 1, i]
 
             if (conf > self.cfg.metrics.thr) & (labels_np[0, i] == self.target_label):
+                chain_predictions = probs_np[:t, i]
+                chain = extract_chain(batch[:t], i)
                 self.storage.add(
                     (
                         float(conf),
-                        (probs_np[:t, i], extract_chain(batch[:t], i)),
+                        (chain_predictions, chain),
                     )
                 )
 
-    def plot(self) -> Optional[Tuple[str, plt.Figure]]:
+    def plot(self) -> List[Tuple[str, plt.Figure]]:
         chain_predictions = [entry[1][0] for entry in self.storage.get_all_entries()]
         if not chain_predictions:
-            return None
+            return []
 
         max_len = max(map(len, chain_predictions))
         padded_chain_predictions = np.asarray(
@@ -306,8 +252,8 @@ class ChainCollector(Collector[Tuple[np.ndarray, List[Data]]]):
         )
 
         cell_side = 0.5
-        fig_width = max(4, max_len * cell_side)
-        fig_height = max(2.5, len(chain_predictions) * cell_side)
+        fig_width = max(6, max_len * cell_side)
+        fig_height = max(3.75, len(chain_predictions) * cell_side)
         fig, ax = plt.subplots(figsize=(fig_width, fig_height))
         sns.heatmap(
             padded_chain_predictions,
@@ -331,11 +277,21 @@ class ChainCollector(Collector[Tuple[np.ndarray, List[Data]]]):
             pad=10,
         )
         fig.tight_layout()
-        return f"{'tp' if self.target_label == 1 else 'fp'}_chains", fig
+
+        pitch_grid_fig = plot_pitch_frames_grid(
+            self.frames, self.feature_names, self.cfg.pitch_grid.model_dump()
+        )
+
+        # plot_pitch_frames_grid([(0.0, frame) for frame in chain], self.feature_names, {"figheight": 12, "nrows": int(len(chain) / 5), "ncols": 5}).savefig("test.png")
+
+        return [
+            (f"{self.positive_type}_chains", fig),
+            (f"{self.positive_type}_frames", pitch_grid_fig),
+        ]
 
     def _fetch_frames(self):
         # Last data of each collected chain
-        return [(entry[0], entry[1][1][-1]) for entry in self.storage.get_all_entries()]
+        return [(entry[0], entry[1][1][0]) for entry in self.storage.get_all_entries()]
 
     @property
     def highest_confidence_chain(self):

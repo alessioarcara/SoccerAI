@@ -21,8 +21,10 @@ class Callback(ABC):
 
 class ExplainerCallback(Callback):
     def on_train_end(self, trainer):
-        collectors = [m for m in trainer.metrics if isinstance(m, Collector)]
-        if not collectors or all(len(c) == 0 for c in collectors):
+        collectors = [
+            m for m in trainer.metrics if isinstance(m, Collector) and len(m) > 0
+        ]
+        if not collectors:
             logger.warning("Nothing to explain")
             return
 
@@ -44,9 +46,6 @@ class ExplainerCallback(Callback):
 
             collected_frames = c.frames
             num_frames = len(c)
-
-            if num_frames == 0:
-                continue
 
             node_masks, figs_np = [], []
             for i, (_, data) in enumerate(collected_frames):

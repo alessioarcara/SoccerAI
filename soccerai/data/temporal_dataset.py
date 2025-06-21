@@ -63,6 +63,7 @@ class TemporalChainsDataset(Dataset):
             global_features = [f.u.numpy() for f in ordered]
             targets = [f.y.numpy() for f in ordered]
             edge_weights = [f.edge_weight.numpy() for f in ordered]
+            jersey_numbers = [f.jersey_numbers.numpy() for f in ordered]
 
             chains.append(
                 DynamicGraphTemporalSignal(
@@ -71,6 +72,7 @@ class TemporalChainsDataset(Dataset):
                     features=node_features,
                     targets=targets,
                     u=global_features,
+                    jersey_numbers=jersey_numbers,
                 )
             )
 
@@ -91,6 +93,7 @@ class TemporalChainsDataset(Dataset):
         batch_features = []
         batch_targets = []
         batch_u = []
+        batch_jersey_numbers = []
         batch_masks = []
         batches = []
 
@@ -98,10 +101,17 @@ class TemporalChainsDataset(Dataset):
             T = c.snapshot_count
             pad_frames = T_max - T
 
-            ei, ew, x, y, u = (
+            ei, ew, x, y, u, jn = (
                 pad_chain(c, pad_frames)
                 if pad_frames
-                else (c.edge_indices, c.edge_weights, c.features, c.targets, c.u)
+                else (
+                    c.edge_indices,
+                    c.edge_weights,
+                    c.features,
+                    c.targets,
+                    c.u,
+                    c.jersey_numbers,
+                )
             )
 
             batch_edge_indices.append(ei)
@@ -109,6 +119,7 @@ class TemporalChainsDataset(Dataset):
             batch_features.append(x)
             batch_targets.append(y)
             batch_u.append(u)
+            batch_jersey_numbers.append(jn)
             batch_masks.append(np.array([1] * T + [0] * pad_frames))
 
         arr_ei = np.array(batch_edge_indices)  # (B, T_max, 2, E)
@@ -130,6 +141,10 @@ class TemporalChainsDataset(Dataset):
         arr_u = np.array(batch_u)  # (B, T_max, 1, Glob_dim)
         arr_u = arr_u.transpose(1, 0, 2, 3)  # (T_max, B, 1, Glob_dim)
         batch_u_np = np.squeeze(arr_u, axis=2)  # (T_max, B, Glob_dim)
+
+        arr_jn = np.array(batch_jersey_numbers)  # (B, T_max, N)
+        arr_jn = arr_jn.transpose(1, 0, 2)  # (T_max, B, N)
+        batch_jn_np = arr_jn.reshape(T_max, -1)
 
         batch_masks_np = np.array(batch_masks).T  # (T_max, B)
 
@@ -153,6 +168,7 @@ class TemporalChainsDataset(Dataset):
             batches=batches,
             masks=batch_masks_np,
             u=batch_u_np,
+            jersey_numbers=batch_jn_np,
         )
 
 
@@ -164,12 +180,14 @@ def pad_chain(
     pad_x = np.zeros_like(c.features[0])
     pad_y = np.full_like(c.targets[0], -1)
     pad_u = np.zeros_like(c.u[0])
+    pad_jn = np.zeros_like(c.jersey_numbers[0])
 
     padded_ei = list(c.edge_indices)
     padded_ew = list(c.edge_weights)
     padded_x = list(c.features)
     padded_y = list(c.targets)
     padded_u = list(c.u)
+    padded_jn = list(c.jersey_numbers)
 
     for _ in range(num_pad_frames):
         padded_ei.append(pad_ei)
@@ -177,5 +195,6 @@ def pad_chain(
         padded_x.append(pad_x)
         padded_y.append(pad_y)
         padded_u.append(pad_u)
+        padded_jn.append(pad_jn)
 
-    return padded_ei, padded_ew, padded_x, padded_y, padded_u
+    return padded_ei, padded_ew, padded_x, padded_y, padded_u, padded_jn
