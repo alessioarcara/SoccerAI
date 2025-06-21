@@ -164,7 +164,6 @@ class Trainer(BaseTrainer):
         loss: torch.Tensor = self.criterion(out, batch.y)
         loss.backward()
         self.optim.step()
-        self.scheduler.step()
         return loss
 
     def _eval_step(self, batch: Batch) -> BatchEvalResult:
