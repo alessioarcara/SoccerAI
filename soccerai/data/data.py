@@ -215,7 +215,7 @@ def create_dataset(
     skip_player_stats: bool = False,
 ) -> None:
     logger.info("Loading event and player data from {}", event_data_path)
-    event_df, players_df = load_and_process_soccer_events(event_data_path)
+    event_df, players_df = load_and_process_soccer_events(event_data_path, True)
 
     pos_chains = _load_chains(ACCEPTED_POS_CHAINS_PATH)
     neg_chains = _load_chains(ACCEPTED_NEG_CHAINS_PATH)

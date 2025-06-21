@@ -291,7 +291,7 @@ class ChainCollector(Collector[Tuple[np.ndarray, List[Data]]]):
 
     def _fetch_frames(self):
         # Last data of each collected chain
-        return [(entry[0], entry[1][1][0]) for entry in self.storage.get_all_entries()]
+        return [(entry[0], entry[1][1][-1]) for entry in self.storage.get_all_entries()]
 
     @property
     def highest_confidence_chain(self):

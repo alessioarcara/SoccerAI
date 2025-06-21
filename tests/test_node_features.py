@@ -14,7 +14,6 @@ def test_add_velocity_two_players():
         "/home/soccerdata/FIFA_WorldCup_2022/Tracking Data"
     )
     augmented_players = enricher.add_velocity_per_player(players)
-    print(augmented_players)
 
     assert "velocity" in augmented_players.columns, "Velocity column missing"
     assert "direction" in augmented_players.columns, "Direction column missing"
