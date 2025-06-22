@@ -92,7 +92,6 @@ def main(args):
                 ChainCollector(1, cfg, train_ds.feature_names),
                 ChainCollector(0, cfg, train_ds.feature_names),
             ],
-            callbacks=[ExplainerCallback()],
         )
 
     else:
