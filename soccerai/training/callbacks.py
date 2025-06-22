@@ -48,7 +48,7 @@ class ExplainerCallback(Callback):
             collected_frames = c.frames
             num_frames = len(c)
 
-            node_masks, figs_np = [], []
+            node_masks, figs = [], []
             for i, (_, data) in enumerate(collected_frames):
                 data = data.clone()
                 data.x = data.x.float().requires_grad_(True)
@@ -63,7 +63,7 @@ class ExplainerCallback(Callback):
                     )
 
                     node_masks.append(explanation.node_mask.detach().cpu().numpy())
-                    figs_np.append(
+                    figs.append(
                         fig_to_numpy(
                             plot_player_feature_importance(
                                 node_masks[i],
@@ -75,13 +75,9 @@ class ExplainerCallback(Callback):
                         )
                     )
 
-            video_np = np.stack(figs_np).transpose(0, 3, 1, 2)
+            figs_np = np.stack(figs).transpose(0, 3, 1, 2)
             wandb.log(
-                {
-                    f"explain/video_{pos_type}": wandb.Video(
-                        video_np, fps=1, format="mp4"
-                    )
-                }
+                {f"explain/video_{pos_type}": wandb.Video(figs_np, fps=1, format="mp4")}
             )
 
             fig = plot_average_feature_importance(

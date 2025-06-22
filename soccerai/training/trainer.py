@@ -139,9 +139,14 @@ class BaseTrainer(ABC):
         for m in self.metrics:
             for name, value in m.compute():
                 log_dict[f"{split}/{name}"] = value
-            for name, fig in m.plot():
-                log_dict[f"{split}/{name}"] = wandb.Image(fig)
-                plt.close(fig)
+            for name, visual in m.plot():
+                if isinstance(visual, plt.Figure):
+                    log_dict[f"{split}/{name}"] = wandb.Image(visual)
+                    plt.close(visual)
+                else:
+                    log_dict[f"{split}/{name}"] = wandb.Video(
+                        visual, fps=1, format="mp4"
+                    )
 
         wandb.log(log_dict)
 
