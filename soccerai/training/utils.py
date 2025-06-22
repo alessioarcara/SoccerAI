@@ -5,6 +5,7 @@ import numpy as np
 import seaborn as sns
 import torch
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+from mplsoccer import Pitch
 from torch_geometric.data import Batch, Data
 from torch_geometric.seed import seed_everything
 from torch_geometric_temporal import Discrete_Signal
@@ -59,17 +60,6 @@ def plot_player_feature_importance(
     return fig
 
 
-def fig_to_numpy(
-    fig: plt.Figure,
-) -> np.ndarray:
-    canvas = FigureCanvasAgg(fig)
-    canvas.draw()
-    buf = canvas.buffer_rgba()
-    img_np = np.asarray(buf)
-    plt.close(fig)
-    return img_np
-
-
 def plot_average_feature_importance(
     node_masks: List[np.ndarray],
     feature_names: Sequence[str],
@@ -92,6 +82,84 @@ def plot_average_feature_importance(
     )
     plt.tight_layout()
     return fig
+
+
+def plot_pitch_frames_grid(
+    entries: Sequence[Tuple[float, Data]],
+    feature_names: Sequence[str],
+    grid_params: Dict[str, int],
+) -> plt.Figure:
+    x_col_idx = feature_names.index("x")
+    possession_team_col_idx = feature_names.index("is_possession_team_1")
+    ball_carrier_col_idx = feature_names.index("is_ball_carrier_1")
+
+    pitch = Pitch(
+        pitch_type="metricasports",
+        pitch_length=105,
+        pitch_width=68,
+        pitch_color="grass",
+        line_color="white",
+        linewidth=2,
+    )
+    fig, axs = pitch.grid(
+        **grid_params,
+        grid_height=0.95,
+        grid_width=0.95,
+        bottom=0.025,
+        endnote_height=0,
+        title_height=0,
+    )
+    axes = axs.flatten()
+
+    for i, (ax, (score, data)) in enumerate(zip(axes, entries), start=1):
+        node_features = data.x.detach().cpu().numpy()
+        jersey_numbers = data.jersey_numbers.detach().cpu().numpy()
+
+        xy_coords = node_features[:, x_col_idx : x_col_idx + 2]
+        teams = node_features[:, possession_team_col_idx].astype(int)
+        has_ball = node_features[:, ball_carrier_col_idx].astype(bool)
+
+        face_colours = np.where(teams == 0, "red", "blue")
+        edge_colours = np.where(has_ball, "white", face_colours)
+
+        ax.scatter(*xy_coords.T, c=face_colours, ec=edge_colours, s=200)
+
+        for (xi, yi), jersey_num in zip(xy_coords, jersey_numbers):
+            ax.text(
+                xi,
+                yi,
+                str(jersey_num),
+                fontsize=8,
+                fontweight="bold",
+                ha="center",
+                va="center",
+                color="white",
+            )
+
+        ax.set_title(
+            f"Frame {i} — Conf. {score:.2f}",
+            fontsize=12,
+            pad=4,
+        )
+        ax.axis("off")
+        ax.invert_yaxis()
+
+    for ax in axes[len(entries) :]:
+        ax.set_visible(False)
+
+    fig.tight_layout()
+    return fig
+
+
+def fig_to_numpy(
+    fig: plt.Figure,
+) -> np.ndarray:
+    canvas = FigureCanvasAgg(fig)
+    canvas.draw()
+    buf = canvas.buffer_rgba()
+    img_np = np.asarray(buf)
+    plt.close(fig)
+    return img_np
 
 
 def build_dummy_inputs(
@@ -124,6 +192,7 @@ def extract_chain(batch: Discrete_Signal, chain_idx: int) -> List[Data]:
     def _extract_graph(snapshot: Batch) -> Data:
         node_mask = snapshot.batch == chain_idx
         x = snapshot.x[node_mask]
+        jersey_numbers = snapshot.jersey_numbers[node_mask]
 
         start_edge_idx = 22 * 11 * chain_idx
         end_edge_idx = 22 * 11 * (chain_idx + 1)
@@ -133,6 +202,13 @@ def extract_chain(batch: Discrete_Signal, chain_idx: int) -> List[Data]:
         u = snapshot.u[chain_idx].unsqueeze(0)
         y = snapshot.y[chain_idx]
 
-        return Data(x=x, edge_index=edge_index, edge_weight=edge_attr, u=u, y=y)
+        return Data(
+            x=x,
+            edge_index=edge_index,
+            edge_attr=edge_attr,
+            u=u,
+            jersey_numbers=jersey_numbers,
+            y=y,
+        )
 
     return [_extract_graph(batch[t]) for t in range(batch.snapshot_count)]

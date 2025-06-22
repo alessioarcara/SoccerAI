@@ -137,12 +137,9 @@ class BaseTrainer(ABC):
         log_dict: Dict[str, Any] = {f"{split}/loss": mean_loss}
 
         for m in self.metrics:
-            results = m.compute()
-            for name, value in results:
+            for name, value in m.compute():
                 log_dict[f"{split}/{name}"] = value
-            plot_result = m.plot()
-            if plot_result:
-                name, fig = plot_result
+            for name, fig in m.plot():
                 log_dict[f"{split}/{name}"] = wandb.Image(fig)
                 plt.close(fig)
 
