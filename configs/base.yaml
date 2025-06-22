@@ -8,9 +8,9 @@ model:
   dhid: 128
 
 trainer:
-  bs: 32 
+  bs: 64
   n_epochs: 50
-  lr: 1e-3
+  lr: 1e-4
   wd: 1e-4
   eval_rate: 2
   gamma: 0.9
@@ -19,7 +19,7 @@ data:
   include_goal_features: True 
   include_ball_features: True 
   use_macro_roles: True 
-  use_augmentations: True 
+  use_augmentations: False 
   use_regression_imputing: False
   use_pca_on_roster_cols: False 
   mask_non_possession_shooting_stats: False 
@@ -28,12 +28,12 @@ data:
 
 collector:
   n_frames: 12         
-  n_rows: 3
-  n_cols: 4
-  fig_height: 12.0
+
+pitch_grid:
+  nrows: 3
+  ncols: 4
+  figheight: 12
 
 metrics:
   thr: 0.5
   fbeta: 1.0
-
-

@@ -31,11 +31,14 @@ class DataConfig(BaseModel):
     connection_mode: str
 
 
-class FrameCollectorConfig(BaseModel):
+class CollectorConfig(BaseModel):
     n_frames: int
-    n_rows: int
-    n_cols: int
-    fig_height: float
+
+
+class PitchGridConfig(BaseModel):
+    nrows: int
+    ncols: int
+    figheight: int
 
 
 class MetricsConfig(BaseModel):
@@ -50,8 +53,9 @@ class Config(BaseModel):
     model: ModelConfig
     trainer: TrainerConfig
     data: DataConfig
-    collector: FrameCollectorConfig
+    collector: CollectorConfig
     metrics: MetricsConfig
+    pitch_grid: PitchGridConfig
 
 
 def _load_yaml(path: str | Path):
