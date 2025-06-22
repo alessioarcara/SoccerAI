@@ -12,6 +12,15 @@ from torch_geometric_temporal import Discrete_Signal
 
 T = TypeVar("T")
 
+_PITCH_KWARGS: dict = {
+    "pitch_type": "metricasports",
+    "pitch_length": 105,
+    "pitch_width": 68,
+    "pitch_color": "grass",
+    "line_color": "white",
+    "linewidth": 2,
+}
+
 
 def fix_random(seed: int):
     seed_everything(seed)
@@ -35,6 +44,56 @@ class TopKStorage(Generic[T]):
 
     def get_all_entries(self) -> List[Tuple[float, T]]:
         return list(self._items)
+
+
+def _prepare_frame_data(
+    data: Data,
+    idx_x: int,
+    idx_team: int,
+    idx_ball: int,
+) -> Tuple[np.ndarray, ...]:
+    node_features = data.x.detach().cpu().numpy()
+    xy = node_features[:, idx_x : idx_x + 2]
+    x, y = xy.T
+
+    teams = node_features[:, idx_team].astype(int)
+    has_ball = node_features[:, idx_ball].astype(bool)
+
+    face_colours = np.where(teams == 0, "red", "blue")
+    edge_colours = np.where(has_ball, "white", face_colours)
+
+    jersey_numbers = data.jersey_numbers.detach().cpu().numpy()
+
+    return x, y, jersey_numbers, face_colours, edge_colours
+
+
+def _draw_frame(
+    ax: plt.Axes,
+    x: np.ndarray,
+    y: np.ndarray,
+    jersey_numbers: np.ndarray,
+    face_colours: np.ndarray,
+    edge_colours: np.ndarray,
+    title: str,
+) -> None:
+    ax.scatter(x, y, c=face_colours, ec=edge_colours, s=200)
+
+    for xi, yi, num in zip(x, y, jersey_numbers):
+        ax.text(
+            xi,
+            yi,
+            str(num),
+            fontsize=8,
+            fontweight="bold",
+            ha="center",
+            va="center",
+            color="white",
+            zorder=4,
+        )
+
+    ax.set_title(title, fontsize=12, pad=4)
+    ax.axis("off")
+    ax.invert_yaxis()
 
 
 def plot_player_feature_importance(
@@ -89,18 +148,11 @@ def plot_pitch_frames_grid(
     feature_names: Sequence[str],
     grid_params: Dict[str, int],
 ) -> plt.Figure:
-    x_col_idx = feature_names.index("x")
-    possession_team_col_idx = feature_names.index("is_possession_team_1")
-    ball_carrier_col_idx = feature_names.index("is_ball_carrier_1")
+    idx_x = feature_names.index("x")
+    idx_team = feature_names.index("is_possession_team_1")
+    idx_ball = feature_names.index("is_ball_carrier_1")
 
-    pitch = Pitch(
-        pitch_type="metricasports",
-        pitch_length=105,
-        pitch_width=68,
-        pitch_color="grass",
-        line_color="white",
-        linewidth=2,
-    )
+    pitch = Pitch(**_PITCH_KWARGS)
     fig, axs = pitch.grid(
         **grid_params,
         grid_height=0.95,
@@ -111,44 +163,60 @@ def plot_pitch_frames_grid(
     )
     axes = axs.flatten()
 
-    for i, (ax, (score, data)) in enumerate(zip(axes, entries), start=1):
-        node_features = data.x.detach().cpu().numpy()
-        jersey_numbers = data.jersey_numbers.detach().cpu().numpy()
-
-        xy_coords = node_features[:, x_col_idx : x_col_idx + 2]
-        teams = node_features[:, possession_team_col_idx].astype(int)
-        has_ball = node_features[:, ball_carrier_col_idx].astype(bool)
-
-        face_colours = np.where(teams == 0, "red", "blue")
-        edge_colours = np.where(has_ball, "white", face_colours)
-
-        ax.scatter(*xy_coords.T, c=face_colours, ec=edge_colours, s=200)
-
-        for (xi, yi), jersey_num in zip(xy_coords, jersey_numbers):
-            ax.text(
-                xi,
-                yi,
-                str(jersey_num),
-                fontsize=8,
-                fontweight="bold",
-                ha="center",
-                va="center",
-                color="white",
-            )
-
-        ax.set_title(
-            f"Frame {i} — Conf. {score:.2f}",
-            fontsize=12,
-            pad=4,
+    for i, (ax, (score, data)) in enumerate(zip(axes, entries), 1):
+        x, y, jerseys, face_c, edge_c = _prepare_frame_data(
+            data, idx_x, idx_team, idx_ball
         )
-        ax.axis("off")
-        ax.invert_yaxis()
+        _draw_frame(
+            ax,
+            x,
+            y,
+            jerseys,
+            face_c,
+            edge_c,
+            title=f"Frame {i} — Conf. {score:.2f}",
+        )
 
     for ax in axes[len(entries) :]:
         ax.set_visible(False)
 
     fig.tight_layout()
     return fig
+
+
+def plot_chain_frames(
+    snapshots: Sequence[Data],
+    scores: Sequence[float],
+    feature_names: Sequence[str],
+) -> np.ndarray:
+    idx_x = feature_names.index("x")
+    idx_team = feature_names.index("is_possession_team_1")
+    idx_ball = feature_names.index("is_ball_carrier_1")
+
+    pitch = Pitch(**_PITCH_KWARGS)
+    figs = []
+
+    for i, (score, snapshot) in enumerate(zip(scores, snapshots), 1):
+        fig, ax = pitch.draw()
+
+        x, y, jerseys, face_c, edge_c = _prepare_frame_data(
+            snapshot, idx_x, idx_team, idx_ball
+        )
+
+        _draw_frame(
+            ax,
+            x,
+            y,
+            jerseys,
+            face_c,
+            edge_c,
+            title=f"Frame {i} — Conf. {score:.2f}",
+        )
+
+        figs.append(fig_to_numpy(fig))
+        plt.close(fig)
+
+    return np.array(figs).transpose(0, 3, 1, 2)
 
 
 def fig_to_numpy(

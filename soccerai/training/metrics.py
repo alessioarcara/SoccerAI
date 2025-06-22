@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Generic, List, Optional, Sequence, Tuple, TypeVar
+from typing import Generic, List, Optional, Sequence, Tuple, TypeVar, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,7 +11,12 @@ from torch_geometric_temporal.signal import Discrete_Signal
 from torchmetrics.functional.classification import binary_precision_recall_curve
 
 from soccerai.training.trainer_config import Config, MetricsConfig
-from soccerai.training.utils import TopKStorage, extract_chain, plot_pitch_frames_grid
+from soccerai.training.utils import (
+    TopKStorage,
+    extract_chain,
+    plot_chain_frames,
+    plot_pitch_frames_grid,
+)
 
 T = TypeVar("T")
 
@@ -32,7 +37,10 @@ class Metric(ABC):
         pass
 
     @abstractmethod
-    def plot(self) -> List[Tuple[str, plt.Figure]]:
+    def plot(self) -> List[Tuple[str, Union[plt.Figure, np.ndarray]]]:
+        """
+        Returns a tuple containing the plot title and either the image data as a static figure or the video frames as a numpy array.
+        """
         pass
 
 
@@ -78,7 +86,7 @@ class BinaryConfusionMatrix(Metric):
     def reset(self) -> None:
         self.cm = torch.zeros((2, 2), dtype=torch.int64)
 
-    def plot(self) -> List[Tuple[str, plt.Figure]]:
+    def plot(self) -> List[Tuple[str, Union[plt.Figure, np.ndarray]]]:
         cm_np = self.cm.cpu().numpy()
         fig, ax = plt.subplots(figsize=(8, 6))
         sns.heatmap(
@@ -123,7 +131,7 @@ class BinaryPrecisionRecallCurve(Metric):
         self.all_preds_probs = []
         self.all_true_labels = []
 
-    def plot(self) -> List[Tuple[str, plt.Figure]]:
+    def plot(self) -> List[Tuple[str, Union[plt.Figure, np.ndarray]]]:
         all_preds_probs_flat = torch.cat(self.all_preds_probs)
         all_true_labels_flat = torch.cat(self.all_true_labels).long()
         p, r, thresholds = binary_precision_recall_curve(
@@ -197,7 +205,7 @@ class FrameCollector(Collector[Data]):
         for i in indices:
             self.storage.add((float(probs_np[i]), batch[i]))
 
-    def plot(self) -> List[Tuple[str, plt.Figure]]:
+    def plot(self) -> List[Tuple[str, Union[plt.Figure, np.ndarray]]]:
         entries = self.storage.get_all_entries()
 
         if not entries:
@@ -238,7 +246,7 @@ class ChainCollector(Collector[Tuple[np.ndarray, List[Data]]]):
                     )
                 )
 
-    def plot(self) -> List[Tuple[str, plt.Figure]]:
+    def plot(self) -> List[Tuple[str, Union[plt.Figure, np.ndarray]]]:
         chain_predictions = [entry[1][0] for entry in self.storage.get_all_entries()]
         if not chain_predictions:
             return []
@@ -282,11 +290,15 @@ class ChainCollector(Collector[Tuple[np.ndarray, List[Data]]]):
             self.frames, self.feature_names, self.cfg.pitch_grid.model_dump()
         )
 
-        # plot_pitch_frames_grid([(0.0, frame) for frame in chain], self.feature_names, {"figheight": 12, "nrows": int(len(chain) / 5), "ncols": 5}).savefig("test.png")
+        scores_np, snapshots = self.highest_confidence_chain[1]
+        chain_frames_np = plot_chain_frames(
+            snapshots, scores_np.tolist(), self.feature_names
+        )
 
         return [
-            (f"{self.positive_type}_chains", fig),
-            (f"{self.positive_type}_frames", pitch_grid_fig),
+            (f"{self.positive_type}_chains_predictions", fig),
+            (f"{self.positive_type}_chains_last_frames", pitch_grid_fig),
+            (f"{self.positive_type}_chains_frames", chain_frames_np),
         ]
 
     def _fetch_frames(self):
