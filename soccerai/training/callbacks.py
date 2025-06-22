@@ -137,10 +137,6 @@ class BestChainExplainerCallback(Callback):
             ),
         )
 
-        jersey_idx = None
-        if "jerseyNum" in trainer.feature_names:
-            jersey_idx = trainer.feature_names.index("jerseyNum")
-
         for c in chain_collectors:
             pos_type = "TP" if c.target_label == 1 else "FP"
             _, (_, best_chain) = c.highest_confidence_chain
@@ -156,13 +152,7 @@ class BestChainExplainerCallback(Callback):
                 d = data.clone().to(trainer.device)
 
                 N = d.x.size(0)
-                if hasattr(d, "jersey_numbers"):
-                    jersey_numbers = d.jersey_numbers.cpu().numpy()
-                elif jersey_idx is not None:
-                    jersey_numbers = d.x[:, jersey_idx].long().cpu().numpy()
-                else:
-                    jersey_numbers = np.arange(N)
-
+                jersey_numbers = d.jersey_numbers.cpu().numpy()
                 d.x = d.x.float().requires_grad_(True)
                 d.u = d.u.float().requires_grad_(True)
                 d.edge_weight = d.edge_weight.float()
@@ -210,7 +200,7 @@ class BestChainExplainerCallback(Callback):
             video_np = np.stack(frames_np).transpose(0, 3, 1, 2)
             wandb.log(
                 {
-                    f"explain/temporal_best_chain_label_{c.target_label}": wandb.Video(
+                    f"explain/temporal_{pos_type}_best_chain": wandb.Video(
                         video_np, fps=1, format="mp4"
                     )
                 }
