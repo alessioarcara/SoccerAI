@@ -30,7 +30,10 @@ class GCNBackbone(nn.Module):
 class GCNIIBackbone(nn.Module):
     def __init__(self, din: int, dmid: int, dout: int, n_layers: int):
         super(GCNIIBackbone, self).__init__()
-        self.lin1 = pyg_nn.Linear(din, dmid)
+        if din != dmid:
+            self.lin1 = pyg_nn.Linear(din, dmid)
+        else:
+            self.lin1 = nn.Identity()
         self.convs = nn.ModuleList()
         for i in range(n_layers):
             self.convs.append(
@@ -38,7 +41,10 @@ class GCNIIBackbone(nn.Module):
                     dmid, alpha=0.5, theta=1.0, layer=i + 1, shared_weights=False
                 )
             )
-        self.lin2 = pyg_nn.Linear(dmid, dout)
+        if dmid != dout:
+            self.lin2 = pyg_nn.Linear(dmid, dout)
+        else:
+            self.lin2 = nn.Identity()
 
     def forward(
         self,
