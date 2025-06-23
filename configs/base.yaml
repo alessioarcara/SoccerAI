@@ -1,11 +1,16 @@
 project_name: "soccerai"
 seed: 42
-use_temporal: True 
+use_temporal: False 
 
 model:
   model_name: "gcrnn"
+  backbone: "graphsage"
   dmid: 256
   dhid: 128
+  num_layers: 2
+  dropout_layer: 0.1
+  dropout_head: 0.5
+  aggr_type: "pool"
 
 trainer:
   bs: 64

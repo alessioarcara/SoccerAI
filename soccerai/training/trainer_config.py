@@ -8,6 +8,11 @@ class ModelConfig(BaseModel):
     model_name: str
     dmid: int
     dhid: int
+    backbone: str
+    num_layers: int
+    dropout_layer: float
+    dropout_head: float
+    aggr_type: str
 
 
 class TrainerConfig(BaseModel):

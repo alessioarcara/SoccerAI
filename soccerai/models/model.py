@@ -8,7 +8,7 @@ import torch_geometric_temporal.nn as pygt_nn
 from torch_geometric.typing import Adj, OptTensor
 
 from soccerai.data.dataset import WorldCup2022Dataset
-from soccerai.models.backbones import GCNBackbone
+from soccerai.models.backbones import GCNBackbone, GraphSAGEBackbone
 from soccerai.models.heads import GraphClassificationHead
 from soccerai.training.trainer_config import Config
 
@@ -20,7 +20,24 @@ def create_model(cfg: Config, train_ds: WorldCup2022Dataset) -> nn.Module:
                 train_ds.num_node_features, train_ds.num_global_features, cfg.model.dmid
             )
         case "gcrnn":
-            return GCRNN(train_ds.num_node_features, train_ds.num_global_features)
+            return GCRNN(
+                train_ds.num_node_features,
+                train_ds.num_global_features,
+                cfg.model.backbone,
+                cfg.model.num_layers,
+                cfg.model.dropout_head,
+            )
+
+        case "graphsage":
+            return GraphSAGE(
+                node_feature_din=train_ds.num_node_features,
+                glob_feature_din=train_ds.num_global_features,
+                dmid=cfg.model.dmid,
+                num_layers=cfg.model.num_layers,
+                dropout_layer=cfg.model.dropout_layer,
+                dropout_head=cfg.model.dropout_head,
+                aggr_type=cfg.model.aggr_type,
+            )
         case _:
             raise ValueError("Invalid model name")
 
@@ -30,7 +47,7 @@ class GCN(torch.nn.Module):
         self, node_feature_din: int, glob_feature_din: int, dmid: int, dout: int = 1
     ):
         super(GCN, self).__init__()
-        self.backbone = GCNBackbone(node_feature_din, dmid)
+        self.backbone = GCNBackbone(node_feature_din, dmid, dmid)
         self.global_proj = nn.Linear(glob_feature_din, dmid)
         self.mean_pool = pyg_nn.MeanAggregation()
         self.head = GraphClassificationHead(dmid * 2, dout)
@@ -53,18 +70,82 @@ class GCN(torch.nn.Module):
         return self.head(fused_emb)
 
 
+class GraphSAGE(nn.Module):
+    """
+    Implements the GraphSAGE architecture as in the original
+    paper *Inductive Representation Learning on Large Graphs* (Hamilton et al.,
+    2017) — arXiv:1706.02216.
+    """
+
+    def __init__(
+        self,
+        node_feature_din: int,
+        glob_feature_din: int,
+        dmid: int,
+        dropout_layer: float,
+        dropout_head: float,
+        num_layers: int,
+        aggr_type: str,
+        l2_norm: bool = True,
+        dout: int = 1,
+    ) -> None:
+        super().__init__()
+        self.backbone = GraphSAGEBackbone(
+            din=node_feature_din,
+            dmid=dmid,
+            dout=dmid,
+            num_layers=num_layers,
+            aggr_type=aggr_type,
+            l2_norm=l2_norm,
+            dropout=dropout_layer,
+        )
+        self.mean_pool = pyg_nn.MeanAggregation()
+        self.global_proj = nn.Linear(glob_feature_din, dmid)
+        self.head = GraphClassificationHead(dmid * 2, dout, p_drop=dropout_head)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        edge_index: torch.Tensor,
+        u: torch.Tensor,
+        batch: OptTensor = None,
+        edge_weight: OptTensor = None,
+        edge_attr: OptTensor = None,
+        batch_size: Optional[int] = None,
+    ) -> torch.Tensor:
+        node_emb = self.backbone(x, edge_index)
+        graph_emb = self.mean_pool(node_emb, batch)
+
+        global_emb = F.relu(self.global_proj(u), inplace=True)
+        fused = torch.cat([graph_emb, global_emb], dim=-1)
+
+        return self.head(fused)
+
+
 class GCRNN(nn.Module):
-    def __init__(self, node_feature_din: int, glob_feature_din: int, dout: int = 1):
+    def __init__(
+        self,
+        node_feature_din: int,
+        glob_feature_din: int,
+        backbone: str,
+        n_layers: int,
+        p_drop: float,
+        dout: int = 1,
+    ):
         super(GCRNN, self).__init__()
-        self.gcn1 = pyg_nn.GCNConv(node_feature_din, 256)
-        self.gcn2 = pyg_nn.GCNConv(256, 128)
+        self.backbone: nn.Module
+        match backbone:
+            case "gcn":
+                self.backbone = GCNBackbone(node_feature_din, 256, 128)
+            case "graphsage":
+                self.backbone = GraphSAGEBackbone(node_feature_din, 256, 128)
 
         self.global_proj = nn.Linear(glob_feature_din, 128)
 
         self.gcrn = pygt_nn.recurrent.GConvGRU(128 + node_feature_din, 256, 1)
 
         self.mean_pool = pyg_nn.MeanAggregation()
-        self.head = GraphClassificationHead(256, dout)
+        self.head = GraphClassificationHead(256, dout, p_drop)
 
     def forward(
         self,
@@ -77,12 +158,7 @@ class GCRNN(nn.Module):
         batch_size: Optional[int] = None,
         prev_h: OptTensor = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        f = F.relu(self.gcn1(x, edge_index, edge_weight))
-
-        if prev_h is None:
-            prev_h = torch.zeros_like(f, device=f.device)
-
-        z = F.relu(self.gcn2(f + prev_h, edge_index, edge_weight))
+        z = self.backbone(x, edge_index, edge_weight, prev_h=prev_h)
 
         h = self.gcrn(torch.concat([z, x], dim=-1), edge_index, edge_weight, prev_h)
 
