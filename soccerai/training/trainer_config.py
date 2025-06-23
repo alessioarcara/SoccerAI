@@ -8,6 +8,9 @@ class ModelConfig(BaseModel):
     model_name: str
     dmid: int
     dhid: int
+    p_drop: float
+    n_layers: int
+    backbone: str
 
 
 class TrainerConfig(BaseModel):
