@@ -6,10 +6,10 @@ from torch_geometric.typing import Adj, OptTensor
 
 
 class GCNBackbone(nn.Module):
-    def __init__(self, din: int, dmid: int):
+    def __init__(self, din: int, dmid: int, dout: int):
         super(GCNBackbone, self).__init__()
         self.conv1 = pyg_nn.GCNConv(din, dmid)
-        self.conv2 = pyg_nn.GCNConv(dmid, dmid)
+        self.conv2 = pyg_nn.GCNConv(dmid, dout)
 
     def forward(
         self,
@@ -17,9 +17,14 @@ class GCNBackbone(nn.Module):
         edge_index: Adj,
         edge_weight: OptTensor = None,
         edge_attr: OptTensor = None,
+        prev_h: OptTensor = None,
     ):
-        x = F.relu(self.conv1(x, edge_index, edge_weight), inplace=True)
-        return F.relu(self.conv2(x, edge_index, edge_weight), inplace=True)
+        f = F.relu(self.conv1(x, edge_index, edge_weight))
+
+        if prev_h is None:
+            prev_h = torch.zeros_like(f, device=f.device)
+
+        return F.relu(self.conv2(f + prev_h, edge_index, edge_weight))
 
 
 # class GIN(nn.Module):
@@ -78,3 +83,67 @@ class GCNBackbone(nn.Module):
 #         h = F.relu(self.lin1(h))
 #         h = F.dropout(h, p=0.5, training=self.training)
 #         return self.lin2(h)
+
+
+class GATv2Backbone(nn.Module):
+    def __init__(
+        self,
+        din: int,
+        dmid: int,
+        dout: int,
+        num_layers: int = 3,
+        num_heads: int = 8,
+        dropout: float = 0.6,
+    ):
+        super(GATv2Backbone, self).__init__()
+        assert num_layers >= 2
+        self.dropout = dropout
+        self.convs = nn.ModuleList()
+
+        for i in range(num_layers):
+            in_dim = din if i == 0 else dmid
+            if i < num_layers - 1:
+                conv = pyg_nn.GATv2Conv(
+                    in_dim,
+                    dmid // num_heads,
+                    heads=num_heads,
+                    concat=True,  # concatenate
+                    dropout=dropout,
+                )
+            else:
+                conv = pyg_nn.GATv2Conv(
+                    in_dim,
+                    dout,
+                    heads=num_heads,
+                    concat=False,  # average
+                    dropout=dropout,
+                )
+
+            self.convs.append(conv)
+
+    # ------------------------------------------------------------------
+    def forward(
+        self,
+        x: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_weight: OptTensor = None,
+        prev_h: OptTensor = None,
+    ):
+        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = F.elu(self.convs[0](x, edge_index))
+        x = F.dropout(x, p=self.dropout, training=self.training)
+
+        if prev_h is None:
+            prev_h = torch.zeros_like(x)
+
+        last_idx = len(self.convs) - 1
+        for idx, conv in enumerate(self.convs[1:], start=1):
+            h_in = x + prev_h
+            if idx < last_idx:
+                x = F.elu(conv(h_in, edge_index))
+                x = F.dropout(x, p=self.dropout, training=self.training)
+            else:
+                x = conv(h_in, edge_index)
+            prev_h = h_in
+
+        return x
