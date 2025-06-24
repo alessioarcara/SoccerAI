@@ -11,6 +11,8 @@ class ModelConfig(BaseModel):
     p_drop: float
     n_layers: int
     backbone: str
+    use_norm: bool
+    readout: str
 
 
 class TrainerConfig(BaseModel):

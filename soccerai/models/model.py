@@ -29,6 +29,8 @@ def create_model(cfg: Config, train_ds: WorldCup2022Dataset) -> nn.Module:
                 cfg.model.dmid,
                 cfg.model.p_drop,
                 cfg.model.n_layers,
+                cfg.model.use_norm,
+                cfg.model.readout,
             )
         case "gcrnn":
             return GCRNN(
@@ -37,6 +39,8 @@ def create_model(cfg: Config, train_ds: WorldCup2022Dataset) -> nn.Module:
                 cfg.model.backbone,
                 cfg.model.n_layers,
                 cfg.model.p_drop,
+                cfg.model.use_norm,
+                cfg.model.readout,
             )
         case _:
             raise ValueError("Invalid model name")
@@ -83,12 +87,18 @@ class GCNII(nn.Module):
         dmid: int,
         p_drop: float,
         n_layers: int,
+        use_norm: bool,
+        readout: str,
         dout: int = 1,
     ):
         super(GCNII, self).__init__()
-        self.backbone = GCNIIBackbone(node_feature_din, dmid, dmid, n_layers)
+        self.backbone = GCNIIBackbone(node_feature_din, dmid, dmid, n_layers, use_norm)
         self.global_proj = nn.Linear(glob_feature_din, dmid)
-        self.mean_pool = pyg_nn.MeanAggregation()
+        match readout:
+            case "mean":
+                self.pool = pyg_nn.MeanAggregation()
+            case "sum":
+                self.pool = pyg_nn.SumAggregation()
         self.head = GraphClassificationHead(dmid * 2, dout, p_drop)
 
     def forward(
@@ -102,7 +112,7 @@ class GCNII(nn.Module):
         batch_size: Optional[int] = None,
     ):
         node_emb = self.backbone(x, edge_index, edge_weight, edge_attr)
-        graph_emb = self.mean_pool(node_emb, batch, dim_size=batch_size)
+        graph_emb = self.pool(node_emb, batch, dim_size=batch_size)
         global_emb = F.relu(self.global_proj(u), inplace=True)
 
         fused_emb = torch.cat([graph_emb, global_emb], dim=-1)
@@ -117,6 +127,8 @@ class GCRNN(nn.Module):
         backbone: str,
         n_layers: int,
         p_drop: float,
+        use_norm: bool,
+        readout: str,
         dout: int = 1,
     ):
         super(GCRNN, self).__init__()
@@ -125,13 +137,18 @@ class GCRNN(nn.Module):
             case "gcn":
                 self.backbone = GCNBackbone(node_feature_din, 256, 128)
             case "gcn2":
-                self.backbone = GCNIIBackbone(node_feature_din, 256, 128, n_layers)
+                self.backbone = GCNIIBackbone(
+                    node_feature_din, 256, 128, n_layers, use_norm
+                )
 
         self.global_proj = nn.Linear(glob_feature_din, 128)
 
         self.gcrn = pygt_nn.recurrent.GConvGRU(128 + node_feature_din, 256, 1)
-
-        self.mean_pool = pyg_nn.MeanAggregation()
+        match readout:
+            case "mean":
+                self.pool = pyg_nn.MeanAggregation()
+            case "sum":
+                self.pool = pyg_nn.SumAggregation()
         self.head = GraphClassificationHead(256, dout, p_drop)
 
     def forward(
@@ -145,11 +162,18 @@ class GCRNN(nn.Module):
         batch_size: Optional[int] = None,
         prev_h: OptTensor = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        z = self.backbone(x, edge_index, edge_weight, prev_h=prev_h)
+        z = self.backbone(
+            x,
+            edge_index,
+            edge_weight,
+            prev_h=prev_h,
+            batch=batch,
+            batch_size=batch_size,
+        )
 
         h = self.gcrn(torch.concat([z, x], dim=-1), edge_index, edge_weight, prev_h)
 
-        graph_emb = self.mean_pool(z, index=batch, dim_size=batch_size)
+        graph_emb = self.pool(z, index=batch, dim_size=batch_size)
         global_emb = F.relu(self.global_proj(u))
 
         fused_emb = torch.cat([graph_emb, global_emb], dim=-1)
