@@ -91,13 +91,15 @@ class GATv2Backbone(nn.Module):
         din: int,
         dmid: int,
         dout: int,
+        use_edge_attr: bool,
         num_layers: int = 3,
         num_heads: int = 8,
-        dropout: float = 0.6,
+        dropout: float = 0.1,
     ):
         super(GATv2Backbone, self).__init__()
         assert num_layers >= 2
         self.dropout = dropout
+        self.use_edge_attr = use_edge_attr
         self.convs = nn.ModuleList()
 
         for i in range(num_layers):
@@ -109,6 +111,7 @@ class GATv2Backbone(nn.Module):
                     heads=num_heads,
                     concat=True,  # concatenate
                     dropout=dropout,
+                    edge_dim=1 if use_edge_attr else None,
                 )
             else:
                 conv = pyg_nn.GATv2Conv(
@@ -117,6 +120,7 @@ class GATv2Backbone(nn.Module):
                     heads=num_heads,
                     concat=False,  # average
                     dropout=dropout,
+                    edge_dim=1 if use_edge_attr else None,
                 )
 
             self.convs.append(conv)
@@ -129,8 +133,13 @@ class GATv2Backbone(nn.Module):
         edge_weight: OptTensor = None,
         prev_h: OptTensor = None,
     ):
+        edge_attr = (
+            edge_weight.unsqueeze(-1)
+            if (self.use_edge_attr and edge_weight is not None)
+            else None
+        )
         x = F.dropout(x, p=self.dropout, training=self.training)
-        x = F.elu(self.convs[0](x, edge_index))
+        x = F.elu(self.convs[0](x, edge_index, edge_attr=edge_attr))
         x = F.dropout(x, p=self.dropout, training=self.training)
 
         if prev_h is None:
@@ -140,7 +149,7 @@ class GATv2Backbone(nn.Module):
         for idx, conv in enumerate(self.convs[1:], start=1):
             h_in = x + prev_h
             if idx < last_idx:
-                x = F.elu(conv(h_in, edge_index))
+                x = F.elu(conv(h_in, edge_index, edge_attr=edge_attr))
                 x = F.dropout(x, p=self.dropout, training=self.training)
             else:
                 x = conv(h_in, edge_index)

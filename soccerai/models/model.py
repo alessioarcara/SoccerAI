@@ -21,17 +21,19 @@ def create_model(cfg: Config, train_ds: WorldCup2022Dataset) -> nn.Module:
             )
         case "gcrnn":
             return GCRNN(
-                train_ds.num_node_features,
-                train_ds.num_global_features,
-                cfg.model.backbone,
-                cfg.model.num_layers,
-                cfg.model.dropout_head,
+                node_feature_din=train_ds.num_node_features,
+                glob_feature_din=train_ds.num_global_features,
+                backbone=cfg.model.backbone,
+                n_layers=cfg.model.num_layers,
+                p_drop=cfg.model.dropout_head,
+                use_edge_attr=cfg.model.use_edge_attr,
             )
         case "gatv2":
             return GATv2(
-                train_ds.num_node_features,
-                train_ds.num_global_features,
+                node_feature_din=train_ds.num_node_features,
+                glob_feature_din=train_ds.num_global_features,
                 dmid=cfg.model.dmid,
+                use_edge_attr=cfg.model.use_edge_attr,
                 dropout_layer=cfg.model.dropout_layer,
                 dropout_head=cfg.model.dropout_head,
                 num_layers=cfg.model.num_layers,
@@ -76,6 +78,7 @@ class GCRNN(nn.Module):
         backbone: str,
         n_layers: int,
         p_drop: float,
+        use_edge_attr: bool,
         dout: int = 1,
     ):
         super(GCRNN, self).__init__()
@@ -84,7 +87,9 @@ class GCRNN(nn.Module):
             case "gcn":
                 self.backbone = GCNBackbone(node_feature_din, 256, 128)
             case "gatv2":
-                self.backbone = GATv2Backbone(node_feature_din, 256, 128)
+                self.backbone = GATv2Backbone(
+                    node_feature_din, 256, 128, use_edge_attr=use_edge_attr
+                )
 
         self.global_proj = nn.Linear(glob_feature_din, 128)
 
@@ -120,9 +125,10 @@ class GCRNN(nn.Module):
 class GATv2(nn.Module):
     def __init__(
         self,
-        node_din,
-        glob_din,
+        node_feature_din,
+        glob_feature_din,
         dmid,
+        use_edge_attr,
         dropout_layer=0.6,
         dropout_head=0.5,
         num_layers=3,
@@ -130,10 +136,15 @@ class GATv2(nn.Module):
     ):
         super().__init__()
         self.backbone = GATv2Backbone(
-            node_din, dmid=dmid, dout=dmid, num_layers=num_layers, dropout=dropout_layer
+            node_feature_din,
+            dmid=dmid,
+            dout=dmid,
+            use_edge_attr=use_edge_attr,
+            num_layers=num_layers,
+            dropout=dropout_layer,
         )
         self.mean_pool = pyg_nn.MeanAggregation()
-        self.global_proj = nn.Linear(glob_din, dmid)
+        self.global_proj = nn.Linear(glob_feature_din, dmid)
         self.head = GraphClassificationHead(dmid * 2, dout=1, p_drop=dropout_head)
 
     def forward(

@@ -13,6 +13,7 @@ class ModelConfig(BaseModel):
     num_layers: int
     dropout_layer: float
     dropout_head: float
+    use_edge_attr: bool
 
 
 class TrainerConfig(BaseModel):
