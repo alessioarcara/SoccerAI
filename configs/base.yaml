@@ -6,14 +6,16 @@ model:
   model_name: "gcrnn"
   dmid: 256
   dhid: 128
-  p_drop: 0.2
+  head_drop: 0.5
+  conv_drop: 0.1
   n_layers: 9
   backbone: 'gcn2'
-  use_norm: False
-  readout: 'sum'
+  norm: ''
+  readout: 'mean'
+  skip_stride: 1
 
 trainer:
-  bs: 128
+  bs: 64
   n_epochs: 75
   lr: 1e-4
   wd: 1e-4
@@ -24,7 +26,7 @@ data:
   include_goal_features: True 
   include_ball_features: True 
   use_macro_roles: True 
-  use_augmentations: True 
+  use_augmentations: False 
   use_regression_imputing: False
   use_pca_on_roster_cols: False 
   mask_non_possession_shooting_stats: False 

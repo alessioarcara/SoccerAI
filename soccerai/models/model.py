@@ -10,6 +10,7 @@ from torch_geometric.typing import Adj, OptTensor
 from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.models.backbones import GCNBackbone, GCNIIBackbone
 from soccerai.models.heads import GraphClassificationHead
+from soccerai.models.utils import get_norm, get_readout
 from soccerai.training.trainer_config import Config
 
 
@@ -20,17 +21,22 @@ def create_model(cfg: Config, train_ds: WorldCup2022Dataset) -> nn.Module:
                 train_ds.num_node_features,
                 train_ds.num_global_features,
                 cfg.model.dmid,
-                cfg.model.p_drop,
+                cfg.model.head_drop,
+                cfg.model.conv_drop,
+                get_norm(cfg.model.norm),
+                get_readout(cfg.model.readout),
             )
         case "gcn2":
             return GCNII(
                 train_ds.num_node_features,
                 train_ds.num_global_features,
                 cfg.model.dmid,
-                cfg.model.p_drop,
+                cfg.model.head_drop,
+                cfg.model.conv_drop,
                 cfg.model.n_layers,
-                cfg.model.use_norm,
-                cfg.model.readout,
+                get_norm(cfg.model.norm),
+                get_readout(cfg.model.readout),
+                cfg.model.skip_stride,
             )
         case "gcrnn":
             return GCRNN(
@@ -38,9 +44,11 @@ def create_model(cfg: Config, train_ds: WorldCup2022Dataset) -> nn.Module:
                 train_ds.num_global_features,
                 cfg.model.backbone,
                 cfg.model.n_layers,
-                cfg.model.p_drop,
-                cfg.model.use_norm,
-                cfg.model.readout,
+                cfg.model.head_drop,
+                cfg.model.conv_drop,
+                get_norm(cfg.model.norm),
+                get_readout(cfg.model.readout),
+                cfg.model.skip_stride,
             )
         case _:
             raise ValueError("Invalid model name")
@@ -52,14 +60,17 @@ class GCN(torch.nn.Module):
         node_feature_din: int,
         glob_feature_din: int,
         dmid: int,
-        p_drop: float,
+        head_drop: float,
+        conv_drop: float,
+        norm: Optional[nn.Module],
+        readout: pyg_nn.Aggregation,
         dout: int = 1,
     ):
         super(GCN, self).__init__()
-        self.backbone = GCNBackbone(node_feature_din, dmid, dmid)
+        self.backbone = GCNBackbone(node_feature_din, dmid, dmid, conv_drop, norm)
         self.global_proj = nn.Linear(glob_feature_din, dmid)
-        self.mean_pool = pyg_nn.MeanAggregation()
-        self.head = GraphClassificationHead(dmid * 2, dout, p_drop)
+        self.readout = readout
+        self.head = GraphClassificationHead(dmid * 2, dout, head_drop)
 
     def forward(
         self,
@@ -72,7 +83,7 @@ class GCN(torch.nn.Module):
         batch_size: Optional[int] = None,
     ):
         node_emb = self.backbone(x, edge_index, edge_weight, edge_attr)
-        graph_emb = self.mean_pool(node_emb, batch, dim_size=batch_size)
+        graph_emb = self.readout(node_emb, batch, dim_size=batch_size)
         global_emb = F.relu(self.global_proj(u), inplace=True)
 
         fused_emb = torch.cat([graph_emb, global_emb], dim=-1)
@@ -85,21 +96,21 @@ class GCNII(nn.Module):
         node_feature_din: int,
         glob_feature_din: int,
         dmid: int,
-        p_drop: float,
+        head_drop: float,
+        conv_drop: float,
         n_layers: int,
-        use_norm: bool,
-        readout: str,
+        norm: Optional[nn.Module],
+        readout: pyg_nn.Aggregation,
+        skip_stride: int,
         dout: int = 1,
     ):
         super(GCNII, self).__init__()
-        self.backbone = GCNIIBackbone(node_feature_din, dmid, dmid, n_layers, use_norm)
+        self.backbone = GCNIIBackbone(
+            node_feature_din, dmid, dmid, n_layers, norm, skip_stride, conv_drop
+        )
         self.global_proj = nn.Linear(glob_feature_din, dmid)
-        match readout:
-            case "mean":
-                self.pool = pyg_nn.MeanAggregation()
-            case "sum":
-                self.pool = pyg_nn.SumAggregation()
-        self.head = GraphClassificationHead(dmid * 2, dout, p_drop)
+        self.readout = readout
+        self.head = GraphClassificationHead(dmid * 2, dout, head_drop)
 
     def forward(
         self,
@@ -112,7 +123,7 @@ class GCNII(nn.Module):
         batch_size: Optional[int] = None,
     ):
         node_emb = self.backbone(x, edge_index, edge_weight, edge_attr)
-        graph_emb = self.pool(node_emb, batch, dim_size=batch_size)
+        graph_emb = self.readout(node_emb, batch, dim_size=batch_size)
         global_emb = F.relu(self.global_proj(u), inplace=True)
 
         fused_emb = torch.cat([graph_emb, global_emb], dim=-1)
@@ -126,30 +137,33 @@ class GCRNN(nn.Module):
         glob_feature_din: int,
         backbone: str,
         n_layers: int,
-        p_drop: float,
-        use_norm: bool,
-        readout: str,
+        head_drop: float,
+        conv_drop: float,
+        norm: Optional[nn.Module],
+        readout: pyg_nn.Aggregation,
+        skip_stride: int,
         dout: int = 1,
     ):
         super(GCRNN, self).__init__()
         self.backbone: nn.Module
         match backbone:
             case "gcn":
-                self.backbone = GCNBackbone(node_feature_din, 256, 128)
+                self.backbone = GCNBackbone(node_feature_din, 256, 128, conv_drop, norm)
             case "gcn2":
                 self.backbone = GCNIIBackbone(
-                    node_feature_din, 256, 128, n_layers, use_norm
+                    node_feature_din,
+                    256,
+                    128,
+                    n_layers,
+                    norm,
+                    skip_stride,
+                    conv_drop,
                 )
-
         self.global_proj = nn.Linear(glob_feature_din, 128)
 
         self.gcrn = pygt_nn.recurrent.GConvGRU(128 + node_feature_din, 256, 1)
-        match readout:
-            case "mean":
-                self.pool = pyg_nn.MeanAggregation()
-            case "sum":
-                self.pool = pyg_nn.SumAggregation()
-        self.head = GraphClassificationHead(256, dout, p_drop)
+        self.readout = readout
+        self.head = GraphClassificationHead(256, dout, head_drop)
 
     def forward(
         self,
@@ -173,7 +187,7 @@ class GCRNN(nn.Module):
 
         h = self.gcrn(torch.concat([z, x], dim=-1), edge_index, edge_weight, prev_h)
 
-        graph_emb = self.pool(z, index=batch, dim_size=batch_size)
+        graph_emb = self.readout(z, index=batch, dim_size=batch_size)
         global_emb = F.relu(self.global_proj(u))
 
         fused_emb = torch.cat([graph_emb, global_emb], dim=-1)

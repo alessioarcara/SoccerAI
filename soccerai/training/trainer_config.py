@@ -8,11 +8,13 @@ class ModelConfig(BaseModel):
     model_name: str
     dmid: int
     dhid: int
-    p_drop: float
+    head_drop: float
+    conv_drop: float
     n_layers: int
     backbone: str
-    use_norm: bool
+    norm: str
     readout: str
+    skip_stride: int
 
 
 class TrainerConfig(BaseModel):
