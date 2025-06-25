@@ -22,59 +22,56 @@ class GCNBackbone(nn.Module):
         return F.relu(self.conv2(x, edge_index, edge_weight), inplace=True)
 
 
-# class GIN(nn.Module):
-#     def __init__(self, din: int, dmid: int, dout: int):
-#         super(GIN, self).__init__()
+def build_mlp(din: int, dmid: int) -> nn.Sequential:
+    return nn.Sequential(
+        nn.Linear(din, dmid), nn.BatchNorm1d(dmid), nn.ReLU(), nn.Linear(dmid, dmid)
+    )
 
-#         mlp1 = nn.Sequential(
-#             nn.Linear(din, dmid),
-#             nn.BatchNorm1d(dmid),
-#             nn.ReLU(),
-#             nn.Linear(dmid, dmid),
-#             nn.ReLU(),
-#         )
-#         mlp2 = nn.Sequential(
-#             nn.Linear(dmid, dmid),
-#             nn.BatchNorm1d(dmid),
-#             nn.ReLU(),
-#             nn.Linear(dmid, dmid),
-#             nn.ReLU(),
-#         )
-#         mlp3 = nn.Sequential(
-#             nn.Linear(dmid, dmid),
-#             nn.BatchNorm1d(dmid),
-#             nn.ReLU(),
-#             nn.Linear(dmid, dmid),
-#             nn.ReLU(),
-#         )
 
-#         self.conv1 = pyg_nn.GINConv(mlp1)
-#         self.conv2 = pyg_nn.GINConv(mlp2)
-#         self.conv3 = pyg_nn.GINConv(mlp3)
+# edge dim?
+class GINEBackbone(nn.Module):
+    def __init__(self, din: int, dmid: int, n_layers: int = 5):
+        super().__init__()
 
-#         self.sum_pool = SumAggregation()
+        self.convs = nn.ModuleList([pyg_nn.GINEConv(nn=build_mlp(din, dmid))])
 
-#         self.lin1 = nn.Linear(dmid * 3, dmid * 3)
-#         self.lin2 = nn.Linear(dmid * 3, dout)
+        for _ in range(n_layers - 1):
+            self.convs.append(pyg_nn.GINEConv(nn=build_mlp(dmid, dmid)))
 
-#     def forward(
-#         self,
-#         x: torch.Tensor,
-#         edge_index: Adj,
-#         edge_weight: OptTensor = None,
-#         edge_attr: OptTensor = None,
-#         batch: OptTensor = None,
-#         batch_size: Optional[int] = None,
-#     ):
-#         h1 = self.conv1(x, edge_index)
-#         h2 = self.conv2(h1, edge_index)
-#         h3 = self.conv3(h2, edge_index)
+    def forward(
+        self,
+        x: torch.Tensor,
+        edge_index: Adj,
+        edge_weight: OptTensor = None,
+        edge_attr: OptTensor = None,
+    ):
+        pass
 
-#         g1 = self.sum_pool(h1, batch, dim_size=batch_size)
-#         g2 = self.sum_pool(h2, batch, dim_size=batch_size)
-#         g3 = self.sum_pool(h3, batch, dim_size=batch_size)
+    #     outputs = []
 
-#         h = torch.cat([g1, g2, g3], dim=1)
-#         h = F.relu(self.lin1(h))
-#         h = F.dropout(h, p=0.5, training=self.training)
-#         return self.lin2(h)
+    #     for i, conv in enumerate(self.convs[:-1]):
+    #         x = conv(x, edge_index, edge_attr)
+    #         outputs.append(x)
+
+    #     return x
+    # return torch.cat(outputs, dim=-1)
+
+    # return self.conv(x, edge_index, edge_attr)
+
+    # def forward(
+    #     self,
+    #     x: torch.Tensor,
+    #     edge_index: Adj,
+    #     edge_weight: OptTensor = None,
+    #     edge_attr: OptTensor = None,
+    #     batch: OptTensor = None,
+    #     batch_size: Optional[int] = None,
+    # ):
+    #     g1 = self.sum_pool(h1, batch, dim_size=batch_size)
+    #     g2 = self.sum_pool(h2, batch, dim_size=batch_size)
+    #     g3 = self.sum_pool(h3, batch, dim_size=batch_size)
+
+    #     h = torch.cat([g1, g2, g3], dim=1)
+    #     h = F.relu(self.lin1(h))
+    #     h = F.dropout(h, p=0.5, training=self.training)
+    #     return self.lin2(h)
