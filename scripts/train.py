@@ -12,7 +12,7 @@ from torch_geometric.nn import summary
 from soccerai.data.converters import create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.data.temporal_dataset import TemporalChainsDataset
-from soccerai.models.model import create_model
+from soccerai.models.model import build_model
 from soccerai.training.callbacks import ExplainerCallback
 from soccerai.training.metrics import (
     BinaryConfusionMatrix,
@@ -54,7 +54,7 @@ def main(args):
         len(val_ds),
     )
 
-    model = create_model(cfg, train_ds)
+    model = build_model(cfg, train_ds)
     loader_kwargs = dict(
         batch_size=cfg.trainer.bs,
         num_workers=NUM_WORKERS,
@@ -63,7 +63,7 @@ def main(args):
         prefetch_factor=4,
     )
 
-    if cfg.use_temporal:
+    if cfg.model.name == "tgnn":
         train_ds = TemporalChainsDataset.from_worldcup_dataset(train_ds)
         val_ds = TemporalChainsDataset.from_worldcup_dataset(val_ds)
 
