@@ -149,45 +149,43 @@ class GCNIIBackbone(nn.Module):
         return self.drop(F.relu(self.lin2(x)))
 
 
+@BackboneRegistry.register("gatv2")
 class GATv2Backbone(nn.Module):
     def __init__(
         self,
         din: int,
-        dmid: int,
-        dout: int,
-        use_edge_attr: bool,
-        num_layers: int = 3,
-        num_heads: int = 8,
-        dropout: float = 0.1,
+        cfg: BackboneConfig,
     ):
-        super(GATv2Backbone, self).__init__()
-        assert num_layers >= 2
-        self.dropout = dropout
-        self.use_edge_attr = use_edge_attr
+        super().__init__()
+        self.use_edge_attr = cfg.use_edge_attr
+        self.drop = nn.Dropout(cfg.drop)
+        self.skip_stride = cfg.skip_stride
         self.convs = nn.ModuleList()
+        self.norms = nn.ModuleList()
 
-        for i in range(num_layers):
-            in_dim = din if i == 0 else dmid
-            if i < num_layers - 1:
+        for i in range(cfg.n_layers):
+            in_dim = din if i == 0 else cfg.dhid
+            if i < cfg.n_layers - 1:
                 conv = pyg_nn.GATv2Conv(
                     in_dim,
-                    dmid // num_heads,
-                    heads=num_heads,
+                    cfg.dhid // cfg.num_heads,
+                    heads=cfg.num_heads,
                     concat=True,  # concatenate
-                    dropout=dropout,
-                    edge_dim=1 if use_edge_attr else None,
+                    dropout=cfg.drop,
+                    edge_dim=1 if cfg.use_edge_attr else None,
                 )
             else:
                 conv = pyg_nn.GATv2Conv(
                     in_dim,
-                    dout,
-                    heads=num_heads,
+                    cfg.dout,
+                    heads=cfg.num_heads,
                     concat=False,  # average
-                    dropout=dropout,
-                    edge_dim=1 if use_edge_attr else None,
+                    dropout=cfg.drop,
+                    edge_dim=1 if cfg.use_edge_attr else None,
                 )
 
             self.convs.append(conv)
+            self.norms.append(NORMALIZATION[cfg.norm](cfg.dhid))
 
     # ------------------------------------------------------------------
     def forward(
@@ -195,28 +193,35 @@ class GATv2Backbone(nn.Module):
         x: torch.Tensor,
         edge_index: torch.Tensor,
         edge_weight: OptTensor = None,
-        prev_h: OptTensor = None,
+        egde_attr: OptTensor = None,
+        batch: OptTensor = None,
+        batch_size: Optional[int] = None,
+        residual: OptTensor = None,
     ):
-        edge_attr = (
+        edge_weight = (
             edge_weight.unsqueeze(-1)
             if (self.use_edge_attr and edge_weight is not None)
             else None
         )
-        x = F.dropout(x, p=self.dropout, training=self.training)
-        x = F.elu(self.convs[0](x, edge_index, edge_attr=edge_attr))
-        x = F.dropout(x, p=self.dropout, training=self.training)
+        x = self.drop(x)
+        x = F.elu(self.convs[0](x, edge_index, edge_attr=edge_weight))
+        x = self.drop(x)
 
-        if prev_h is None:
-            prev_h = torch.zeros_like(x)
+        if residual is None:
+            residual = torch.zeros_like(x)
 
         last_idx = len(self.convs) - 1
         for idx, conv in enumerate(self.convs[1:], start=1):
-            h_in = x + prev_h
+            if idx % self.skip_stride == 0:
+                h_in = x + residual
+            else:
+                h_in = x
+
             if idx < last_idx:
-                x = F.elu(conv(h_in, edge_index, edge_attr=edge_attr))
-                x = F.dropout(x, p=self.dropout, training=self.training)
+                x = F.elu(conv(h_in, edge_index, edge_attr=edge_weight))
+                x = self.drop(x)
             else:
                 x = conv(h_in, edge_index)
-            prev_h = h_in
+            residual = h_in
 
         return x

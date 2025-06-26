@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 
 class BackboneConfig(BaseModel):
-    name: Literal["gcn", "gcn2"]
+    name: Literal["gcn", "gcn2", "gatv2"]
     drop: float
     dhid: int
     dout: int
