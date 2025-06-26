@@ -143,42 +143,45 @@ class GCNIIBackbone(nn.Module):
         return F.relu(self.lin2(self.drop(x)))
 
 
+@BackboneRegistry.register("graphsage")
 class GraphSAGEBackbone(nn.Module):
     def __init__(
         self,
         din: int,
-        dmid: int,
-        dout: int,
-        num_layers: int = 2,
-        aggr_type: str = "mean",
-        l2_norm: bool = True,
-        dropout: float = 0.0,
+        cfg: BackboneConfig,
     ):
-        super(GraphSAGEBackbone, self).__init__()
-        aggr_type = aggr_type.lower()
+        super().__init__()
+        aggr_type = cfg.aggr_type.lower()
         if aggr_type not in {"mean", "pool", "lstm"}:
             raise ValueError("aggr_type must be 'mean', 'pool', or 'lstm'.")
         self.aggr_type = aggr_type
-        self.dropout = dropout
+        self.drop = nn.Dropout(cfg.drop)
+        self.skip_stride = cfg.skip_stride
 
         self.convs = nn.ModuleList()
+        self.norms = nn.ModuleList()
 
-        for i in range(num_layers):
-            in_dim = din if i == 0 else dmid
-            out_dim = dout if i == num_layers - 1 else dmid
+        for i in range(cfg.n_layers):
+            in_dim = din if i == 0 else cfg.dhid
+            out_dim = cfg.dout if i == cfg.n_layers - 1 else cfg.dhid
 
             if aggr_type == "mean":
-                conv = pyg_nn.SAGEConv(in_dim, out_dim, aggr="mean", normalize=l2_norm)
+                conv = pyg_nn.SAGEConv(
+                    in_dim, out_dim, aggr="mean", normalize=cfg.l2_norm
+                )
 
             elif aggr_type == "pool":
                 conv = pyg_nn.SAGEConv(
-                    in_dim, out_dim, aggr="max", project=True, normalize=l2_norm
+                    in_dim, out_dim, aggr="max", project=True, normalize=cfg.l2_norm
                 )
 
             else:  # lstm
-                conv = pyg_nn.SAGEConv(in_dim, out_dim, aggr="lstm", normalize=l2_norm)
+                conv = pyg_nn.SAGEConv(
+                    in_dim, out_dim, aggr="lstm", normalize=cfg.l2_norm
+                )
 
             self.convs.append(conv)
+            self.norms.append(NORMALIZATION[cfg.norm](cfg.dhid))
 
     # ------------------------------------------------------------------
     def forward(
@@ -186,18 +189,32 @@ class GraphSAGEBackbone(nn.Module):
         x: torch.Tensor,
         edge_index: torch.Tensor,
         edge_weight: OptTensor = None,
-        prev_h: OptTensor = None,
+        edge_attr: OptTensor = None,
+        batch: OptTensor = None,
+        batch_size: Optional[int] = None,
+        residual: OptTensor = None,
     ):
-        x = F.relu(self.convs[0](x, edge_index), inplace=True)
-        if self.dropout > 0:
-            x = F.dropout(x, p=self.dropout, training=self.training)
+        x = F.relu(
+            self.norms[0](
+                self.convs[0](x, edge_index), batch=batch, batch_size=batch_size
+            ),
+            inplace=True,
+        )
+        x = self.drop(x)
 
-        if prev_h is None:
-            prev_h = torch.zeros_like(x)
+        if residual is None:
+            residual = torch.zeros_like(x)
 
-        for conv in self.convs[1:]:
-            x = F.relu(conv(x + prev_h, edge_index), inplace=True)
-            if self.dropout > 0:
-                x = F.dropout(x, p=self.dropout, training=self.training)
+        for i, conv in enumerate(self.convs[1:]):
+            if i % self.skip_stride == 0:
+                x = x + residual
+
+            x = F.relu(
+                self.norms[i + 1](
+                    conv(x, edge_index), batch=batch, batch_size=batch_size
+                ),
+                inplace=True,
+            )
+            x = self.drop(x)
 
         return x

@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 
 class BackboneConfig(BaseModel):
-    name: Literal["gcn", "gcn2"]
+    name: Literal["gcn", "gcn2", "graphsage"]
     drop: float
     dhid: int
     dout: int
@@ -14,6 +14,7 @@ class BackboneConfig(BaseModel):
     skip_stride: int
     norm: Literal["none", "layer", "graph", "instance"]
     aggr_type: str
+    l2_norm: bool
 
 
 class NeckConfig(BaseModel):
