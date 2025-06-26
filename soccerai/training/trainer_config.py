@@ -1,20 +1,37 @@
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel
 
+from soccerai.models.typings import NormalizationType, ReadoutType
+
+
+class BackboneConfig(BaseModel):
+    type: Literal["gcn", "gcn2"]
+    n_layers: int
+    dhid: int
+    dout: int
+    drop: float
+    norm: NormalizationType
+    skip_stride: int
+
+
+class NeckConfig(BaseModel):
+    readout: ReadoutType
+    dhid: int
+
+
+class HeadConfig(BaseModel):
+    n_layers: int
+    drop: float
+
 
 class ModelConfig(BaseModel):
-    model_name: str
-    dmid: int
-    dhid: int
-    head_drop: float
-    conv_drop: float
-    n_layers: int
-    backbone: str
-    norm: str
-    readout: str
-    skip_stride: int
+    name: Literal["gnn", "tgnn"]
+    backbone: BackboneConfig
+    neck: NeckConfig
+    head: HeadConfig
 
 
 class TrainerConfig(BaseModel):
@@ -56,7 +73,6 @@ class MetricsConfig(BaseModel):
 class Config(BaseModel):
     project_name: str
     seed: int
-    use_temporal: bool
     model: ModelConfig
     trainer: TrainerConfig
     data: DataConfig
