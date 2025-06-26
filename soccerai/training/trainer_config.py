@@ -1,20 +1,37 @@
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel
 
 
-class ModelConfig(BaseModel):
-    model_name: str
-    dmid: int
+class BackboneConfig(BaseModel):
+    name: Literal["gcn", "gcn2"]
+    drop: float
     dhid: int
-    head_drop: float
-    conv_drop: float
+    dout: int
     n_layers: int
-    backbone: str
-    norm: str
-    readout: str
     skip_stride: int
+    norm: Literal["none", "layer", "graph", "instance"]
+
+
+class NeckConfig(BaseModel):
+    readout: Literal["sum", "mean"]
+    dhid: int
+    k: int
+
+
+class HeadConfig(BaseModel):
+    n_layers: int
+    drop: float
+    dout: int
+
+
+class ModelConfig(BaseModel):
+    name: Literal["gnn", "tgnn"]
+    backbone: BackboneConfig
+    neck: NeckConfig
+    head: HeadConfig
 
 
 class TrainerConfig(BaseModel):
@@ -56,7 +73,6 @@ class MetricsConfig(BaseModel):
 class Config(BaseModel):
     project_name: str
     seed: int
-    use_temporal: bool
     model: ModelConfig
     trainer: TrainerConfig
     data: DataConfig
