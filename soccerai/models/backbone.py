@@ -60,22 +60,26 @@ class GCNBackbone(nn.Module):
         batch_size: Optional[int] = None,
         residual: OptTensor = None,
     ):
-        x = F.relu(
-            self.norm1(
-                self.conv1(x, edge_index, edge_weight),
-                batch=batch,
-                batch_size=batch_size,
+        x = self.drop(
+            F.relu(
+                self.norm1(
+                    self.conv1(x, edge_index, edge_weight),
+                    batch=batch,
+                    batch_size=batch_size,
+                )
             )
         )
 
         if residual is None:
             residual = torch.zeros_like(x, device=x.device)
 
-        return F.relu(
-            self.norm2(
-                self.conv2(self.drop(x) + residual, edge_index, edge_weight),
-                batch=batch,
-                batch_size=batch_size,
+        return self.drop(
+            F.relu(
+                self.norm2(
+                    self.conv2(x + residual, edge_index, edge_weight),
+                    batch=batch,
+                    batch_size=batch_size,
+                )
             )
         )
 
@@ -117,7 +121,7 @@ class GCNIIBackbone(nn.Module):
         batch_size: Optional[int] = None,
         residual: OptTensor = None,
     ):
-        x_0 = F.relu(self.lin1(x))
+        x_0 = self.drop(F.relu(self.lin1(x)))
         if residual is None:
             residual = torch.zeros_like(x_0, device=x_0.device)
 
@@ -127,17 +131,19 @@ class GCNIIBackbone(nn.Module):
                 res = x_0 + residual
             else:
                 res = x_0
-            x = F.relu(
-                self.norms[i](
-                    self.convs[i](
-                        self.drop(x),
-                        res,
-                        edge_index,
-                        edge_weight,
-                    ),
-                    batch=batch,
-                    batch_size=batch_size,
+            x = self.drop(
+                F.relu(
+                    self.norms[i](
+                        self.convs[i](
+                            x,
+                            res,
+                            edge_index,
+                            edge_weight,
+                        ),
+                        batch=batch,
+                        batch_size=batch_size,
+                    )
                 )
             )
 
-        return F.relu(self.lin2(self.drop(x)))
+        return self.drop(F.relu(self.lin2(x)))

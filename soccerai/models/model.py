@@ -51,7 +51,9 @@ class TGNN(nn.Module):
         batch_size: Optional[int] = None,
         prev_h: OptTensor = None,
     ):
-        z = self.backbone(x, edge_index, edge_weight, edge_attr, batch, batch_size)
+        z = self.backbone(
+            x, edge_index, edge_weight, edge_attr, batch, batch_size, prev_h
+        )
         fused_emb, h = self.neck(
             x, u, z, edge_index, edge_weight, batch, batch_size, prev_h
         )
