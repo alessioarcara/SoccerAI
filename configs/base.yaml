@@ -3,18 +3,27 @@ seed: 42
 use_temporal: False 
 
 model:
-  model_name: "gatv2"
-  backbone: 'gatv2'
-  dmid: 256
-  dhid: 128
-  num_layers: 3
-  dropout_layer: 0.1
-  dropout_head: 0.5
-  num_heads: 8
+  name: "gnn"
+  backbone:
+    name: 'gcn2'
+    drop: 0.1
+    dhid: 256
+    dout: 128
+    n_layers: 9
+    norm: 'none'
+    skip_stride: 1
+  neck:
+    readout: 'mean'
+    dhid: 256
+    k: 1
+  head:
+    drop: 0.5
+    n_layers: 1
+    dout: 1
 
 trainer:
   bs: 64
-  n_epochs: 100
+  n_epochs: 75
   lr: 1e-4
   wd: 1e-4
   eval_rate: 2
