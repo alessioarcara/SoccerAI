@@ -307,4 +307,7 @@ class ChainCollector(Collector[Tuple[np.ndarray, List[Data]]]):
 
     @property
     def highest_confidence_chain(self):
+        entries = self.storage.get_all_entries()
+        if not entries:
+            return None, (None, None)
         return self.storage.get_all_entries()[0]

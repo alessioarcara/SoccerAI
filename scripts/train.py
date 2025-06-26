@@ -63,7 +63,7 @@ def main(args):
         prefetch_factor=4,
     )
 
-    if cfg.use_temporal:
+    if cfg.model.name == "tgnn":
         train_ds = TemporalChainsDataset.from_worldcup_dataset(train_ds)
         val_ds = TemporalChainsDataset.from_worldcup_dataset(val_ds)
 
