@@ -12,7 +12,7 @@ from torch_geometric.nn import summary
 from soccerai.data.converters import create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.data.temporal_dataset import TemporalChainsDataset
-from soccerai.models.model import create_model
+from soccerai.models.model import build_model
 from soccerai.training.callbacks import ExplainerCallback
 from soccerai.training.metrics import (
     BinaryConfusionMatrix,
@@ -21,11 +21,10 @@ from soccerai.training.metrics import (
     FrameCollector,
 )
 from soccerai.training.trainer import TemporalTrainer, Trainer
-from soccerai.training.trainer_config import build_cfg
+from soccerai.training.trainer_config import build_config
 from soccerai.training.utils import build_dummy_inputs, fix_random
 
 CONFIG_DIR = Path("configs")
-BASE_CONFIG_FILENAME = CONFIG_DIR / "base.yaml"
 
 torch.set_float32_matmul_precision("high")
 
@@ -33,7 +32,7 @@ NUM_WORKERS = (os.cpu_count() or 1) - 1
 
 
 def main(args):
-    cfg = build_cfg(str(BASE_CONFIG_FILENAME))
+    cfg = build_config(CONFIG_DIR)
     fix_random(cfg.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -54,7 +53,7 @@ def main(args):
         len(val_ds),
     )
 
-    model = create_model(cfg, train_ds)
+    model = build_model(cfg, train_ds)
     loader_kwargs = dict(
         batch_size=cfg.trainer.bs,
         num_workers=NUM_WORKERS,
@@ -63,7 +62,7 @@ def main(args):
         prefetch_factor=4,
     )
 
-    if cfg.use_temporal:
+    if cfg.model.use_temporal:
         train_ds = TemporalChainsDataset.from_worldcup_dataset(train_ds)
         val_ds = TemporalChainsDataset.from_worldcup_dataset(val_ds)
 
@@ -138,7 +137,7 @@ def main(args):
         )
     )
 
-    trainer.train(args.name)
+    trainer.train(cfg.run_name)
 
 
 if __name__ == "__main__":
@@ -147,9 +146,6 @@ if __name__ == "__main__":
         "--reload",
         action="store_true",
         help="If set, forces the dataset to be re-created",
-    )
-    parser.add_argument(
-        "--name", type=str, help="The name of the W&B run", default="debug"
     )
     args = parser.parse_args()
     main(args)

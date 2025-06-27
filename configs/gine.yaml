@@ -1,0 +1,4 @@
+model:
+  backbone: 
+    type: "gine"
+    n_layers: 5
