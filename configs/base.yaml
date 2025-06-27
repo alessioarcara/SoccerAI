@@ -12,7 +12,7 @@ model:
     n_layers: 2 
     drop: 0.0
     norm: "none"
-    skip_stride: 100
+    residual_sum_mode: "last"
 
   neck:
     readout: "mean"

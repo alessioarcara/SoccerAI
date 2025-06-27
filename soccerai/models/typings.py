@@ -5,3 +5,5 @@ NormalizationType = Literal["none", "batch", "layer", "instance", "graph"]
 ReadoutType = Literal["mean", "sum"]
 
 AggregationType = Literal["mean", "max", "lstm"]
+
+ResidualSumMode = Literal["every", "last"]
