@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Optional, Type
+from typing import Callable, Dict, List, Optional, Type
 
 import torch
 import torch.nn as nn
@@ -41,6 +41,21 @@ NORMALIZATIONS: Dict[NormalizationType, Type[nn.Module]] = {
 }
 
 
+def sum_residuals(
+    residuals: Optional[List[OptTensor]], shape_template: torch.Tensor
+) -> torch.Tensor:
+    if residuals is not None:
+        for i in range(len(residuals)):
+            if residuals[i] is None:
+                residuals[i] = torch.zeros_like(shape_template)
+
+        residual = sum(residuals)
+    else:
+        residual = torch.zeros_like(shape_template)
+
+    return residual
+
+
 @BackboneRegistry.register("gcn")
 class GCNBackbone(nn.Module):
     def __init__(self, din: int, cfg: BackboneConfig):
@@ -59,7 +74,7 @@ class GCNBackbone(nn.Module):
         edge_attr: OptTensor = None,
         batch: OptTensor = None,
         batch_size: Optional[int] = None,
-        residual: OptTensor = None,
+        residuals: Optional[List[OptTensor]] = None,
     ):
         h = F.relu(
             self.norm1(
@@ -70,8 +85,7 @@ class GCNBackbone(nn.Module):
             inplace=True,
         )
 
-        if residual is None:
-            residual = torch.zeros_like(h, device=h.device)
+        residual = sum_residuals(residuals, h)
 
         h = F.relu(
             self.norm2(
@@ -118,18 +132,17 @@ class GCNIIBackbone(nn.Module):
         edge_attr: OptTensor = None,
         batch: OptTensor = None,
         batch_size: Optional[int] = None,
-        residual: OptTensor = None,
+        residuals: Optional[List[OptTensor]] = None,
     ):
-        x = x0 = self.lin1(x)
+        h = h0 = self.lin1(x)
 
-        if residual is None:
-            residual = torch.zeros_like(x0, device=x0.device)
+        residual = sum_residuals(residuals, h)
 
         for i, (conv, norm) in enumerate(zip(self.convs, self.norms)):
-            x = self.drop(
+            h = self.drop(
                 F.relu(
                     norm(
-                        conv(x, x0, edge_index, edge_weight),
+                        conv(h, h0, edge_index, edge_weight),
                         batch=batch,
                         batch_size=batch_size,
                     ),
@@ -137,6 +150,6 @@ class GCNIIBackbone(nn.Module):
                 )
             )
             if i > 0 and i % self.skip_stride == 0:
-                x = x + residual
+                h = h + residual
 
-        return self.lin2(x)
+        return self.lin2(h)

@@ -1,5 +1,5 @@
 project_name: "soccerai"
-run_name: "gcn"
+run_name: "gcn2"
 seed: 42
 
 model: 
@@ -15,6 +15,7 @@ model:
     skip_stride: 100
 
   neck:
+    type: 'gru'
     readout: "mean"
     dhid: 256
 

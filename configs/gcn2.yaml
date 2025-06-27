@@ -5,3 +5,5 @@ model:
     drop: 0.1
     norm: "none"
     skip_stride: 1
+  neck:
+    type: 'lstm'

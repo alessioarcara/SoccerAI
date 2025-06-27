@@ -1,16 +1,21 @@
 from pathlib import Path
-from typing import Any, Dict, Literal
+from typing import Any, Dict
 
 import yaml
 from pydantic import BaseModel
 
-from soccerai.models.typings import NormalizationType, ReadoutType
+from soccerai.models.typings import (
+    BackboneType,
+    NeckType,
+    NormalizationType,
+    ReadoutType,
+)
 
 PathLike = str | Path
 
 
 class BackboneConfig(BaseModel):
-    type: Literal["gcn", "gcn2"]
+    type: BackboneType
     n_layers: int
     dhid: int
     dout: int
@@ -20,6 +25,7 @@ class BackboneConfig(BaseModel):
 
 
 class NeckConfig(BaseModel):
+    type: NeckType
     readout: ReadoutType
     dhid: int
 
