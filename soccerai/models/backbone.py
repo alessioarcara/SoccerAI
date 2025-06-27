@@ -33,8 +33,14 @@ class Identity(nn.Identity):
         return input
 
 
+class BatchNorm(nn.BatchNorm1d):
+    def forward(self, input: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        return super().forward(input)
+
+
 NORMALIZATIONS: Dict[NormalizationType, Type[nn.Module]] = {
     "none": Identity,
+    "batch": BatchNorm,
     "layer": pyg_nn.LayerNorm,
     "instance": pyg_nn.InstanceNorm,
     "graph": pyg_nn.GraphNorm,
@@ -61,21 +67,23 @@ class GCNBackbone(nn.Module):
         batch_size: Optional[int] = None,
         residual: OptTensor = None,
     ):
-        h = F.relu(
-            self.norm1(
-                self.conv1(x, edge_index, edge_weight),
-                batch=batch,
-                batch_size=batch_size,
-            ),
-            inplace=True,
+        h = self.drop(
+            F.relu(
+                self.norm1(
+                    self.conv1(x, edge_index, edge_weight),
+                    batch=batch,
+                    batch_size=batch_size,
+                ),
+                inplace=True,
+            )
         )
 
-        if residual is None:
-            residual = torch.zeros_like(h, device=h.device)
+        if residual is not None:
+            h = h + residual
 
         h = F.relu(
             self.norm2(
-                self.conv2(self.drop(h) + residual, edge_index, edge_weight),
+                self.conv2(h, edge_index, edge_weight),
                 batch=batch,
                 batch_size=batch_size,
             ),
@@ -120,23 +128,78 @@ class GCNIIBackbone(nn.Module):
         batch_size: Optional[int] = None,
         residual: OptTensor = None,
     ):
-        x = x0 = self.lin1(x)
-
-        if residual is None:
-            residual = torch.zeros_like(x0, device=x0.device)
+        h = h0 = self.lin1(x)
 
         for i, (conv, norm) in enumerate(zip(self.convs, self.norms)):
-            x = self.drop(
+            h = self.drop(
                 F.relu(
                     norm(
-                        conv(x, x0, edge_index, edge_weight),
+                        conv(h, h0, edge_index, edge_weight),
                         batch=batch,
                         batch_size=batch_size,
                     ),
                     inplace=True,
                 )
             )
-            if i > 0 and i % self.skip_stride == 0:
-                x = x + residual
 
-        return self.lin2(x)
+            if residual is not None and i > 0 and i % self.skip_stride == 0:
+                h = h + residual
+
+        return self.lin2(h)
+
+
+@BackboneRegistry.register("graphsage")
+class GraphSAGEBackbone(nn.Module):
+    def __init__(
+        self,
+        din: int,
+        cfg: BackboneConfig,
+    ):
+        super().__init__()
+        self.drop = nn.Dropout(cfg.drop)
+
+        project = cfg.aggr_type == "max"
+
+        dims = [din] + [cfg.dhid] * (cfg.n_layers - 1) + [cfg.dout]
+
+        self.convs = nn.ModuleList()
+        self.norms = nn.ModuleList()
+        for i in range(len(dims) - 1):
+            in_dim = dims[i]
+            out_dim = dims[i + 1]
+
+            self.convs.append(
+                pyg_nn.SAGEConv(
+                    in_channels=in_dim,
+                    out_channels=out_dim,
+                    aggr=cfg.aggr_type,
+                    project=project,
+                    normalize=cfg.l2_norm,
+                )
+            )
+            self.norms.append(NORMALIZATIONS[cfg.norm](out_dim))
+
+        self.skip_stride = cfg.skip_stride
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_weight: OptTensor = None,
+        edge_attr: OptTensor = None,
+        batch: OptTensor = None,
+        batch_size: Optional[int] = None,
+        residual: OptTensor = None,
+    ):
+        h = x
+        for i, (conv, norm) in enumerate(zip(self.convs, self.norms)):
+            h = self.drop(
+                F.relu(
+                    norm(conv(h, edge_index), batch=batch, batch_size=batch_size),
+                )
+            )
+
+            if residual is not None and i > 0 and i % self.skip_stride:
+                h = h + residual
+
+        return h
