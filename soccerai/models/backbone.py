@@ -35,6 +35,7 @@ class Identity(nn.Identity):
 
 NORMALIZATIONS: Dict[NormalizationType, Type[nn.Module]] = {
     "none": Identity,
+    "batch": nn.BatchNorm1d,
     "layer": pyg_nn.LayerNorm,
     "instance": pyg_nn.InstanceNorm,
     "graph": pyg_nn.GraphNorm,
@@ -81,7 +82,7 @@ class GCNBackbone(nn.Module):
             ),
             inplace=True,
         )
-        return h
+        return [h]
 
 
 @BackboneRegistry.register("gcn2")
@@ -120,16 +121,16 @@ class GCNIIBackbone(nn.Module):
         batch_size: Optional[int] = None,
         residual: OptTensor = None,
     ):
-        x = x0 = self.lin1(x)
+        h = h0 = self.lin1(x)
 
         if residual is None:
-            residual = torch.zeros_like(x0, device=x0.device)
+            residual = torch.zeros_like(h0, device=h0.device)
 
         for i, (conv, norm) in enumerate(zip(self.convs, self.norms)):
-            x = self.drop(
+            h = self.drop(
                 F.relu(
                     norm(
-                        conv(x, x0, edge_index, edge_weight),
+                        conv(h, h0, edge_index, edge_weight),
                         batch=batch,
                         batch_size=batch_size,
                     ),
@@ -137,6 +138,62 @@ class GCNIIBackbone(nn.Module):
                 )
             )
             if i > 0 and i % self.skip_stride == 0:
-                x = x + residual
+                h += residual
 
-        return self.lin2(x)
+        return [self.lin2(h)]
+
+
+def build_mlp(din: int, dmid: int) -> nn.Sequential:
+    return nn.Sequential(
+        nn.Linear(din, dmid), nn.BatchNorm1d(dmid), nn.ReLU(), nn.Linear(dmid, dmid)
+    )
+
+
+@BackboneRegistry.register("gine")
+class GINEBackbone(nn.Module):
+    def __init__(self, din: int, cfg: BackboneConfig):
+        super().__init__()
+
+        self.convs = nn.ModuleList(
+            [
+                pyg_nn.GINEConv(nn=build_mlp(din if i == 0 else cfg.dhid, cfg.dout))
+                for i in range(cfg.n_layers)
+            ]
+        )
+        self.norms = nn.ModuleList(
+            [NORMALIZATIONS[cfg.norm](cfg.dout) for _ in range(cfg.n_layers)]
+        )
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        edge_index: Adj,
+        edge_weight: OptTensor = None,
+        edge_attr: OptTensor = None,
+        batch: OptTensor = None,
+        batch_size: Optional[int] = None,
+        residual: OptTensor = None,
+    ):
+        outputs = []
+        h = x
+
+        if residual is None:
+            residual = torch.zeros_like(h, device=h.device)
+
+        for i, (conv, norm) in enumerate(zip(self.convs, self.norms)):
+            h = F.relu(
+                norm(
+                    conv(h, edge_index, edge_attr=edge_attr),
+                    batch=batch,
+                    batch_size=batch_size,
+                ),
+                inplace=True,
+            )
+
+            # if residual is not None:
+            #     h = h + residual
+            #     residual = h
+
+            outputs.append(h)
+
+        return outputs
