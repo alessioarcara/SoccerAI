@@ -150,10 +150,6 @@ class GraphSAGEBackbone(nn.Module):
         cfg: BackboneConfig,
     ):
         super().__init__()
-        aggr_type = cfg.aggr_type.lower()
-        if aggr_type not in {"mean", "pool", "lstm"}:
-            raise ValueError("aggr_type must be 'mean', 'pool', or 'lstm'.")
-        self.aggr_type = aggr_type
         self.drop = nn.Dropout(cfg.drop)
         self.skip_stride = cfg.skip_stride
 
@@ -164,12 +160,12 @@ class GraphSAGEBackbone(nn.Module):
             in_dim = din if i == 0 else cfg.dhid
             out_dim = cfg.dout if i == cfg.n_layers - 1 else cfg.dhid
 
-            if aggr_type == "mean":
+            if cfg.aggr_type == "mean":
                 conv = pyg_nn.SAGEConv(
                     in_dim, out_dim, aggr="mean", normalize=cfg.l2_norm
                 )
 
-            elif aggr_type == "pool":
+            elif cfg.aggr_type == "pool":
                 conv = pyg_nn.SAGEConv(
                     in_dim, out_dim, aggr="max", project=True, normalize=cfg.l2_norm
                 )
@@ -180,9 +176,8 @@ class GraphSAGEBackbone(nn.Module):
                 )
 
             self.convs.append(conv)
-            self.norms.append(NORMALIZATION[cfg.norm](cfg.dhid))
+            self.norms.append(NORMALIZATIONS[cfg.norm](out_dim))
 
-    # ------------------------------------------------------------------
     def forward(
         self,
         x: torch.Tensor,
@@ -204,14 +199,12 @@ class GraphSAGEBackbone(nn.Module):
         if residual is None:
             residual = torch.zeros_like(x)
 
-        for i, conv in enumerate(self.convs[1:]):
+        for i, conv in enumerate(self.convs[1:], start=1):
             if i % self.skip_stride == 0:
                 x = x + residual
 
             x = F.relu(
-                self.norms[i + 1](
-                    conv(x, edge_index), batch=batch, batch_size=batch_size
-                ),
+                self.norms[i](conv(x, edge_index), batch=batch, batch_size=batch_size),
                 inplace=True,
             )
             x = self.drop(x)

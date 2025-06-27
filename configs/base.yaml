@@ -1,5 +1,5 @@
 project_name: "soccerai"
-run_name: "gcn"
+run_name: "graphsage"
 seed: 42
 
 model: 
