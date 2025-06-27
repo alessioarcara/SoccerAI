@@ -4,7 +4,12 @@ from typing import Any, Dict, Literal
 import yaml
 from pydantic import BaseModel
 
-from soccerai.models.typings import AggregationType, NormalizationType, ReadoutType
+from soccerai.models.typings import (
+    AggregationType,
+    NormalizationType,
+    ReadoutType,
+    ResidualSumMode,
+)
 
 PathLike = str | Path
 
@@ -16,7 +21,7 @@ class BackboneConfig(BaseModel):
     dout: int
     drop: float
     norm: NormalizationType
-    skip_stride: int
+    residual_sum_mode: ResidualSumMode
     l2_norm: bool
     aggr_type: AggregationType
     use_edge_attr: bool

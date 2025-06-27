@@ -6,7 +6,7 @@ import torch.nn.functional as F
 import torch_geometric.nn as pyg_nn
 from torch_geometric.typing import Adj, OptTensor
 
-from soccerai.models.typings import NormalizationType
+from soccerai.models.typings import NormalizationType, ResidualSumMode
 from soccerai.training.trainer_config import BackboneConfig
 
 
@@ -45,6 +45,31 @@ NORMALIZATIONS: Dict[NormalizationType, Type[nn.Module]] = {
     "instance": pyg_nn.InstanceNorm,
     "graph": pyg_nn.GraphNorm,
 }
+
+
+def sum_residual(
+    h: torch.Tensor,
+    residual: Optional[torch.Tensor],
+    mode: ResidualSumMode,
+    layer_idx: int,
+    n_layers: int,
+) -> torch.Tensor:
+    """
+    Apply residual tensor according to sum strategy.
+
+    - 'every': add residual at all layers except the first (layer_idx > 0)
+    - 'last': add residual only before the final layer (layer_idx == n_layers - 1)
+    """
+    if residual is None:
+        return h
+
+    if mode == "every" and layer_idx > 0:
+        return h + residual
+
+    if mode == "last" and layer_idx == n_layers - 1:
+        return h + residual
+
+    return h
 
 
 @BackboneRegistry.register("gcn")
@@ -116,7 +141,7 @@ class GCNIIBackbone(nn.Module):
             pyg_nn.Linear(cfg.dhid, cfg.dout) if cfg.dhid != cfg.dout else nn.Identity()
         )
 
-        self.skip_stride = cfg.skip_stride
+        self.residual_sum_mode = cfg.residual_sum_mode
 
     def forward(
         self,
@@ -129,8 +154,16 @@ class GCNIIBackbone(nn.Module):
         residual: OptTensor = None,
     ):
         h = h0 = self.lin1(x)
+        n_layers = len(self.convs)
 
-        for i, (conv, norm) in enumerate(zip(self.convs, self.norms)):
+        for layer_idx, (conv, norm) in enumerate(zip(self.convs, self.norms)):
+            h = sum_residual(
+                h,
+                residual,
+                self.residual_sum_mode,
+                layer_idx=layer_idx,
+                n_layers=n_layers,
+            )
             h = self.drop(
                 F.relu(
                     norm(
@@ -141,9 +174,6 @@ class GCNIIBackbone(nn.Module):
                     inplace=True,
                 )
             )
-
-            if residual is not None and i > 0 and i % self.skip_stride == 0:
-                h = h + residual
 
         return self.lin2(h)
 
@@ -179,7 +209,7 @@ class GraphSAGEBackbone(nn.Module):
             )
             self.norms.append(NORMALIZATIONS[cfg.norm](out_dim))
 
-        self.skip_stride = cfg.skip_stride
+        self.residual_sum_mode = cfg.residual_sum_mode
 
     def forward(
         self,
@@ -192,15 +222,21 @@ class GraphSAGEBackbone(nn.Module):
         residual: OptTensor = None,
     ):
         h = x
-        for i, (conv, norm) in enumerate(zip(self.convs, self.norms)):
+        n_layers = len(self.convs)
+
+        for layer_idx, (conv, norm) in enumerate(zip(self.convs, self.norms)):
+            h = sum_residual(
+                h,
+                residual,
+                self.residual_sum_mode,
+                layer_idx=layer_idx,
+                n_layers=n_layers,
+            )
             h = self.drop(
                 F.relu(
                     norm(conv(h, edge_index), batch=batch, batch_size=batch_size),
                 )
             )
-
-            if residual is not None and i > 0 and i % self.skip_stride:
-                h = h + residual
 
         return h
 

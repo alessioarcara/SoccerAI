@@ -4,4 +4,4 @@ model:
     n_layers: 9 
     drop: 0.1
     norm: "none"
-    skip_stride: 1
+    residual_sum_mode: "every"

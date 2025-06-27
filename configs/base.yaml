@@ -12,11 +12,11 @@ model:
     n_layers: 2 
     drop: 0.0
     norm: "none"
-    skip_stride: 100
     aggr_type: "max"
     l2_norm: True
     num_heads: 8 
     use_edge_attr: True
+    residual_sum_mode: "last"
 
   neck:
     readout: "mean"
