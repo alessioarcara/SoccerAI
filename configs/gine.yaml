@@ -6,3 +6,4 @@ model:
     dout: 256
     norm: "batch"
     drop: 0.0
+    residual_sum_mode: "every"

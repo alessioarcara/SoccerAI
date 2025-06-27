@@ -7,7 +7,12 @@ import torch_geometric.nn as pyg_nn
 from torch_geometric.typing import Adj, OptTensor
 
 from soccerai.models.typings import NormalizationType, ResidualSumMode
-from soccerai.training.trainer_config import BackboneConfig
+from soccerai.training.trainer_config import (
+    GCN2Config,
+    GCNConfig,
+    GINEConfig,
+    GraphSAGEConfig,
+)
 
 
 class BackboneRegistry:
@@ -74,7 +79,7 @@ def sum_residual(
 
 @BackboneRegistry.register("gcn")
 class GCNBackbone(nn.Module):
-    def __init__(self, din: int, cfg: BackboneConfig):
+    def __init__(self, din: int, cfg: GCNConfig):
         super().__init__()
         self.drop = nn.Dropout(cfg.drop)
         self.conv1 = pyg_nn.GCNConv(din, cfg.dhid)
@@ -119,9 +124,8 @@ class GCNBackbone(nn.Module):
 
 @BackboneRegistry.register("gcn2")
 class GCNIIBackbone(nn.Module):
-    def __init__(self, din: int, cfg: BackboneConfig):
+    def __init__(self, din: int, cfg: GCN2Config):
         super().__init__()
-
         self.drop = nn.Dropout(cfg.drop)
         self.lin1 = pyg_nn.Linear(din, cfg.dhid) if din != cfg.dhid else nn.Identity()
 
@@ -183,7 +187,7 @@ class GraphSAGEBackbone(nn.Module):
     def __init__(
         self,
         din: int,
-        cfg: BackboneConfig,
+        cfg: GraphSAGEConfig,
     ):
         super().__init__()
         self.drop = nn.Dropout(cfg.drop)
@@ -249,7 +253,7 @@ def build_mlp(din: int, dmid: int) -> nn.Sequential:
 
 @BackboneRegistry.register("gine")
 class GINEBackbone(nn.Module):
-    def __init__(self, din: int, cfg: BackboneConfig):
+    def __init__(self, din: int, cfg: GINEConfig):
         super().__init__()
 
         self.convs = nn.ModuleList(
@@ -261,6 +265,8 @@ class GINEBackbone(nn.Module):
         self.norms = nn.ModuleList(
             [NORMALIZATIONS[cfg.norm](cfg.dout) for _ in range(cfg.n_layers)]
         )
+
+        self.residual_sum_mode = cfg.residual_sum_mode
 
     def forward(
         self,
@@ -274,8 +280,16 @@ class GINEBackbone(nn.Module):
     ):
         outs = []
         h = x
+        n_layers = len(self.convs)
 
-        for i, (conv, norm) in enumerate(zip(self.convs, self.norms)):
+        for layer_idx, (conv, norm) in enumerate(zip(self.convs, self.norms)):
+            h = sum_residual(
+                h,
+                residual,
+                self.residual_sum_mode,
+                layer_idx=layer_idx,
+                n_layers=n_layers,
+            )
             h = F.relu(
                 norm(
                     conv(h, edge_index, edge_attr=edge_attr),
@@ -284,10 +298,6 @@ class GINEBackbone(nn.Module):
                 ),
                 inplace=True,
             )
-
-            if residual is not None:
-                h = h + residual
-
             outs.append(h)
 
         return outs

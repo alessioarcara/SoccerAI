@@ -30,7 +30,7 @@ class GCNConfig(BackboneCommon):
 class GCN2Config(BackboneCommon):
     type: Literal["gcn2"]
     n_layers: int
-    skip_stride: int
+    residual_sum_mode: ResidualSumMode
 
 
 class GraphSAGEConfig(BackboneCommon):
@@ -44,6 +44,7 @@ class GraphSAGEConfig(BackboneCommon):
 class GINEConfig(BackboneCommon):
     type: Literal["gine"]
     n_layers: int
+    residual_sum_mode: ResidualSumMode
 
 
 BackboneConfig = Annotated[

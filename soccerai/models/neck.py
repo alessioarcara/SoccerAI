@@ -16,12 +16,6 @@ READOUT_AGGREGATIONS: Dict[ReadoutType, pyg_nn.Aggregation] = {
 }
 
 
-#     g1 = self.sum_pool(h1, batch, dim_size=batch_size)
-#     g2 = self.sum_pool(h2, batch, dim_size=batch_size)
-#     g3 = self.sum_pool(h3, batch, dim_size=batch_size)
-
-
-#     h = torch.cat([g1, g2, g3], dim=1)
 class GraphAndGlobalFusion(nn.Module):
     """
     Fuse graph-level and global feature vectors into a single concatenated output of size (2 x graph_din).
