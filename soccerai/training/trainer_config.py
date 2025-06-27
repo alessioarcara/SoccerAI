@@ -4,7 +4,12 @@ from typing import Annotated, Any, Dict, Literal, Union
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-from soccerai.models.typings import AggregationType, NormalizationType, ReadoutType
+from soccerai.models.typings import (
+    AggregationType,
+    NormalizationType,
+    ReadoutType,
+    ResidualSumMode,
+)
 
 PathLike = str | Path
 
@@ -31,7 +36,7 @@ class GCN2Config(BackboneCommon):
 class GraphSAGEConfig(BackboneCommon):
     type: Literal["graphsage"]
     n_layers: int
-    skip_stride: int
+    residual_sum_mode: ResidualSumMode
     aggr_type: AggregationType
     l2_norm: bool
 

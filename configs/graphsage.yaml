@@ -4,6 +4,6 @@ model:
     n_layers: 2 
     drop: 0.1
     norm: "none"
-    skip_stride: 1
+    residual_sum_mode: "every"
     l2_norm: True
     aggr_type: "max"
