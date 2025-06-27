@@ -1,12 +1,13 @@
 model:
   backbone:
     type: "gatv2"
-    num_heads: 12
+    num_heads: 8
     use_edge_attr: True
     norm: "none"
     drop: 0.1
     skip_stride: 1
     n_layers: 2
+    residual_sum_mode: "every"
 
 trainer:
   n_epochs: 200

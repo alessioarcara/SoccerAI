@@ -6,7 +6,7 @@ model:
   use_temporal: True 
 
   backbone:
-    type: "gcn"
+    type: "gatv2"
     dhid: 256
     dout: 128
     n_layers: 2 

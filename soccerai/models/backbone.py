@@ -248,30 +248,30 @@ class GATv2Backbone(nn.Module):
 
         self.use_edge_attr = cfg.use_edge_attr
         self.drop = nn.Dropout(cfg.drop)
-        self.skip_stride = cfg.skip_stride
 
         dims = [din] + [cfg.dhid] * (cfg.n_layers - 1) + [cfg.dout]
 
-        self.convs = nn.ModuleList()
-        self.norms = nn.ModuleList()
-
-        for i, (in_dim, out_dim) in enumerate(zip(dims[:-1], dims[1:])):
-            is_last = i == cfg.n_layers - 1
-            out_per_head = out_dim if is_last else out_dim // cfg.num_heads
-
-            self.convs.append(
+        self.convs = nn.ModuleList(
+            [
                 pyg_nn.GATv2Conv(
                     in_channels=in_dim,
-                    out_channels=out_per_head,
+                    out_channels=(
+                        out_dim if i == cfg.n_layers - 1 else out_dim // cfg.num_heads
+                    ),
                     heads=cfg.num_heads,
-                    concat=not is_last,
+                    concat=(i != cfg.n_layers - 1),
                     dropout=cfg.drop,
                     edge_dim=1 if cfg.use_edge_attr else None,
                 )
-            )
+                for i, (in_dim, out_dim) in enumerate(zip(dims[:-1], dims[1:]))
+            ]
+        )
 
-            if not is_last:
-                self.norms.append(NORMALIZATIONS[cfg.norm](out_dim))
+        self.norms = nn.ModuleList(
+            [NORMALIZATIONS[cfg.norm](out_dim) for out_dim in dims[1:-1]]
+        )
+
+        self.residual_sum_mode: ResidualSumMode = cfg.residual_sum_mode
 
     def forward(
         self,
@@ -283,23 +283,28 @@ class GATv2Backbone(nn.Module):
         batch_size: Optional[int] = None,
         residual: OptTensor = None,
     ) -> torch.Tensor:
-        edge_attr_weight = (
-            edge_weight.unsqueeze(-1)
-            if self.use_edge_attr and edge_weight is not None
-            else None
-        )
         h = self.drop(x)
+        n_layers = len(self.convs)
 
-        for i, conv in enumerate(self.convs):
-            if residual is not None and i > 0 and i % self.skip_stride == 0:
-                h = h + residual
+        for layer_idx, conv in enumerate(self.convs):
+            h = sum_residual(
+                h,
+                residual,
+                self.residual_sum_mode,
+                layer_idx=layer_idx,
+                n_layers=n_layers,
+            )
 
-            h = conv(h, edge_index, edge_attr=edge_attr_weight)
+            h = conv(
+                h,
+                edge_index,
+                edge_attr=edge_weight if self.use_edge_attr else None,
+            )
 
-            if i < len(self.convs) - 1:
+            if layer_idx < n_layers - 1:
                 h = self.drop(
                     F.elu(
-                        self.norms[i](h, batch=batch, batch_size=batch_size),
+                        self.norms[layer_idx](h, batch=batch, batch_size=batch_size),
                         inplace=True,
                     )
                 )
