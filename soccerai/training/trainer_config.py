@@ -10,7 +10,7 @@ PathLike = str | Path
 
 
 class BackboneConfig(BaseModel):
-    type: Literal["gcn", "gcn2", "graphsage"]
+    type: Literal["gcn", "gcn2", "graphsage", "gatv2"]
     n_layers: int
     dhid: int
     dout: int
@@ -19,6 +19,8 @@ class BackboneConfig(BaseModel):
     skip_stride: int
     l2_norm: bool
     aggr_type: AggregationType
+    use_edge_attr: bool
+    num_heads: int
 
 
 class NeckConfig(BaseModel):

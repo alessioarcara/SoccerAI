@@ -1,10 +1,9 @@
 project_name: "soccerai"
-run_name: "graphsage"
+run_name: "gatv2"
 seed: 42
-use_temporal: False 
 
 model: 
-  use_temporal: True
+  use_temporal: True 
 
   backbone:
     type: "gcn"
@@ -14,6 +13,10 @@ model:
     drop: 0.0
     norm: "none"
     skip_stride: 100
+    aggr_type: "max"
+    l2_norm: True
+    num_heads: 8 
+    use_edge_attr: True
 
   neck:
     readout: "mean"

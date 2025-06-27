@@ -203,3 +203,69 @@ class GraphSAGEBackbone(nn.Module):
                 h = h + residual
 
         return h
+
+
+@BackboneRegistry.register("gatv2")
+class GATv2Backbone(nn.Module):
+    def __init__(self, din: int, cfg: BackboneConfig):
+        super().__init__()
+
+        self.use_edge_attr = cfg.use_edge_attr
+        self.drop = nn.Dropout(cfg.drop)
+        self.skip_stride = cfg.skip_stride
+
+        dims = [din] + [cfg.dhid] * (cfg.n_layers - 1) + [cfg.dout]
+
+        self.convs = nn.ModuleList()
+        self.norms = nn.ModuleList()
+
+        for i, (in_dim, out_dim) in enumerate(zip(dims[:-1], dims[1:])):
+            is_last = i == cfg.n_layers - 1
+            out_per_head = out_dim if is_last else out_dim // cfg.num_heads
+
+            self.convs.append(
+                pyg_nn.GATv2Conv(
+                    in_channels=in_dim,
+                    out_channels=out_per_head,
+                    heads=cfg.num_heads,
+                    concat=not is_last,
+                    dropout=cfg.drop,
+                    edge_dim=1 if cfg.use_edge_attr else None,
+                )
+            )
+
+            if not is_last:
+                self.norms.append(NORMALIZATIONS[cfg.norm](out_dim))
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        edge_index: Adj,
+        edge_weight: OptTensor = None,
+        edge_attr: OptTensor = None,
+        batch: OptTensor = None,
+        batch_size: Optional[int] = None,
+        residual: OptTensor = None,
+    ) -> torch.Tensor:
+        edge_attr_weight = (
+            edge_weight.unsqueeze(-1)
+            if self.use_edge_attr and edge_weight is not None
+            else None
+        )
+        h = self.drop(x)
+
+        for i, conv in enumerate(self.convs):
+            if residual is not None and i > 0 and i % self.skip_stride == 0:
+                h = h + residual
+
+            h = conv(h, edge_index, edge_attr=edge_attr_weight)
+
+            if i < len(self.convs) - 1:
+                h = self.drop(
+                    F.elu(
+                        self.norms[i](h, batch=batch, batch_size=batch_size),
+                        inplace=True,
+                    )
+                )
+
+        return h
