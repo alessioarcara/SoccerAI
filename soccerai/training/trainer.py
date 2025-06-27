@@ -35,7 +35,6 @@ class BaseTrainer(ABC):
         self.cfg = cfg
         self.device = device
         self.model: nn.Module = model.to(self.device)
-        # self.model = torch.compile(self.model)  # type: ignore[arg-type]
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.feature_names = feature_names or []

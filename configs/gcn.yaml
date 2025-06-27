@@ -1,6 +1,4 @@
 model: 
-  use_temporal: True
-
   backbone:
     type: "gcn"
     dhid: 256

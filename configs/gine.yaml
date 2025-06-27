@@ -1,8 +1,8 @@
 model:
-  use_temporal: True
-
   backbone: 
     type: "gine"
     n_layers: 5
-    dmid: 256
+    dhid: 256
     dout: 256
+    norm: "batch"
+    drop: 0.0

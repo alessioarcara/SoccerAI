@@ -1,24 +1,50 @@
 from pathlib import Path
-from typing import Any, Dict, Literal
+from typing import Annotated, Any, Dict, Literal, Union
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from soccerai.models.typings import AggregationType, NormalizationType, ReadoutType
 
 PathLike = str | Path
 
 
-class BackboneConfig(BaseModel):
-    type: Literal["gcn", "gcn2", "graphsage", "gine"]
-    n_layers: int
+class BackboneCommon(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     dhid: int
     dout: int
     drop: float
     norm: NormalizationType
+
+
+class GCNConfig(BackboneCommon):
+    type: Literal["gcn"]
+
+
+class GCN2Config(BackboneCommon):
+    type: Literal["gcn2"]
+    n_layers: int
     skip_stride: int
-    l2_norm: bool
+
+
+class GraphSAGEConfig(BackboneCommon):
+    type: Literal["graphsage"]
+    n_layers: int
+    skip_stride: int
     aggr_type: AggregationType
+    l2_norm: bool
+
+
+class GINEConfig(BackboneCommon):
+    type: Literal["gine"]
+    n_layers: int
+
+
+BackboneConfig = Annotated[
+    Union[GCNConfig, GCN2Config, GraphSAGEConfig, GINEConfig],
+    Field(discriminator="type"),
+]
 
 
 class NeckConfig(BaseModel):
