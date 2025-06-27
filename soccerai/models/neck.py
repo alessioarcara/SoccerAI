@@ -59,6 +59,6 @@ class TemporalGraphAndGlobalFusion(nn.Module):
         batch_size: Optional[int] = None,
         prev_h: OptTensor = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        h = self.grnn(torch.cat([z, x], dim=-1), edge_index, edge_weight, prev_h)
+        h = self.grnn(torch.concat([z, x], dim=-1), edge_index, edge_weight, prev_h)
         fused_emb = self.fuse(z, u, batch, batch_size)
         return fused_emb, h

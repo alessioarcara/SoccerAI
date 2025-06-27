@@ -4,19 +4,21 @@ from typing import Any, Dict, Literal
 import yaml
 from pydantic import BaseModel
 
-from soccerai.models.typings import NormalizationType, ReadoutType
+from soccerai.models.typings import AggregationType, NormalizationType, ReadoutType
 
 PathLike = str | Path
 
 
 class BackboneConfig(BaseModel):
-    type: Literal["gcn", "gcn2"]
+    type: Literal["gcn", "gcn2", "graphsage", "gine"]
     n_layers: int
     dhid: int
     dout: int
     drop: float
     norm: NormalizationType
     skip_stride: int
+    l2_norm: bool
+    aggr_type: AggregationType
 
 
 class NeckConfig(BaseModel):
