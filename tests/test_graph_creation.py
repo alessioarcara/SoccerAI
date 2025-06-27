@@ -3,13 +3,13 @@ from torch_geometric.data import Data
 
 from soccerai.data.converters import BipartiteGraphConverter, create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
-from soccerai.training.trainer_config import build_cfg
+from soccerai.training.trainer_config import build_config
 
-CONFIG_PATH = "configs/base.yaml"
+CONFIG_DIR = "configs"
 
 
 def test_augmentations():
-    cfg = build_cfg(CONFIG_PATH).data
+    cfg = build_config(CONFIG_DIR).data
     converter = create_graph_converter("fully_connected")
     dataset = WorldCup2022Dataset(
         root="soccerai/data/resources",
@@ -35,7 +35,7 @@ def test_augmentations():
 
 
 def test_bipartite_graph_creation():
-    cfg = build_cfg(CONFIG_PATH).data
+    cfg = build_config(CONFIG_DIR).data
     converter = create_graph_converter("bipartite")
     assert isinstance(converter, BipartiteGraphConverter)
     ds = WorldCup2022Dataset(
