@@ -4,4 +4,4 @@ model:
     n_layers: 9 
     drop: 0.1
     norm: "none"
-    residual_sum_strategy: "every"
+    residual_sum_mode: "every"
