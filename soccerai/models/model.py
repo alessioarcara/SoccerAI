@@ -7,7 +7,7 @@ from torch_geometric.typing import Adj, OptTensor
 from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.models.backbone import BackboneRegistry
 from soccerai.models.head import GraphClassificationHead
-from soccerai.models.neck import Neck, TNeck
+from soccerai.models.neck import GraphAndGlobalFusion, TemporalGraphAndGlobalFusion
 from soccerai.training.trainer_config import Config
 
 
@@ -29,11 +29,11 @@ class GNN(nn.Module):
         batch_size: Optional[int] = None,
     ):
         z = self.backbone(x, edge_index, edge_weight, edge_attr, batch, batch_size)
-        fused_emb = self.neck(u, z, batch, batch_size)
+        fused_emb = self.neck(z, u, batch, batch_size)
         return self.head(fused_emb)
 
 
-class TGNN(nn.Module):
+class TemporalGNN(nn.Module):
     def __init__(self, backbone: nn.Module, neck: nn.Module, head: nn.Module):
         super().__init__()
         self.backbone = backbone
@@ -55,30 +55,33 @@ class TGNN(nn.Module):
             x, edge_index, edge_weight, edge_attr, batch, batch_size, prev_h
         )
         fused_emb, h = self.neck(
-            x, u, z, edge_index, edge_weight, batch, batch_size, prev_h
+            z, u, x, edge_index, edge_weight, batch, batch_size, prev_h
         )
-
         return self.head(fused_emb), h
 
 
-def create_model(cfg: Config, train_ds: WorldCup2022Dataset) -> nn.Module:
+def build_model(cfg: Config, train_ds: WorldCup2022Dataset) -> nn.Module:
     backbone = BackboneRegistry.create(
-        cfg.model.backbone.name, train_ds.num_node_features, cfg.model.backbone
+        cfg.model.backbone.type, train_ds.num_node_features, cfg.model.backbone
     )
-    neck = Neck(cfg.model.backbone.dout, train_ds.num_global_features, cfg.model.neck)
     head = GraphClassificationHead(cfg.model.backbone.dout * 2, cfg.model.head)
 
-    match cfg.model.name:
-        case "gnn":
-            return GNN(backbone, neck, head)
-        case "tgnn":
-            return TGNN(
-                backbone,
-                TNeck(
-                    train_ds.num_node_features,
-                    cfg.model.backbone.dout,
-                    cfg.model.neck,
-                    neck,
-                ),
-                head,
-            )
+    if cfg.model.use_temporal:
+        return TemporalGNN(
+            backbone,
+            TemporalGraphAndGlobalFusion(
+                train_ds.num_node_features,
+                cfg.model.backbone.dout,
+                train_ds.num_global_features,
+                cfg.model.neck,
+            ),
+            head,
+        )
+    else:
+        return GNN(
+            backbone,
+            GraphAndGlobalFusion(
+                cfg.model.backbone.dout, train_ds.num_global_features, cfg.model.neck
+            ),
+            head,
+        )

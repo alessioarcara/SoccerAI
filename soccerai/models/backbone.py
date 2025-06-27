@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import torch_geometric.nn as pyg_nn
 from torch_geometric.typing import Adj, OptTensor
 
+from soccerai.models.typings import NormalizationType
 from soccerai.training.trainer_config import BackboneConfig
 
 
@@ -23,7 +24,7 @@ class BackboneRegistry:
     @classmethod
     def create(cls, name: str, *args, **kwargs) -> nn.Module:
         if name not in cls._registry:
-            raise ValueError(f"Backbone '{name}' not registered.")
+            raise ValueError(f"Backbone '{name}' not registered")
         return cls._registry[name](*args, **kwargs)
 
 
@@ -32,11 +33,17 @@ class Identity(nn.Identity):
         return input
 
 
-NORMALIZATION: Dict[str, Type[nn.Module]] = {
+class BatchNorm(nn.BatchNorm1d):
+    def forward(self, input: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        return super().forward(input)
+
+
+NORMALIZATIONS: Dict[NormalizationType, Type[nn.Module]] = {
+    "none": Identity,
+    "batch": BatchNorm,
     "layer": pyg_nn.LayerNorm,
     "instance": pyg_nn.InstanceNorm,
     "graph": pyg_nn.GraphNorm,
-    "none": Identity,
 }
 
 
@@ -44,11 +51,11 @@ NORMALIZATION: Dict[str, Type[nn.Module]] = {
 class GCNBackbone(nn.Module):
     def __init__(self, din: int, cfg: BackboneConfig):
         super().__init__()
-        self.conv1 = pyg_nn.GCNConv(din, cfg.dhid)
         self.drop = nn.Dropout(cfg.drop)
-        self.norm1 = NORMALIZATION[cfg.norm](cfg.dhid)
+        self.conv1 = pyg_nn.GCNConv(din, cfg.dhid)
+        self.norm1 = NORMALIZATIONS[cfg.norm](cfg.dhid)
         self.conv2 = pyg_nn.GCNConv(cfg.dhid, cfg.dout)
-        self.norm2 = NORMALIZATION[cfg.norm](cfg.dout)
+        self.norm2 = NORMALIZATIONS[cfg.norm](cfg.dout)
 
     def forward(
         self,
@@ -60,28 +67,29 @@ class GCNBackbone(nn.Module):
         batch_size: Optional[int] = None,
         residual: OptTensor = None,
     ):
-        x = self.drop(
+        h = self.drop(
             F.relu(
                 self.norm1(
                     self.conv1(x, edge_index, edge_weight),
                     batch=batch,
                     batch_size=batch_size,
-                )
+                ),
+                inplace=True,
             )
         )
 
-        if residual is None:
-            residual = torch.zeros_like(x, device=x.device)
+        if residual is not None:
+            h = h + residual
 
-        return self.drop(
-            F.relu(
-                self.norm2(
-                    self.conv2(x + residual, edge_index, edge_weight),
-                    batch=batch,
-                    batch_size=batch_size,
-                )
-            )
+        h = F.relu(
+            self.norm2(
+                self.conv2(h, edge_index, edge_weight),
+                batch=batch,
+                batch_size=batch_size,
+            ),
+            inplace=True,
         )
+        return h
 
 
 @BackboneRegistry.register("gcn2")
@@ -89,26 +97,25 @@ class GCNIIBackbone(nn.Module):
     def __init__(self, din: int, cfg: BackboneConfig):
         super().__init__()
 
-        if din != cfg.dhid:
-            self.lin1 = pyg_nn.Linear(din, cfg.dhid)
-        else:
-            self.lin1 = nn.Identity()
+        self.drop = nn.Dropout(cfg.drop)
+        self.lin1 = pyg_nn.Linear(din, cfg.dhid) if din != cfg.dhid else nn.Identity()
 
-        self.convs = nn.ModuleList()
-        self.norms = nn.ModuleList()
-        for i in range(cfg.n_layers):
-            self.convs.append(
+        self.convs = nn.ModuleList(
+            [
                 pyg_nn.GCN2Conv(
                     cfg.dhid, alpha=0.5, theta=1.0, layer=i + 1, shared_weights=False
                 )
-            )
-            self.norms.append(NORMALIZATION[cfg.norm](cfg.dhid))
-        if cfg.dhid != cfg.dout:
-            self.lin2 = pyg_nn.Linear(cfg.dhid, cfg.dout)
-        else:
-            self.lin2 = nn.Identity()
+                for i in range(cfg.n_layers)
+            ]
+        )
+        self.norms = nn.ModuleList(
+            [NORMALIZATIONS[cfg.norm](cfg.dhid) for _ in range(cfg.n_layers)]
+        )
 
-        self.drop = nn.Dropout(cfg.drop)
+        self.lin2 = (
+            pyg_nn.Linear(cfg.dhid, cfg.dout) if cfg.dhid != cfg.dout else nn.Identity()
+        )
+
         self.skip_stride = cfg.skip_stride
 
     def forward(
@@ -121,107 +128,78 @@ class GCNIIBackbone(nn.Module):
         batch_size: Optional[int] = None,
         residual: OptTensor = None,
     ):
-        x_0 = self.drop(F.relu(self.lin1(x)))
-        if residual is None:
-            residual = torch.zeros_like(x_0, device=x_0.device)
+        h = h0 = self.lin1(x)
 
-        x = x_0
-        for i in range(len(self.convs)):
-            if i % self.skip_stride == 0:
-                res = x_0 + residual
-            else:
-                res = x_0
-            x = self.drop(
+        for i, (conv, norm) in enumerate(zip(self.convs, self.norms)):
+            h = self.drop(
                 F.relu(
-                    self.norms[i](
-                        self.convs[i](
-                            x,
-                            res,
-                            edge_index,
-                            edge_weight,
-                        ),
+                    norm(
+                        conv(h, h0, edge_index, edge_weight),
                         batch=batch,
                         batch_size=batch_size,
-                    )
+                    ),
+                    inplace=True,
                 )
             )
 
-        return self.drop(F.relu(self.lin2(x)))
+            if residual is not None and i > 0 and i % self.skip_stride == 0:
+                h = h + residual
+
+        return self.lin2(h)
 
 
-@BackboneRegistry.register("gatv2")
-class GATv2Backbone(nn.Module):
+@BackboneRegistry.register("graphsage")
+class GraphSAGEBackbone(nn.Module):
     def __init__(
         self,
         din: int,
         cfg: BackboneConfig,
     ):
         super().__init__()
-        self.use_edge_attr = cfg.use_edge_attr
         self.drop = nn.Dropout(cfg.drop)
-        self.skip_stride = cfg.skip_stride
+
+        project = cfg.aggr_type == "max"
+
+        dims = [din] + [cfg.dhid] * (cfg.n_layers - 1) + [cfg.dout]
+
         self.convs = nn.ModuleList()
         self.norms = nn.ModuleList()
+        for i in range(len(dims) - 1):
+            in_dim = dims[i]
+            out_dim = dims[i + 1]
 
-        for i in range(cfg.n_layers):
-            in_dim = din if i == 0 else cfg.dhid
-            if i < cfg.n_layers - 1:
-                conv = pyg_nn.GATv2Conv(
-                    in_dim,
-                    cfg.dhid // cfg.num_heads,
-                    heads=cfg.num_heads,
-                    concat=True,  # concatenate
-                    dropout=cfg.drop,
-                    edge_dim=1 if cfg.use_edge_attr else None,
+            self.convs.append(
+                pyg_nn.SAGEConv(
+                    in_channels=in_dim,
+                    out_channels=out_dim,
+                    aggr=cfg.aggr_type,
+                    project=project,
+                    normalize=cfg.l2_norm,
                 )
-            else:
-                conv = pyg_nn.GATv2Conv(
-                    in_dim,
-                    cfg.dout,
-                    heads=cfg.num_heads,
-                    concat=False,  # average
-                    dropout=cfg.drop,
-                    edge_dim=1 if cfg.use_edge_attr else None,
-                )
+            )
+            self.norms.append(NORMALIZATIONS[cfg.norm](out_dim))
 
-            self.convs.append(conv)
-            self.norms.append(NORMALIZATION[cfg.norm](cfg.dhid))
+        self.skip_stride = cfg.skip_stride
 
-    # ------------------------------------------------------------------
     def forward(
         self,
         x: torch.Tensor,
         edge_index: torch.Tensor,
         edge_weight: OptTensor = None,
-        egde_attr: OptTensor = None,
+        edge_attr: OptTensor = None,
         batch: OptTensor = None,
         batch_size: Optional[int] = None,
         residual: OptTensor = None,
     ):
-        edge_weight = (
-            edge_weight.unsqueeze(-1)
-            if (self.use_edge_attr and edge_weight is not None)
-            else None
-        )
-        x = self.drop(x)
-        x = F.elu(self.convs[0](x, edge_index, edge_attr=edge_weight))
-        x = self.drop(x)
+        h = x
+        for i, (conv, norm) in enumerate(zip(self.convs, self.norms)):
+            h = self.drop(
+                F.relu(
+                    norm(conv(h, edge_index), batch=batch, batch_size=batch_size),
+                )
+            )
 
-        if residual is None:
-            residual = torch.zeros_like(x)
+            if residual is not None and i > 0 and i % self.skip_stride:
+                h = h + residual
 
-        last_idx = len(self.convs) - 1
-        for idx, conv in enumerate(self.convs[1:], start=1):
-            if idx % self.skip_stride == 0:
-                h_in = x + residual
-            else:
-                h_in = x
-
-            if idx < last_idx:
-                x = F.elu(conv(h_in, edge_index, edge_attr=edge_weight))
-                x = self.drop(x)
-            else:
-                x = conv(h_in, edge_index)
-            residual = h_in
-
-        return x
+        return h
