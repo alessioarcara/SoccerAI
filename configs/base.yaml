@@ -1,17 +1,18 @@
 project_name: "soccerai"
+run_name: "gcn"
 seed: 42
 
 model: 
-  name: "gnn"
+  use_temporal: True
 
   backbone:
-    type: "gcn2"
-    n_layers: 9 
+    type: "gcn"
     dhid: 256
     dout: 128
-    drop: 0.1
+    n_layers: 2 
+    drop: 0.0
     norm: "none"
-    skip_stride: 1 
+    skip_stride: 100
 
   neck:
     readout: "mean"

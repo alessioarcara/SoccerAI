@@ -1,10 +1,12 @@
 from pathlib import Path
-from typing import Literal
+from typing import Any, Dict, Literal
 
 import yaml
 from pydantic import BaseModel
 
 from soccerai.models.typings import NormalizationType, ReadoutType
+
+PathLike = str | Path
 
 
 class BackboneConfig(BaseModel):
@@ -28,7 +30,7 @@ class HeadConfig(BaseModel):
 
 
 class ModelConfig(BaseModel):
-    name: Literal["gnn", "tgnn"]
+    use_temporal: bool
     backbone: BackboneConfig
     neck: NeckConfig
     head: HeadConfig
@@ -72,6 +74,7 @@ class MetricsConfig(BaseModel):
 
 class Config(BaseModel):
     project_name: str
+    run_name: str
     seed: int
     model: ModelConfig
     trainer: TrainerConfig
@@ -81,12 +84,38 @@ class Config(BaseModel):
     pitch_grid: PitchGridConfig
 
 
-def _load_yaml(path: str | Path):
+def _load_yaml(path: PathLike):
     return yaml.safe_load(Path(path).expanduser().read_text()) or {}
 
 
-def build_cfg(*yaml_paths: str | Path) -> Config:
-    merged = {}
-    for p in yaml_paths:
-        merged.update(_load_yaml(p))
-    return Config(**merged)
+def _deep_merge(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Recursively merge dict `b` into dict `a`
+    """
+    result = a.copy()
+    for k, v in b.items():
+        if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+            result[k] = _deep_merge(result[k], v)
+        else:
+            result[k] = v
+    return result
+
+
+def build_config(config_dir: Path) -> Config:
+    """
+    Load and deeply merge multiple YAML configuration files.
+
+    Steps:
+    1. Load the base configuration from 'base.yaml'.
+    2. Determine the model name from the base config and load its specific YAML file.
+    3. Merge the base and model-specific configs.
+    4. Instantiate and return a Config object with the merged settings.
+    """
+    base_yaml_path = config_dir / "base.yaml"
+    base_cfg_dict = _load_yaml(base_yaml_path)
+
+    model_yaml_path = config_dir / f"{base_cfg_dict['run_name']}.yaml"
+    model_cfg_dict = _load_yaml(model_yaml_path)
+
+    merged_dict = _deep_merge(base_cfg_dict, model_cfg_dict)
+    return Config(**merged_dict)
