@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import torch_geometric.nn as pyg_nn
 from torch_geometric.typing import Adj, OptTensor
 
+from soccerai.models.typings import NormalizationType
 from soccerai.training.trainer_config import BackboneConfig
 
 
@@ -23,7 +24,7 @@ class BackboneRegistry:
     @classmethod
     def create(cls, name: str, *args, **kwargs) -> nn.Module:
         if name not in cls._registry:
-            raise ValueError(f"Backbone '{name}' not registered.")
+            raise ValueError(f"Backbone '{name}' not registered")
         return cls._registry[name](*args, **kwargs)
 
 
@@ -32,11 +33,11 @@ class Identity(nn.Identity):
         return input
 
 
-NORMALIZATION: Dict[str, Type[nn.Module]] = {
+NORMALIZATIONS: Dict[NormalizationType, Type[nn.Module]] = {
+    "none": Identity,
     "layer": pyg_nn.LayerNorm,
     "instance": pyg_nn.InstanceNorm,
     "graph": pyg_nn.GraphNorm,
-    "none": Identity,
 }
 
 
@@ -44,11 +45,11 @@ NORMALIZATION: Dict[str, Type[nn.Module]] = {
 class GCNBackbone(nn.Module):
     def __init__(self, din: int, cfg: BackboneConfig):
         super().__init__()
-        self.conv1 = pyg_nn.GCNConv(din, cfg.dhid)
         self.drop = nn.Dropout(cfg.drop)
-        self.norm1 = NORMALIZATION[cfg.norm](cfg.dhid)
+        self.conv1 = pyg_nn.GCNConv(din, cfg.dhid)
+        self.norm1 = NORMALIZATIONS[cfg.norm](cfg.dhid)
         self.conv2 = pyg_nn.GCNConv(cfg.dhid, cfg.dout)
-        self.norm2 = NORMALIZATION[cfg.norm](cfg.dout)
+        self.norm2 = NORMALIZATIONS[cfg.norm](cfg.dout)
 
     def forward(
         self,
@@ -60,24 +61,27 @@ class GCNBackbone(nn.Module):
         batch_size: Optional[int] = None,
         residual: OptTensor = None,
     ):
-        x = F.relu(
+        h = F.relu(
             self.norm1(
                 self.conv1(x, edge_index, edge_weight),
                 batch=batch,
                 batch_size=batch_size,
-            )
+            ),
+            inplace=True,
         )
 
         if residual is None:
-            residual = torch.zeros_like(x, device=x.device)
+            residual = torch.zeros_like(h, device=h.device)
 
-        return F.relu(
+        h = F.relu(
             self.norm2(
-                self.conv2(self.drop(x) + residual, edge_index, edge_weight),
+                self.conv2(self.drop(h) + residual, edge_index, edge_weight),
                 batch=batch,
                 batch_size=batch_size,
-            )
+            ),
+            inplace=True,
         )
+        return h
 
 
 @BackboneRegistry.register("gcn2")
@@ -85,26 +89,25 @@ class GCNIIBackbone(nn.Module):
     def __init__(self, din: int, cfg: BackboneConfig):
         super().__init__()
 
-        if din != cfg.dhid:
-            self.lin1 = pyg_nn.Linear(din, cfg.dhid)
-        else:
-            self.lin1 = nn.Identity()
+        self.drop = nn.Dropout(cfg.drop)
+        self.lin1 = pyg_nn.Linear(din, cfg.dhid) if din != cfg.dhid else nn.Identity()
 
-        self.convs = nn.ModuleList()
-        self.norms = nn.ModuleList()
-        for i in range(cfg.n_layers):
-            self.convs.append(
+        self.convs = nn.ModuleList(
+            [
                 pyg_nn.GCN2Conv(
                     cfg.dhid, alpha=0.5, theta=1.0, layer=i + 1, shared_weights=False
                 )
-            )
-            self.norms.append(NORMALIZATION[cfg.norm](cfg.dhid))
-        if cfg.dhid != cfg.dout:
-            self.lin2 = pyg_nn.Linear(cfg.dhid, cfg.dout)
-        else:
-            self.lin2 = nn.Identity()
+                for i in range(cfg.n_layers)
+            ]
+        )
+        self.norms = nn.ModuleList(
+            [NORMALIZATIONS[cfg.norm](cfg.dhid) for _ in range(cfg.n_layers)]
+        )
 
-        self.drop = nn.Dropout(cfg.drop)
+        self.lin2 = (
+            pyg_nn.Linear(cfg.dhid, cfg.dout) if cfg.dhid != cfg.dout else nn.Identity()
+        )
+
         self.skip_stride = cfg.skip_stride
 
     def forward(
@@ -117,30 +120,26 @@ class GCNIIBackbone(nn.Module):
         batch_size: Optional[int] = None,
         residual: OptTensor = None,
     ):
-        x_0 = F.relu(self.lin1(x))
-        if residual is None:
-            residual = torch.zeros_like(x_0, device=x_0.device)
+        x = x0 = self.lin1(x)
 
-        x = x_0
-        for i in range(len(self.convs)):
-            if i % self.skip_stride == 0:
-                res = x_0 + residual
-            else:
-                res = x_0
-            x = F.relu(
-                self.norms[i](
-                    self.convs[i](
-                        self.drop(x),
-                        res,
-                        edge_index,
-                        edge_weight,
+        if residual is None:
+            residual = torch.zeros_like(x0, device=x0.device)
+
+        for i, (conv, norm) in enumerate(zip(self.convs, self.norms)):
+            x = self.drop(
+                F.relu(
+                    norm(
+                        conv(x, x0, edge_index, edge_weight),
+                        batch=batch,
+                        batch_size=batch_size,
                     ),
-                    batch=batch,
-                    batch_size=batch_size,
+                    inplace=True,
                 )
             )
+            if i > 0 and i % self.skip_stride == 0:
+                x = x + residual
 
-        return F.relu(self.lin2(self.drop(x)))
+        return self.lin2(x)
 
 
 @BackboneRegistry.register("graphsage")

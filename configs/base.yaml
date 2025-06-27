@@ -1,28 +1,26 @@
 project_name: "soccerai"
+run_name: "gcn"
 seed: 42
-use_temporal: True 
 
-model:
-  name: "tgnn"
+model: 
+  use_temporal: True
+
   backbone:
-    name: 'graphsage'
-    drop: 0.1
+    type: "gcn"
     dhid: 256
     dout: 128
-    n_layers: 2
-    norm: 'none'
-    skip_stride: 1
-    aggr_type: "pool"
-    l2_norm: True
+    n_layers: 2 
+    drop: 0.0
+    norm: "none"
+    skip_stride: 100
 
   neck:
-    readout: 'mean'
+    readout: "mean"
     dhid: 256
-    k: 1
+
   head:
+    n_layers: 2
     drop: 0.5
-    n_layers: 1
-    dout: 1
 
 trainer:
   bs: 64
