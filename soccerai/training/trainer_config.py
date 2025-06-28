@@ -41,6 +41,11 @@ class GraphSAGEConfig(BackboneCommon):
     l2_norm: bool
 
 
+class GraphGPSConfig(BackboneCommon):
+    type: Literal["graphgps"]
+    n_layers: int
+
+
 class GINEConfig(BackboneCommon):
     type: Literal["gine"]
     n_layers: int
@@ -48,7 +53,7 @@ class GINEConfig(BackboneCommon):
 
 
 BackboneConfig = Annotated[
-    Union[GCNConfig, GCN2Config, GraphSAGEConfig, GINEConfig],
+    Union[GCNConfig, GCN2Config, GraphSAGEConfig, GINEConfig, GraphGPSConfig],
     Field(discriminator="type"),
 ]
 

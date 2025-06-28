@@ -1,0 +1,8 @@
+model:
+  backbone: 
+    type: "graphgps"
+    n_layers: 3
+    dhid: 512
+    dout: 512
+    drop: 0.0
+    norm: "none"

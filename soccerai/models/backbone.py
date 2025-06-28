@@ -11,6 +11,7 @@ from soccerai.training.trainer_config import (
     GCN2Config,
     GCNConfig,
     GINEConfig,
+    GraphGPSConfig,
     GraphSAGEConfig,
 )
 
@@ -301,3 +302,38 @@ class GINEBackbone(nn.Module):
             outs.append(h)
 
         return outs
+
+
+@BackboneRegistry.register("graphgps")
+class GraphGPS(nn.Module):
+    def __init__(self, din: int, cfg: GraphGPSConfig):
+        super().__init__()
+
+        self.node_proj = nn.Linear(din, cfg.dhid)
+        self.edge_proj = nn.Linear(1, cfg.dhid)
+
+        self.convs = nn.ModuleList()
+        for i in range(cfg.n_layers):
+            mlp = build_mlp(cfg.dhid, cfg.dhid)
+            conv = pyg_nn.GPSConv(cfg.dhid, pyg_nn.GINEConv(mlp, edge_dim=1), heads=4)
+            self.convs.append(conv)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        edge_index: Adj,
+        edge_weight: OptTensor = None,
+        edge_attr: OptTensor = None,
+        batch: OptTensor = None,
+        batch_size: Optional[int] = None,
+        residual: OptTensor = None,
+    ):
+        print(x.shape)
+        print(edge_index.shape)
+        print(edge_attr.shape)
+        h = self.node_proj(x)
+        edge_attr = self.edge_proj(edge_attr)
+
+        for conv in self.convs:
+            h = conv(h, edge_index, batch, edge_attr=edge_attr)
+        return h

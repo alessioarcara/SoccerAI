@@ -1,9 +1,9 @@
 project_name: "soccerai"
-run_name: "gine"
+run_name: "graphgps"
 seed: 42
 
 model: 
-  use_temporal: True
+  use_temporal: False 
 
   neck:
     readout: "mean"
