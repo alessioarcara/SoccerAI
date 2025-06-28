@@ -65,7 +65,7 @@ def sum_residual(
     - 'every': add residual at all layers except the first (layer_idx > 0)
     - 'last': add residual only before the final layer (layer_idx == n_layers - 1)
     """
-    if residual is None:
+    if residual is None or mode == "none":
         return h
 
     if mode == "every" and layer_idx > 0:
