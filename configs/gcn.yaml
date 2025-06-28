@@ -1,7 +1,3 @@
 model: 
   backbone:
     type: "gcn"
-    dhid: 256
-    dout: 128
-    drop: 0.0
-    norm: "none"

@@ -82,9 +82,9 @@ class GCNBackbone(nn.Module):
     def __init__(self, din: int, cfg: GCNConfig):
         super().__init__()
         self.drop = nn.Dropout(cfg.drop)
-        self.conv1 = pyg_nn.GCNConv(din, cfg.dhid)
-        self.norm1 = NORMALIZATIONS[cfg.norm](cfg.dhid)
-        self.conv2 = pyg_nn.GCNConv(cfg.dhid, cfg.dout)
+        self.conv1 = pyg_nn.GCNConv(din, cfg.dout)
+        self.norm1 = NORMALIZATIONS[cfg.norm](cfg.dout)
+        self.conv2 = pyg_nn.GCNConv(cfg.dout, cfg.dout)
         self.norm2 = NORMALIZATIONS[cfg.norm](cfg.dout)
 
     def forward(
@@ -126,26 +126,21 @@ class GCNBackbone(nn.Module):
 class GCNIIBackbone(nn.Module):
     def __init__(self, din: int, cfg: GCN2Config):
         super().__init__()
+        self.residual_sum_mode = cfg.residual_sum_mode
         self.drop = nn.Dropout(cfg.drop)
-        self.lin1 = pyg_nn.Linear(din, cfg.dhid) if din != cfg.dhid else nn.Identity()
+        self.node_proj = pyg_nn.Linear(din, cfg.dout)
 
         self.convs = nn.ModuleList(
             [
                 pyg_nn.GCN2Conv(
-                    cfg.dhid, alpha=0.5, theta=1.0, layer=i + 1, shared_weights=False
+                    cfg.dout, alpha=0.5, theta=1.0, layer=i + 1, shared_weights=False
                 )
                 for i in range(cfg.n_layers)
             ]
         )
         self.norms = nn.ModuleList(
-            [NORMALIZATIONS[cfg.norm](cfg.dhid) for _ in range(cfg.n_layers)]
+            [NORMALIZATIONS[cfg.norm](cfg.dout) for _ in range(cfg.n_layers)]
         )
-
-        self.lin2 = (
-            pyg_nn.Linear(cfg.dhid, cfg.dout) if cfg.dhid != cfg.dout else nn.Identity()
-        )
-
-        self.residual_sum_mode = cfg.residual_sum_mode
 
     def forward(
         self,
@@ -157,7 +152,7 @@ class GCNIIBackbone(nn.Module):
         batch_size: Optional[int] = None,
         residual: OptTensor = None,
     ):
-        h = h0 = self.lin1(x)
+        h = h0 = self.node_proj(x)
         n_layers = len(self.convs)
 
         for layer_idx, (conv, norm) in enumerate(zip(self.convs, self.norms)):
@@ -179,7 +174,7 @@ class GCNIIBackbone(nn.Module):
                 )
             )
 
-        return self.lin2(h)
+        return h
 
 
 @BackboneRegistry.register("graphsage")
@@ -190,30 +185,24 @@ class GraphSAGEBackbone(nn.Module):
         cfg: GraphSAGEConfig,
     ):
         super().__init__()
+        self.residual_sum_mode = cfg.residual_sum_mode
         self.drop = nn.Dropout(cfg.drop)
-
         project = cfg.aggr_type == "max"
-
-        dims = [din] + [cfg.dhid] * (cfg.n_layers - 1) + [cfg.dout]
 
         self.convs = nn.ModuleList()
         self.norms = nn.ModuleList()
-        for i in range(len(dims) - 1):
-            in_dim = dims[i]
-            out_dim = dims[i + 1]
-
+        for _ in range(cfg.n_layers):
             self.convs.append(
                 pyg_nn.SAGEConv(
-                    in_channels=in_dim,
-                    out_channels=out_dim,
+                    in_channels=din,
+                    out_channels=cfg.dout,
                     aggr=cfg.aggr_type,
                     project=project,
                     normalize=cfg.l2_norm,
                 )
             )
-            self.norms.append(NORMALIZATIONS[cfg.norm](out_dim))
-
-        self.residual_sum_mode = cfg.residual_sum_mode
+            self.norms.append(NORMALIZATIONS[cfg.norm](cfg.dout))
+            din = cfg.dout
 
     def forward(
         self,
@@ -246,27 +235,27 @@ class GraphSAGEBackbone(nn.Module):
 
 
 def build_mlp(din: int, dmid: int) -> nn.Sequential:
-    return nn.Sequential(
-        nn.Linear(din, dmid), nn.BatchNorm1d(dmid), nn.ReLU(), nn.Linear(dmid, dmid)
-    )
+    return nn.Sequential(nn.Linear(din, dmid), nn.ReLU(), nn.Linear(dmid, dmid))
 
 
 @BackboneRegistry.register("gine")
 class GINEBackbone(nn.Module):
     def __init__(self, din: int, cfg: GINEConfig):
         super().__init__()
+        self.drop = nn.Dropout(cfg.drop)
 
-        self.convs = nn.ModuleList(
-            [
-                pyg_nn.GINEConv(nn=build_mlp(din if i == 0 else cfg.dhid, cfg.dout))
-                for i in range(cfg.n_layers)
-            ]
-        )
-        self.norms = nn.ModuleList(
-            [NORMALIZATIONS[cfg.norm](cfg.dout) for _ in range(cfg.n_layers)]
-        )
-
-        self.residual_sum_mode = cfg.residual_sum_mode
+        self.convs = nn.ModuleList()
+        self.norms = nn.ModuleList()
+        for _ in range(cfg.n_layers):
+            self.convs.append(
+                pyg_nn.GINEConv(
+                    nn=build_mlp(din, cfg.dout),
+                    edge_dim=1,
+                    train_eps=True,
+                )
+            )
+            self.norms.append(NORMALIZATIONS[cfg.norm](cfg.dout))
+            din = cfg.dout
 
     def forward(
         self,
@@ -280,23 +269,20 @@ class GINEBackbone(nn.Module):
     ):
         outs = []
         h = x
-        n_layers = len(self.convs)
 
-        for layer_idx, (conv, norm) in enumerate(zip(self.convs, self.norms)):
-            h = sum_residual(
-                h,
-                residual,
-                self.residual_sum_mode,
-                layer_idx=layer_idx,
-                n_layers=n_layers,
-            )
-            h = F.relu(
-                norm(
-                    conv(h, edge_index, edge_attr=edge_attr),
-                    batch=batch,
-                    batch_size=batch_size,
-                ),
-                inplace=True,
+        if edge_attr is not None:
+            edge_attr = edge_attr.unsqueeze(1)
+
+        for conv, norm in zip(self.convs, self.norms):
+            h = self.drop(
+                F.relu(
+                    norm(
+                        conv(h, edge_index, edge_attr=edge_attr),
+                        batch=batch,
+                        batch_size=batch_size,
+                    ),
+                    inplace=True,
+                )
             )
             outs.append(h)
 

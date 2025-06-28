@@ -7,7 +7,7 @@ import torch_geometric.nn as pyg_nn
 import torch_geometric_temporal.nn as pygt_nn
 from torch_geometric.typing import Adj, OptTensor
 
-from soccerai.models.typings import ReadoutType, TemporalMode
+from soccerai.models.typings import ReadoutType
 from soccerai.training.trainer_config import NeckConfig
 
 READOUT_AGGREGATIONS: Dict[ReadoutType, pyg_nn.Aggregation] = {
@@ -25,15 +25,20 @@ class GraphGlobalFusion(nn.Module):
     3. Concatenate [graph || global]
     """
 
-    def __init__(self, backbone_dout: int, glob_din: int, cfg: NeckConfig):
+    def __init__(self, glob_din: int, glob_dout: int, cfg: NeckConfig):
         super().__init__()
         self.readout = READOUT_AGGREGATIONS[cfg.readout]()
-        self.global_proj = pyg_nn.Linear(glob_din, backbone_dout)
+        self.global_proj = pyg_nn.Linear(glob_din, glob_dout)
 
     def forward(
         self, z: torch.Tensor, u: torch.Tensor, batch: torch.Tensor, batch_size: int
     ) -> torch.Tensor:
-        graph_emb = self.readout(x=z, index=batch, dim_size=batch_size)
+        z_list = z if isinstance(z, list) else [z]
+
+        graph_embs = [
+            self.readout(x=z, index=batch, dim_size=batch_size) for z in z_list
+        ]
+        graph_emb = torch.cat(graph_embs, dim=1)
         glob_emb = F.relu(self.global_proj(u), inplace=True)
         return torch.cat([graph_emb, glob_emb], dim=-1)
 
@@ -53,22 +58,28 @@ class TemporalFusion(nn.Module):
 
     def __init__(
         self,
-        node_dim: int,
         backbone_dout: int,
+        node_dim: int,
         glob_din: int,
         cfg: NeckConfig,
-        mode: TemporalMode = "node",
     ):
         super().__init__()
-        self.mode = mode
+        self.mode = cfg.mode
+        self.fusion = GraphGlobalFusion(glob_din, cfg.glob_dout, cfg)
 
-        self.grnn = pygt_nn.recurrent.GConvGRU(
-            in_channels=backbone_dout + node_dim,
-            out_channels=cfg.dhid,
-            K=1,
-        )
-        self.fusion = GraphGlobalFusion(backbone_dout, glob_din, cfg)
-        self.rnn = nn.GRUCell(input_size=backbone_dout * 2, hidden_size=cfg.dhid)
+        if self.mode == "node":
+            self.grnn = pygt_nn.recurrent.GConvGRU(
+                in_channels=backbone_dout + node_dim,
+                out_channels=backbone_dout,
+                K=1,
+            )
+        elif self.mode == "graph":
+            self.rnn = nn.GRUCell(
+                input_size=cfg.rnn_din,
+                hidden_size=cfg.rnn_dout,
+            )
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
 
     def forward(
         self,
@@ -81,17 +92,19 @@ class TemporalFusion(nn.Module):
         batch_size: Optional[int] = None,
         prev_h: OptTensor = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        fused = self.fusion(z, u, batch, batch_size)
+
         if self.mode == "node":
             h = self.grnn(
-                torch.concat([z, x], dim=-1),
+                torch.cat([z, x], dim=-1),
                 edge_index,
                 edge_weight,
                 prev_h,
             )
-            fused = self.fusion(z, u, batch, batch_size)
             return fused, h
 
-        else:  # graph
-            fused = self.fusion(z, u, batch, batch_size)
+        if self.mode == "graph":
             h = self.rnn(fused, prev_h)
             return h, h
+
+        raise RuntimeError(f"Unhandled mode: {self.mode}")

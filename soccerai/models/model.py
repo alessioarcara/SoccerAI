@@ -64,14 +64,14 @@ def build_model(cfg: Config, train_ds: WorldCup2022Dataset) -> nn.Module:
     backbone = BackboneRegistry.create(
         cfg.model.backbone.type, train_ds.num_node_features, cfg.model.backbone
     )
-    head = GraphClassificationHead(cfg.model.backbone.dout * 2, cfg.model.head)
+    head = GraphClassificationHead(cfg.model.head)
 
     if cfg.model.use_temporal:
         return TemporalGNN(
             backbone,
             TemporalFusion(
-                train_ds.num_node_features,
                 cfg.model.backbone.dout,
+                train_ds.num_node_features,
                 train_ds.num_global_features,
                 cfg.model.neck,
             ),

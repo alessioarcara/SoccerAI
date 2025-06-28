@@ -9,6 +9,7 @@ from soccerai.models.typings import (
     NormalizationType,
     ReadoutType,
     ResidualSumMode,
+    TemporalMode,
 )
 
 PathLike = str | Path
@@ -17,7 +18,6 @@ PathLike = str | Path
 class BackboneCommon(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    dhid: int
     dout: int
     drop: float
     norm: NormalizationType
@@ -55,11 +55,15 @@ BackboneConfig = Annotated[
 
 class NeckConfig(BaseModel):
     readout: ReadoutType
-    dhid: int
+    glob_dout: int
+    rnn_din: int
+    rnn_dout: int
+    mode: TemporalMode
 
 
 class HeadConfig(BaseModel):
     n_layers: int
+    din: int
     drop: float
 
 

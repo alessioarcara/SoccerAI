@@ -1,24 +1,33 @@
 project_name: "soccerai"
-run_name: "gine"
+run_name: "graphsage"
 seed: 42
 
 model: 
   use_temporal: True
 
+  backbone:
+    dout: 256
+    drop: 0.0
+    norm: "none"
+
   neck:
     readout: "mean"
-    dhid: 256
+    rnn_din: 0
+    rnn_dout: 256 
+    glob_dout: 256 
+    mode: "node"
 
   head:
     n_layers: 2
+    din: 512 
     drop: 0.5
 
 trainer:
-  bs: 128 
-  n_epochs: 10
+  bs: 32 
+  n_epochs: 50
   lr: 1e-4
   wd: 1e-4
-  eval_rate: 5
+  eval_rate: 2
   gamma: 0.9
   
 data:
