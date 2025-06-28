@@ -63,9 +63,9 @@ class TemporalFusion(nn.Module):
         self.mode = mode
 
         self.grnn = pygt_nn.recurrent.GConvGRU(
-            input_size=backbone_dout + node_dim,
-            hidden_size=cfg.dhid,
-            num_layers=1,
+            in_channels=backbone_dout + node_dim,
+            out_channels=cfg.dhid,
+            K=1,
         )
         self.fusion = GraphGlobalFusion(backbone_dout, glob_din, cfg)
         self.rnn = nn.GRUCell(input_size=backbone_dout * 2, hidden_size=cfg.dhid)
