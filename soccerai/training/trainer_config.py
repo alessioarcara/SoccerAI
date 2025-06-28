@@ -44,6 +44,8 @@ class GraphSAGEConfig(BackboneCommon):
 class GraphGPSConfig(BackboneCommon):
     type: Literal["graphgps"]
     n_layers: int
+    heads: int
+    attn_drop: float
     residual_sum_mode: ResidualSumMode
 
 

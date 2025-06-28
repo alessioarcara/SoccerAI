@@ -2,13 +2,16 @@ model:
   backbone: 
     type: "graphgps"
     n_layers: 3
-    dout: 512
-    drop: 0.0
-    norm: "none"
-    residual_sum_mode: "last"
+    heads: 4
+    dout: 256
+    drop: 0.1
+    attn_drop: 0.5
+    residual_sum_mode: "every"
 
   neck:
-    rnn_dout: 512
+    rnn_dout: 384 
+    glob_dout: 128
 
   head:
-    din: 768
+    din: 384
+    drop: 0.5
