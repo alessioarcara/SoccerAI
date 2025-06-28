@@ -6,9 +6,9 @@ from pydantic import BaseModel
 
 from soccerai.models.typings import (
     BackboneType,
-    NeckType,
     NormalizationType,
     ReadoutType,
+    RNNType,
 )
 
 PathLike = str | Path
@@ -25,9 +25,11 @@ class BackboneConfig(BaseModel):
 
 
 class NeckConfig(BaseModel):
-    type: NeckType
+    rnn_type: RNNType
     readout: ReadoutType
     dhid: int
+    use_node_proj: bool
+    node_dout: int
 
 
 class HeadConfig(BaseModel):

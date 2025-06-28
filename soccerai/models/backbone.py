@@ -1,4 +1,4 @@
-from typing import Callable, Dict, List, Optional, Type
+from typing import Callable, Dict, Optional, Type
 
 import torch
 import torch.nn as nn
@@ -41,21 +41,6 @@ NORMALIZATIONS: Dict[NormalizationType, Type[nn.Module]] = {
 }
 
 
-def sum_residuals(
-    residuals: Optional[List[OptTensor]], shape_template: torch.Tensor
-) -> torch.Tensor:
-    if residuals is not None:
-        for i in range(len(residuals)):
-            if residuals[i] is None:
-                residuals[i] = torch.zeros_like(shape_template)
-
-        residual = sum(residuals)
-    else:
-        residual = torch.zeros_like(shape_template)
-
-    return residual
-
-
 @BackboneRegistry.register("gcn")
 class GCNBackbone(nn.Module):
     def __init__(self, din: int, cfg: BackboneConfig):
@@ -74,22 +59,25 @@ class GCNBackbone(nn.Module):
         edge_attr: OptTensor = None,
         batch: OptTensor = None,
         batch_size: Optional[int] = None,
-        residuals: Optional[List[OptTensor]] = None,
+        residual: OptTensor = None,
     ):
-        h = F.relu(
-            self.norm1(
-                self.conv1(x, edge_index, edge_weight),
-                batch=batch,
-                batch_size=batch_size,
-            ),
-            inplace=True,
+        h = self.drop(
+            F.relu(
+                self.norm1(
+                    self.conv1(x, edge_index, edge_weight),
+                    batch=batch,
+                    batch_size=batch_size,
+                ),
+                inplace=True,
+            )
         )
 
-        residual = sum_residuals(residuals, h)
+        if residual is not None:
+            h = h + residual
 
         h = F.relu(
             self.norm2(
-                self.conv2(self.drop(h) + residual, edge_index, edge_weight),
+                self.conv2(h, edge_index, edge_weight),
                 batch=batch,
                 batch_size=batch_size,
             ),
@@ -132,11 +120,9 @@ class GCNIIBackbone(nn.Module):
         edge_attr: OptTensor = None,
         batch: OptTensor = None,
         batch_size: Optional[int] = None,
-        residuals: Optional[List[OptTensor]] = None,
+        residual: OptTensor = None,
     ):
         h = h0 = self.lin1(x)
-
-        residual = sum_residuals(residuals, h)
 
         for i, (conv, norm) in enumerate(zip(self.convs, self.norms)):
             h = self.drop(
@@ -149,7 +135,7 @@ class GCNIIBackbone(nn.Module):
                     inplace=True,
                 )
             )
-            if i > 0 and i % self.skip_stride == 0:
+            if residual is not None and i > 0 and i % self.skip_stride == 0:
                 h = h + residual
 
         return self.lin2(h)

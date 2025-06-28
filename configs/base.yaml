@@ -8,16 +8,18 @@ model:
   backbone:
     type: "gcn"
     dhid: 256
-    dout: 128
+    dout: 256
     n_layers: 2 
     drop: 0.0
     norm: "none"
     skip_stride: 100
 
   neck:
-    type: 'gru'
+    rnn_type: 'gru'
     readout: "mean"
     dhid: 256
+    proj_node: True
+    node_dout: 128
 
   head:
     n_layers: 2
@@ -27,7 +29,7 @@ trainer:
   bs: 64
   n_epochs: 75
   lr: 1e-4
-  wd: 1e-4
+  wd: 1e-2
   eval_rate: 2
   gamma: 0.9
   

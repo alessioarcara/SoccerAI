@@ -6,4 +6,4 @@ ReadoutType = Literal["mean", "sum"]
 
 BackboneType = Literal["gcn", "gcn2"]
 
-NeckType = Literal["gru", "lstm"]
+RNNType = Literal["gru", "lstm"]
