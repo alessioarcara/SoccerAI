@@ -5,7 +5,7 @@ model:
     dout: 64
     norm: "none"
     drop: 0.1
-    residual_sum_mode: "none"
+    train_eps: True
 
   neck:
     mode: "graph"
