@@ -6,30 +6,25 @@ model:
   use_temporal: True 
 
   backbone:
-    type: "gatv2"
-    dhid: 256
-    dout: 128
-    n_layers: 2 
+    dout: 256
     drop: 0.0
     norm: "none"
-    aggr_type: "max"
-    l2_norm: True
-    num_heads: 8 
-    use_edge_attr: True
-    edge_dropout: 0.5
-    residual_sum_mode: "last"
 
   neck:
-    readout: "sum"
-    dhid: 256
+    readout: "mean"
+    rnn_din: 0
+    rnn_dout: 256 
+    glob_dout: 256 
+    mode: "node"
 
   head:
     n_layers: 2
+    din: 512 
     drop: 0.5
 
 trainer:
-  bs: 64
-  n_epochs: 75
+  bs: 32 
+  n_epochs: 50
   lr: 1e-4
   wd: 1e-4
   eval_rate: 2
