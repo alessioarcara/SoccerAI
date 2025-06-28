@@ -25,10 +25,10 @@ class GraphGlobalFusion(nn.Module):
     3. Concatenate [graph || global]
     """
 
-    def __init__(self, glob_din: int, glob_dout: int, cfg: NeckConfig):
+    def __init__(self, glob_din: int, cfg: NeckConfig):
         super().__init__()
         self.readout = READOUT_AGGREGATIONS[cfg.readout]()
-        self.global_proj = pyg_nn.Linear(glob_din, glob_dout)
+        self.global_proj = pyg_nn.Linear(glob_din, cfg.glob_dout)
 
     def forward(
         self, z: torch.Tensor, u: torch.Tensor, batch: torch.Tensor, batch_size: int
@@ -65,7 +65,7 @@ class TemporalFusion(nn.Module):
     ):
         super().__init__()
         self.mode = cfg.mode
-        self.fusion = GraphGlobalFusion(glob_din, cfg.glob_dout, cfg)
+        self.fusion = GraphGlobalFusion(glob_din, cfg)
 
         if self.mode == "node":
             self.grnn = pygt_nn.recurrent.GConvGRU(

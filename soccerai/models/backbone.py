@@ -11,6 +11,7 @@ from soccerai.training.trainer_config import (
     GCN2Config,
     GCNConfig,
     GINEConfig,
+    GraphGPSConfig,
     GraphSAGEConfig,
 )
 
@@ -271,7 +272,8 @@ class GINEBackbone(nn.Module):
         h = x
 
         if edge_attr is not None:
-            edge_attr = edge_attr.unsqueeze(1)
+            if edge_attr.dim() == 1:
+                edge_attr = edge_attr.unsqueeze(-1)
 
         for conv, norm in zip(self.convs, self.norms):
             h = self.drop(
@@ -287,3 +289,61 @@ class GINEBackbone(nn.Module):
             outs.append(h)
 
         return outs
+
+
+@BackboneRegistry.register("graphgps")
+class GraphGPS(nn.Module):
+    def __init__(self, din: int, cfg: GraphGPSConfig):
+        super().__init__()
+        self.residual_sum_mode = cfg.residual_sum_mode
+
+        self.node_proj = nn.Linear(din, cfg.dout)
+        self.edge_proj = nn.Linear(1, cfg.dout)
+
+        self.convs = nn.ModuleList()
+        for _ in range(cfg.n_layers):
+            mlp = build_mlp(cfg.dout, cfg.dout)
+            conv = pyg_nn.GPSConv(
+                cfg.dout,
+                pyg_nn.GINEConv(mlp),
+                heads=cfg.heads,
+                dropout=cfg.drop,
+                attn_kwargs={"dropout": cfg.attn_drop},
+            )
+            self.convs.append(conv)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        edge_index: Adj,
+        edge_weight: OptTensor = None,
+        edge_attr: OptTensor = None,
+        batch: OptTensor = None,
+        batch_size: Optional[int] = None,
+        residual: OptTensor = None,
+    ):
+        h = self.node_proj(x)
+
+        if edge_attr is not None:
+            if edge_attr.dim() == 1:
+                edge_attr = edge_attr.unsqueeze(-1)
+            edge_attr = self.edge_proj(edge_attr)
+
+        n_layers = len(self.convs)
+
+        for layer_idx, conv in enumerate(self.convs):
+            h = sum_residual(
+                h,
+                residual,
+                self.residual_sum_mode,
+                layer_idx=layer_idx,
+                n_layers=n_layers,
+            )
+            h = conv(
+                x=h,
+                edge_index=edge_index,
+                edge_attr=edge_attr,
+                batch=batch,
+            )
+
+        return h

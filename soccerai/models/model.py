@@ -80,8 +80,6 @@ def build_model(cfg: Config, train_ds: WorldCup2022Dataset) -> nn.Module:
     else:
         return GNN(
             backbone,
-            GraphGlobalFusion(
-                cfg.model.backbone.dout, train_ds.num_global_features, cfg.model.neck
-            ),
+            GraphGlobalFusion(train_ds.num_global_features, cfg.model.neck),
             head,
         )

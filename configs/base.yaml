@@ -1,9 +1,9 @@
 project_name: "soccerai"
-run_name: "graphsage"
+run_name: "graphgps"
 seed: 42
 
 model: 
-  use_temporal: True
+  use_temporal: True 
 
   backbone:
     dout: 256
