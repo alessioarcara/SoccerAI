@@ -77,6 +77,58 @@ def sum_residual(
     return h
 
 
+class GNNPlus(nn.Module):
+    def __init__(
+        self,
+        conv_layer: nn.Module,
+        dout: int,
+        p_drop: float,
+        norm: Optional[Type[nn.Module]],
+    ):
+        super().__init__()
+
+        if norm is not None:
+            self.norm1 = norm(dout)
+            self.norm2 = norm(dout)
+        else:
+            self.norm1 = self.norm2 = Identity()
+
+        self.drop = nn.Dropout(p_drop)
+
+        self.conv_layer = conv_layer
+
+        self.ff_block = nn.Sequential(
+            nn.Linear(dout, dout * 2),
+            nn.ReLU(),
+            self.drop,
+            nn.Linear(dout * 2, dout),
+            self.drop,
+        )
+
+    def forward(
+        self,
+        x,
+        edge_index,
+        edge_weight: OptTensor = None,
+        edge_attr: OptTensor = None,
+        batch: OptTensor = None,
+        batch_size: Optional[int] = None,
+    ):
+        x_in = x
+
+        x = F.relu(
+            self.drop(
+                self.norm1(
+                    self.conv_layer(x, edge_index, edge_weight), batch, batch_size
+                )
+            )
+        )
+
+        x = self.norm2(x + self.ff_block(x_in + x))
+
+        return x
+
+
 @BackboneRegistry.register("gcn")
 class GCNBackbone(nn.Module):
     def __init__(self, din: int, cfg: GCNConfig):
