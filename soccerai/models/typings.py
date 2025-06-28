@@ -2,8 +2,10 @@ from typing import Literal
 
 NormalizationType = Literal["none", "batch", "layer", "instance", "graph"]
 
-ReadoutType = Literal["mean", "sum"]
+ReadoutType = Literal["mean", "sum", "max"]
 
 AggregationType = Literal["mean", "max", "lstm"]
 
-ResidualSumMode = Literal["every", "last"]
+ResidualSumMode = Literal["none", "every", "last"]
+
+TemporalMode = Literal["node", "graph"]
