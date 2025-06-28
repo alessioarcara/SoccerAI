@@ -333,7 +333,7 @@ class GATv2Backbone(nn.Module):
         batch_size: Optional[int] = None,
         residual: OptTensor = None,
     ) -> torch.Tensor:
-        h = self.drop(x)
+        h = x
         n_layers = len(self.convs)
 
         for layer_idx, conv in enumerate(self.convs):

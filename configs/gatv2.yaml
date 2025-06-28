@@ -2,9 +2,18 @@ model:
   backbone:
     type: "gatv2"
     num_heads: 8
-    use_edge_attr: False
-    norm: "none"
+    use_edge_attr: True
+    norm: "layer"
     drop: 0.0
-    n_layers: 2
-    residual_sum_mode: "none"
+    n_layers: 6
+    residual_sum_mode: "every"
     edge_dropout: 0.0
+
+  neck:
+    readout: "mean"
+
+  head:
+    n_layers: 2
+    din: 512 
+    drop: 0.0
+  
