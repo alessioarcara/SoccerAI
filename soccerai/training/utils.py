@@ -243,7 +243,7 @@ def build_dummy_inputs(
     edge_index = torch.randint(
         0, num_nodes_total, (2, num_edges_total), dtype=torch.long, device=device
     )
-    edge_attr = torch.rand((num_edges_total, 1), device=device)
+    edge_attr = torch.rand((num_edges_total), device=device)
     u = torch.rand((bs, glob_dim), device=device)
     batch = torch.tensor([[i] * 22 for i in range(bs)], device=device).view(-1)
     return dict(x=x, edge_index=edge_index, edge_attr=edge_attr, u=u, batch=batch)

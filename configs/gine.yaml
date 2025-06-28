@@ -1,9 +1,18 @@
 model:
   backbone: 
     type: "gine"
-    n_layers: 5
-    dhid: 256
-    dout: 256
-    norm: "batch"
-    drop: 0.0
-    residual_sum_mode: "every"
+    n_layers: 3
+    dout: 64
+    norm: "none"
+    drop: 0.1
+    train_eps: True
+
+  neck:
+    mode: "graph"
+    glob_dout: 64
+    rnn_din: 256
+    rnn_dout: 256
+    readout: "sum"
+
+  head:
+    din: 256

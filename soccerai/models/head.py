@@ -6,10 +6,11 @@ from soccerai.training.trainer_config import HeadConfig
 
 
 class GraphClassificationHead(nn.Module):
-    def __init__(self, din: int, cfg: HeadConfig):
+    def __init__(self, cfg: HeadConfig):
         super().__init__()
         layers = []
 
+        din = cfg.din
         for _ in range(cfg.n_layers):
             dout = din // 2
             layers.append(pyg_nn.Linear(din, dout))

@@ -3,5 +3,4 @@ model:
     type: "gcn2"
     n_layers: 9 
     drop: 0.1
-    norm: "none"
     residual_sum_mode: "every"
