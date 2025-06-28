@@ -301,29 +301,27 @@ class GATv2Backbone(nn.Module):
         self.drop = nn.Dropout(cfg.drop)
         self.residual_sum_mode = cfg.residual_sum_mode
 
-        dims = [din] + [cfg.dout] * cfg.n_layers
+        self.convs = nn.ModuleList()
+        self.norms = nn.ModuleList()
 
-        # edge_attr: we feed our precomputed distance‐decay weights ([E,1])
-        # into each GATv2Conv as attention biases via edge_dim=1
-        self.convs = nn.ModuleList(
-            [
+        for i in range(cfg.n_layers):
+            self.convs.append(
                 pyg_nn.GATv2Conv(
-                    in_channels=in_dim,
+                    in_channels=din,
                     out_channels=(
-                        out_dim if i == cfg.n_layers - 1 else out_dim // cfg.num_heads
+                        cfg.dout if i == cfg.n_layers - 1 else cfg.dout // cfg.num_heads
                     ),
                     heads=cfg.num_heads,
                     concat=(i != cfg.n_layers - 1),
                     dropout=cfg.drop,
                     edge_dim=(1 if cfg.use_edge_attr else None),
                 )
-                for i, (in_dim, out_dim) in enumerate(zip(dims[:-1], dims[1:]))
-            ]
-        )
+            )
 
-        self.norms = nn.ModuleList(
-            [NORMALIZATIONS[cfg.norm](out_dim) for out_dim in dims[1:-1]]
-        )
+            if i < cfg.n_layers - 1:
+                self.norms.append(NORMALIZATIONS[cfg.norm](cfg.dout))
+
+            din = cfg.dout
 
     def forward(
         self,
@@ -339,15 +337,13 @@ class GATv2Backbone(nn.Module):
         n_layers = len(self.convs)
 
         for layer_idx, conv in enumerate(self.convs):
-            if self.training and self.edge_dropout > 0.0:
-                edge_index, edge_mask = dropout_edge(
-                    edge_index,
-                    p=self.edge_dropout,
-                    force_undirected=False,
-                    training=True,
-                )
-                if edge_weight is not None:
-                    edge_weight = edge_weight[edge_mask]
+            edge_index, edge_mask = dropout_edge(
+                edge_index,
+                p=self.edge_dropout,
+                training=self.training,
+            )
+
+            edge_attr = edge_attr[edge_mask]
 
             h = sum_residual(
                 h,
@@ -360,9 +356,11 @@ class GATv2Backbone(nn.Module):
             h = conv(
                 h,
                 edge_index,
-                edge_attr=edge_weight if self.use_edge_attr else None,
+                edge_attr=edge_attr if self.use_edge_attr else None,
             )
 
+            # Skip dropout, norm, and activation on last layer:
+            # Final GAT layer averages heads (concat=False); further normalization would compress attention differences.
             if layer_idx < n_layers - 1:
                 h = self.drop(
                     F.elu(
