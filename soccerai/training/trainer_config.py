@@ -1,39 +1,72 @@
 from pathlib import Path
-from typing import Any, Dict
+from typing import Annotated, Any, Dict, Literal, Union
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from soccerai.models.typings import (
-    BackboneType,
+    AggregationType,
     NormalizationType,
     ReadoutType,
+    ResidualSumMode,
     RNNType,
+    TemporalMode,
 )
 
 PathLike = str | Path
 
 
-class BackboneConfig(BaseModel):
-    type: BackboneType
-    n_layers: int
-    dhid: int
+class BackboneCommon(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     dout: int
     drop: float
     norm: NormalizationType
-    skip_stride: int
+
+
+class GCNConfig(BackboneCommon):
+    type: Literal["gcn"]
+
+
+class GCN2Config(BackboneCommon):
+    type: Literal["gcn2"]
+    n_layers: int
+    residual_sum_mode: ResidualSumMode
+
+
+class GraphSAGEConfig(BackboneCommon):
+    type: Literal["graphsage"]
+    n_layers: int
+    residual_sum_mode: ResidualSumMode
+    aggr_type: AggregationType
+    l2_norm: bool
+
+
+class GINEConfig(BackboneCommon):
+    type: Literal["gine"]
+    n_layers: int
+    residual_sum_mode: ResidualSumMode
+
+
+BackboneConfig = Annotated[
+    Union[GCNConfig, GCN2Config, GraphSAGEConfig, GINEConfig],
+    Field(discriminator="type"),
+]
 
 
 class NeckConfig(BaseModel):
     rnn_type: RNNType
     readout: ReadoutType
-    dhid: int
+    glob_dout: int
+    rnn_din: int
+    rnn_dout: int
+    mode: TemporalMode
     use_node_proj: bool
     node_dout: int
 
 
 class HeadConfig(BaseModel):
     n_layers: int
+    din: int
     drop: float
 
 

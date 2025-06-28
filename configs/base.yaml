@@ -6,28 +6,28 @@ model:
   use_temporal: True
 
   backbone:
-    type: "gcn"
-    dhid: 256
     dout: 256
-    n_layers: 2 
     drop: 0.0
     norm: "none"
-    skip_stride: 100
 
   neck:
     rnn_type: 'gru'
     readout: "mean"
-    dhid: 256
-    proj_node: True
+    rnn_din: 0
+    rnn_dout: 256 
+    glob_dout: 256 
+    mode: "node"
+    use_node_proj: True
     node_dout: 128
 
   head:
     n_layers: 2
+    din: 512 
     drop: 0.5
 
 trainer:
-  bs: 64
-  n_epochs: 75
+  bs: 32 
+  n_epochs: 50
   lr: 1e-4
   wd: 1e-2
   eval_rate: 2
