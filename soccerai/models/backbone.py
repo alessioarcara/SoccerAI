@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric.nn as pyg_nn
 from torch_geometric.typing import Adj, OptTensor
+from torch_geometric.utils import dropout_edge
 
 from soccerai.models.typings import NormalizationType, ResidualSumMode
 from soccerai.training.trainer_config import BackboneConfig
@@ -247,10 +248,13 @@ class GATv2Backbone(nn.Module):
         super().__init__()
 
         self.use_edge_attr = cfg.use_edge_attr
+        self.edge_dropout = cfg.edge_dropout
         self.drop = nn.Dropout(cfg.drop)
 
         dims = [din] + [cfg.dhid] * (cfg.n_layers - 1) + [cfg.dout]
 
+        # edge_attr: we feed our precomputed distance‐decay weights ([E,1])
+        # into each GATv2Conv as attention biases via edge_dim=1
         self.convs = nn.ModuleList(
             [
                 pyg_nn.GATv2Conv(
@@ -287,6 +291,15 @@ class GATv2Backbone(nn.Module):
         n_layers = len(self.convs)
 
         for layer_idx, conv in enumerate(self.convs):
+            if self.training and self.edge_dropout > 0.0:
+                edge_index, edge_mask = dropout_edge(
+                    edge_index,
+                    p=self.edge_dropout,
+                    force_undirected=False,
+                    training=self.training,
+                )
+                edge_weight = edge_weight[edge_mask]
+
             h = sum_residual(
                 h,
                 residual,

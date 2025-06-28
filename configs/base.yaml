@@ -16,10 +16,11 @@ model:
     l2_norm: True
     num_heads: 8 
     use_edge_attr: True
+    edge_dropout: 0.5
     residual_sum_mode: "last"
 
   neck:
-    readout: "mean"
+    readout: "sum"
     dhid: 256
 
   head:

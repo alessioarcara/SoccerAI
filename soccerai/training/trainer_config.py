@@ -26,6 +26,7 @@ class BackboneConfig(BaseModel):
     aggr_type: AggregationType
     use_edge_attr: bool
     num_heads: int
+    edge_dropout: float
 
 
 class NeckConfig(BaseModel):
