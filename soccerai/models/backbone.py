@@ -5,9 +5,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric.nn as pyg_nn
 from torch_geometric.typing import Adj, OptTensor
+from torch_geometric.utils import dropout_edge
 
 from soccerai.models.typings import NormalizationType, ResidualSumMode
 from soccerai.training.trainer_config import (
+    GATv2Config,
     GCN2Config,
     GCNConfig,
     GINEConfig,
@@ -291,8 +293,89 @@ class GINEBackbone(nn.Module):
         return outs
 
 
+@BackboneRegistry.register("gatv2")
+class GATv2Backbone(nn.Module):
+    def __init__(self, din: int, cfg: GATv2Config):
+        super().__init__()
+
+        self.use_edge_attr = cfg.use_edge_attr
+        self.edge_dropout = cfg.edge_dropout
+        self.drop = nn.Dropout(cfg.drop)
+        self.residual_sum_mode = cfg.residual_sum_mode
+
+        self.convs = nn.ModuleList()
+        self.norms = nn.ModuleList()
+
+        for i in range(cfg.n_layers):
+            self.convs.append(
+                pyg_nn.GATv2Conv(
+                    in_channels=din,
+                    out_channels=(
+                        cfg.dout if i == cfg.n_layers - 1 else cfg.dout // cfg.num_heads
+                    ),
+                    heads=cfg.num_heads,
+                    concat=(i != cfg.n_layers - 1),
+                    dropout=cfg.drop,
+                    edge_dim=(1 if cfg.use_edge_attr else None),
+                )
+            )
+
+            if i < cfg.n_layers - 1:
+                self.norms.append(NORMALIZATIONS[cfg.norm](cfg.dout))
+
+            din = cfg.dout
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        edge_index: Adj,
+        edge_weight: OptTensor = None,
+        edge_attr: OptTensor = None,
+        batch: OptTensor = None,
+        batch_size: Optional[int] = None,
+        residual: OptTensor = None,
+    ) -> torch.Tensor:
+        h = x
+        n_layers = len(self.convs)
+
+        for layer_idx, conv in enumerate(self.convs):
+            edge_index, edge_mask = dropout_edge(
+                edge_index,
+                p=self.edge_dropout,
+                training=self.training,
+            )
+
+            edge_attr = edge_attr[edge_mask]
+
+            h = sum_residual(
+                h,
+                residual,
+                self.residual_sum_mode,
+                layer_idx=layer_idx,
+                n_layers=n_layers,
+            )
+
+            h = conv(
+                h,
+                edge_index,
+                edge_attr=edge_attr if self.use_edge_attr else None,
+            )
+
+            # Skip dropout, norm, and activation on last layer:
+            # Final GAT layer averages heads (concat=False); further normalization would compress attention differences.
+            if layer_idx < n_layers - 1:
+                h = self.drop(
+                    F.elu(
+                        self.norms[layer_idx](h, batch=batch, batch_size=batch_size),
+                        inplace=True,
+                    )
+                )
+
+        return h
+
+
 @BackboneRegistry.register("graphgps")
-class GraphGPS(nn.Module):
+class GraphGPSBackbone(nn.Module):
     def __init__(self, din: int, cfg: GraphGPSConfig):
         super().__init__()
         self.residual_sum_mode = cfg.residual_sum_mode

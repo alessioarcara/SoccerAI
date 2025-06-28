@@ -31,7 +31,7 @@ trainer:
   gamma: 0.9
   
 data:
-  include_goal_features: True 
+  include_goal_features: False 
   include_ball_features: True 
   use_macro_roles: True 
   use_augmentations: False 

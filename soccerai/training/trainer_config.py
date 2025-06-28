@@ -36,9 +36,9 @@ class GCN2Config(BackboneCommon):
 class GraphSAGEConfig(BackboneCommon):
     type: Literal["graphsage"]
     n_layers: int
-    residual_sum_mode: ResidualSumMode
     aggr_type: AggregationType
     l2_norm: bool
+    residual_sum_mode: ResidualSumMode
 
 
 class GraphGPSConfig(BackboneCommon):
@@ -49,6 +49,15 @@ class GraphGPSConfig(BackboneCommon):
     residual_sum_mode: ResidualSumMode
 
 
+class GATv2Config(BackboneCommon):
+    type: Literal["gatv2"]
+    n_layers: int
+    use_edge_attr: bool
+    num_heads: int
+    edge_dropout: float
+    residual_sum_mode: ResidualSumMode
+
+
 class GINEConfig(BackboneCommon):
     type: Literal["gine"]
     n_layers: int
@@ -56,7 +65,9 @@ class GINEConfig(BackboneCommon):
 
 
 BackboneConfig = Annotated[
-    Union[GCNConfig, GCN2Config, GraphSAGEConfig, GINEConfig, GraphGPSConfig],
+    Union[
+        GCNConfig, GCN2Config, GraphSAGEConfig, GINEConfig, GATv2Config, GraphGPSConfig
+    ],
     Field(discriminator="type"),
 ]
 
