@@ -41,6 +41,7 @@ where = ["."]
 
 [tool.mypy]
 ignore_missing_imports = true
+plugins = ["pydantic.mypy"]
 
 [tool.setuptools]
 include-package-data = true

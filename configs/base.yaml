@@ -1,22 +1,37 @@
 project_name: "soccerai"
+run_name: "graphgps"
 seed: 42
-use_temporal: True 
 
-model:
-  model_name: "gcrnn"
-  dmid: 256
-  dhid: 128
- 
+model: 
+  use_temporal: True 
+
+  backbone:
+    dout: 256
+    drop: 0.0
+    norm: "none"
+
+  neck:
+    readout: "mean"
+    rnn_din: 0
+    rnn_dout: 256 
+    glob_dout: 256 
+    mode: "node"
+
+  head:
+    n_layers: 2
+    din: 512 
+    drop: 0.5
+
 trainer:
-  bs: 256 
-  n_epochs: 10
+  bs: 32 
+  n_epochs: 50
   lr: 1e-4
   wd: 0.01
   eval_rate: 2
   gamma: 0.9
   
 data:
-  include_goal_features: True 
+  include_goal_features: False 
   include_ball_features: True 
   use_macro_roles: True 
   use_augmentations: False 

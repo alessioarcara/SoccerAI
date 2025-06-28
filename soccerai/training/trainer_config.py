@@ -1,13 +1,96 @@
 from pathlib import Path
+from typing import Annotated, Any, Dict, Literal, Union
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
+
+from soccerai.models.typings import (
+    AggregationType,
+    NormalizationType,
+    ReadoutType,
+    ResidualSumMode,
+    TemporalMode,
+)
+
+PathLike = str | Path
+
+
+class BackboneCommon(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dout: int
+    drop: float
+    norm: NormalizationType
+
+
+class GCNConfig(BackboneCommon):
+    type: Literal["gcn"]
+
+
+class GCN2Config(BackboneCommon):
+    type: Literal["gcn2"]
+    n_layers: int
+    residual_sum_mode: ResidualSumMode
+
+
+class GraphSAGEConfig(BackboneCommon):
+    type: Literal["graphsage"]
+    n_layers: int
+    aggr_type: AggregationType
+    l2_norm: bool
+    residual_sum_mode: ResidualSumMode
+
+
+class GraphGPSConfig(BackboneCommon):
+    type: Literal["graphgps"]
+    n_layers: int
+    heads: int
+    attn_drop: float
+    residual_sum_mode: ResidualSumMode
+
+
+class GATv2Config(BackboneCommon):
+    type: Literal["gatv2"]
+    n_layers: int
+    use_edge_attr: bool
+    num_heads: int
+    edge_dropout: float
+    residual_sum_mode: ResidualSumMode
+
+
+class GINEConfig(BackboneCommon):
+    type: Literal["gine"]
+    n_layers: int
+    train_eps: bool
+
+
+BackboneConfig = Annotated[
+    Union[
+        GCNConfig, GCN2Config, GraphSAGEConfig, GINEConfig, GATv2Config, GraphGPSConfig
+    ],
+    Field(discriminator="type"),
+]
+
+
+class NeckConfig(BaseModel):
+    readout: ReadoutType
+    glob_dout: int
+    rnn_din: int
+    rnn_dout: int
+    mode: TemporalMode
+
+
+class HeadConfig(BaseModel):
+    n_layers: int
+    din: int
+    drop: float
 
 
 class ModelConfig(BaseModel):
-    model_name: str
-    dmid: int
-    dhid: int
+    use_temporal: bool
+    backbone: BackboneConfig
+    neck: NeckConfig
+    head: HeadConfig
 
 
 class TrainerConfig(BaseModel):
@@ -48,8 +131,8 @@ class MetricsConfig(BaseModel):
 
 class Config(BaseModel):
     project_name: str
+    run_name: str
     seed: int
-    use_temporal: bool
     model: ModelConfig
     trainer: TrainerConfig
     data: DataConfig
@@ -58,12 +141,38 @@ class Config(BaseModel):
     pitch_grid: PitchGridConfig
 
 
-def _load_yaml(path: str | Path):
+def _load_yaml(path: PathLike):
     return yaml.safe_load(Path(path).expanduser().read_text()) or {}
 
 
-def build_cfg(*yaml_paths: str | Path) -> Config:
-    merged = {}
-    for p in yaml_paths:
-        merged.update(_load_yaml(p))
-    return Config(**merged)
+def _deep_merge(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Recursively merge dict `b` into dict `a`
+    """
+    result = a.copy()
+    for k, v in b.items():
+        if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+            result[k] = _deep_merge(result[k], v)
+        else:
+            result[k] = v
+    return result
+
+
+def build_config(config_dir: Path) -> Config:
+    """
+    Load and deeply merge multiple YAML configuration files.
+
+    Steps:
+    1. Load the base configuration from 'base.yaml'.
+    2. Determine the model name from the base config and load its specific YAML file.
+    3. Merge the base and model-specific configs.
+    4. Instantiate and return a Config object with the merged settings.
+    """
+    base_yaml_path = config_dir / "base.yaml"
+    base_cfg_dict = _load_yaml(base_yaml_path)
+
+    model_yaml_path = config_dir / f"{base_cfg_dict['run_name']}.yaml"
+    model_cfg_dict = _load_yaml(model_yaml_path)
+
+    merged_dict = _deep_merge(base_cfg_dict, model_cfg_dict)
+    return Config(**merged_dict)

@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from loguru import logger
 from torch.optim import AdamW
+from torch.optim.lr_scheduler import OneCycleLR
 from torch.utils.data.dataloader import DataLoader as TorchDataLoader
 from torch_geometric.data import Batch
 from torch_geometric_temporal.signal import Discrete_Signal
@@ -35,7 +36,6 @@ class BaseTrainer(ABC):
         self.cfg = cfg
         self.device = device
         self.model: nn.Module = model.to(self.device)
-        # self.model = torch.compile(self.model)  # type: ignore[arg-type]
         self.train_loader = train_loader
         self.val_loader = val_loader
         self.feature_names = feature_names or []
@@ -46,6 +46,12 @@ class BaseTrainer(ABC):
             self.model.parameters(),
             lr=self.cfg.trainer.lr,
             weight_decay=self.cfg.trainer.wd,
+        )
+        self.scheduler = OneCycleLR(
+            self.optim,
+            max_lr=cfg.trainer.lr * 10,
+            total_steps=cfg.trainer.n_epochs * len(self.train_loader),
+            pct_start=0.1,
         )
 
     @abstractmethod
@@ -92,7 +98,13 @@ class BaseTrainer(ABC):
                     colour="blue",
                 ):
                     loss = self._train_step(item)
-                    wandb.log({"train/step_loss": loss.item()})
+                    self.scheduler.step()
+                    wandb.log(
+                        {
+                            "train/step_loss": loss.item(),
+                            "train/lr": self.scheduler.get_last_lr()[0],
+                        }
+                    )
 
                 if epoch % self.cfg.trainer.eval_rate == 0:
                     self.eval("train")
@@ -165,6 +177,7 @@ class Trainer(BaseTrainer):
         )
         loss: torch.Tensor = self.criterion(out, batch.y)
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         self.optim.step()
         return loss
 
@@ -235,6 +248,7 @@ class TemporalTrainer(BaseTrainer):
         self.optim.zero_grad(set_to_none=True)
         loss, _ = self._compute_signal_loss_and_last_pred(batch)
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         self.optim.step()
         return loss
 
