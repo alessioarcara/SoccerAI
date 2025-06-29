@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Optional, Type
+from typing import Callable, Dict, Optional, Tuple, Type
 
 import torch
 import torch.nn as nn
@@ -65,8 +65,9 @@ def sum_residual(
     """
     Apply residual tensor according to sum strategy.
 
+    - 'none' : no residual connection
     - 'every': add residual at all layers except the first (layer_idx > 0)
-    - 'last': add residual only before the final layer (layer_idx == n_layers - 1)
+    - 'last' : add residual only before the final layer (layer_idx == n_layers - 1)
     """
     if residual is None or mode == "none":
         return h
@@ -78,6 +79,22 @@ def sum_residual(
         return h + residual
 
     return h
+
+
+def build_layers(
+    n_layers: int,
+    din: int,
+    dout: int,
+    conv_factory: Callable[[int, int], nn.Module],
+    norm_factory: Callable[[int], nn.Module],
+) -> Tuple[nn.ModuleList, nn.ModuleList]:
+    convs = nn.ModuleList()
+    norms = nn.ModuleList()
+    for i in range(n_layers):
+        convs.append(conv_factory(din, i))
+        norms.append(norm_factory(i))
+        din = dout
+    return convs, norms
 
 
 @BackboneRegistry.register("gcn")
@@ -133,16 +150,20 @@ class GCNIIBackbone(nn.Module):
         self.drop = nn.Dropout(cfg.drop)
         self.node_proj = pyg_nn.Linear(din, cfg.dout)
 
-        self.convs = nn.ModuleList(
-            [
-                pyg_nn.GCN2Conv(
-                    cfg.dout, alpha=0.5, theta=1.0, layer=i + 1, shared_weights=False
-                )
-                for i in range(cfg.n_layers)
-            ]
-        )
-        self.norms = nn.ModuleList(
-            [NORMALIZATIONS[cfg.norm](cfg.dout) for _ in range(cfg.n_layers)]
+        def conv_fn(d, i):
+            return pyg_nn.GCN2Conv(
+                cfg.dout, alpha=0.5, theta=1.0, layer=i + 1, shared_weights=False
+            )
+
+        def norm_fn(_):
+            return NORMALIZATIONS[cfg.norm](cfg.dout)
+
+        self.convs, self.norms = build_layers(
+            n_layers=cfg.n_layers,
+            din=cfg.dout,
+            dout=cfg.dout,
+            conv_factory=conv_fn,
+            norm_factory=norm_fn,
         )
 
     def forward(
@@ -190,22 +211,26 @@ class GraphSAGEBackbone(nn.Module):
         super().__init__()
         self.residual_sum_mode = cfg.residual_sum_mode
         self.drop = nn.Dropout(cfg.drop)
-        project = cfg.aggr_type == "max"
 
-        self.convs = nn.ModuleList()
-        self.norms = nn.ModuleList()
-        for _ in range(cfg.n_layers):
-            self.convs.append(
-                pyg_nn.SAGEConv(
-                    in_channels=din,
-                    out_channels=cfg.dout,
-                    aggr=cfg.aggr_type,
-                    project=project,
-                    normalize=cfg.l2_norm,
-                )
+        def conv_fn(d, _):
+            return pyg_nn.SAGEConv(
+                in_channels=d,
+                out_channels=cfg.dout,
+                aggr=cfg.aggr_type,
+                project=(cfg.aggr_type == "max"),
+                normalize=cfg.l2_norm,
             )
-            self.norms.append(NORMALIZATIONS[cfg.norm](cfg.dout))
-            din = cfg.dout
+
+        def norm_fn(_):
+            return NORMALIZATIONS[cfg.norm](cfg.dout)
+
+        self.convs, self.norms = build_layers(
+            n_layers=cfg.n_layers,
+            din=din,
+            dout=cfg.dout,
+            conv_factory=conv_fn,
+            norm_factory=norm_fn,
+        )
 
     def forward(
         self,
@@ -241,30 +266,37 @@ class GraphSAGEBackbone(nn.Module):
 class GATv2Backbone(nn.Module):
     def __init__(self, din: int, cfg: GATv2Config):
         super().__init__()
-
+        self.residual_sum_mode = cfg.residual_sum_mode
         self.use_edge_attr = cfg.use_edge_attr
         self.edge_dropout = cfg.edge_dropout
-        self.residual_sum_mode = cfg.residual_sum_mode
         self.drop = nn.Dropout(cfg.drop)
 
-        self.convs = nn.ModuleList()
-        self.norms = nn.ModuleList()
-        for i in range(cfg.n_layers):
-            is_last = i == cfg.n_layers - 1
-            self.convs.append(
-                pyg_nn.GATv2Conv(
-                    in_channels=din,
-                    out_channels=(cfg.dout if is_last else cfg.dout // cfg.num_heads),
-                    heads=cfg.num_heads,
-                    concat=(not is_last),
-                    dropout=cfg.drop,
-                    edge_dim=(1 if cfg.use_edge_attr else None),
-                )
+        def conv_fn(d, i):
+            return pyg_nn.GATv2Conv(
+                in_channels=d,
+                out_channels=(
+                    cfg.dout if i == cfg.n_layers - 1 else cfg.dout // cfg.num_heads
+                ),
+                heads=cfg.num_heads,
+                concat=(i < cfg.n_layers - 1),
+                dropout=cfg.drop,
+                edge_dim=(1 if cfg.use_edge_attr else None),
             )
 
-            if not is_last:
-                self.norms.append(NORMALIZATIONS[cfg.norm](cfg.dout))
-            din = cfg.dout
+        def norm_fn(i):
+            return (
+                NORMALIZATIONS[cfg.norm](cfg.dout)
+                if i < cfg.n_layers - 1
+                else Identity()
+            )
+
+        self.convs, self.norms = build_layers(
+            n_layers=cfg.n_layers,
+            din=din,
+            dout=cfg.dout,
+            conv_factory=conv_fn,
+            norm_factory=norm_fn,
+        )
 
     def forward(
         self,
@@ -324,18 +356,23 @@ class GINEBackbone(nn.Module):
         super().__init__()
         self.drop = nn.Dropout(cfg.drop)
 
-        self.convs = nn.ModuleList()
-        self.norms = nn.ModuleList()
-        for _ in range(cfg.n_layers):
-            self.convs.append(
-                pyg_nn.GINEConv(
-                    nn=build_mlp(din, cfg.dout),
-                    edge_dim=1,
-                    train_eps=True,
-                )
+        def conv_fn(d, _):
+            return pyg_nn.GINEConv(
+                nn=build_mlp(d, cfg.dout),
+                edge_dim=1,
+                train_eps=cfg.train_eps,
             )
-            self.norms.append(NORMALIZATIONS[cfg.norm](cfg.dout))
-            din = cfg.dout
+
+        def norm_fn(_):
+            return NORMALIZATIONS[cfg.norm](cfg.dout)
+
+        self.convs, self.norms = build_layers(
+            n_layers=cfg.n_layers,
+            din=din,
+            dout=cfg.dout,
+            conv_factory=conv_fn,
+            norm_factory=norm_fn,
+        )
 
     def forward(
         self,
@@ -378,6 +415,26 @@ class GraphGPSBackbone(nn.Module):
 
         self.node_proj = nn.Linear(din, cfg.dout)
         self.edge_proj = nn.Linear(1, cfg.dout)
+
+        def conv_fn(d, _):
+            return pyg_nn.GPSConv(
+                cfg.dout,
+                pyg_nn.GINEConv(build_mlp(cfg.dout, cfg.dout)),
+                heads=cfg.heads,
+                dropout=cfg.drop,
+                attn_kwargs={"dropout": cfg.attn_drop},
+            )
+
+        def norm_fn(_):
+            return Identity()
+
+        self.convs, _ = build_layers(
+            n_layers=cfg.n_layers,
+            din=cfg.dout,
+            dout=cfg.dout,
+            conv_factory=conv_fn,
+            norm_factory=norm_fn,
+        )
 
         self.convs = nn.ModuleList()
         for _ in range(cfg.n_layers):
