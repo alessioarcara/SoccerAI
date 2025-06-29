@@ -5,7 +5,6 @@ model:
     drop: 0.2
     norm: "batch"
     residual_sum_mode: "last"
-    plus: True
   neck:
     rnn_type: 'gru'
     node_dout: 128

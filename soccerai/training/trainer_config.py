@@ -33,7 +33,6 @@ class GCNConfig(BackboneCommon):
 
 class GCN2Config(BackboneCommon):
     type: Literal["gcn2"]
-    plus: bool
 
 
 class GraphSAGEConfig(BackboneCommon):

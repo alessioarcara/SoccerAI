@@ -113,15 +113,17 @@ class GCNBackbone(nn.Module):
         self.drop = nn.Dropout(cfg.drop)
 
         def conv_fn(d, _):
+            conv = pyg_nn.GCNConv(d, cfg.dout)
             if cfg.plus:
                 return GNNPlusLayer(
-                    pyg_nn.GCNConv(d, cfg.dout),
+                    conv,
                     d,
                     cfg.dout,
                     cfg.drop,
                     NORMALIZATIONS[cfg.norm](cfg.dout),
                 )
-            return pyg_nn.GCNConv(d, cfg.dout)
+            else:
+                return conv
 
         def norm_fn(_):
             return NORMALIZATIONS[cfg.norm](cfg.dout)
@@ -177,22 +179,13 @@ class GCNIIBackbone(nn.Module):
         self.node_proj = pyg_nn.Linear(din, cfg.dout)
 
         def conv_fn(d, i):
-            conv = pyg_nn.GCN2Conv(
+            return pyg_nn.GCN2Conv(
                 cfg.dout,
                 alpha=0.5,
                 theta=1.0,
                 layer=i + 1,
                 shared_weights=False,
             )
-            if cfg.plus:
-                return GNNPlusLayer(
-                    conv,
-                    d,
-                    cfg.dout,
-                    cfg.drop,
-                    NORMALIZATIONS[cfg.norm](cfg.dout),
-                )
-            return conv
 
         def norm_fn(_):
             return NORMALIZATIONS[cfg.norm](cfg.dout)
@@ -405,8 +398,8 @@ class GINEBackbone(nn.Module):
                 return GNNPlusLayer(
                     conv, d, cfg.dout, cfg.drop, NORMALIZATIONS[cfg.norm](cfg.dout)
                 )
-
-            return conv
+            else:
+                return conv
 
         def norm_fn(_):
             return NORMALIZATIONS[cfg.norm](cfg.dout)
