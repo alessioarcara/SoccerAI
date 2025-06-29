@@ -9,6 +9,7 @@ from soccerai.models.typings import (
     NormalizationType,
     ReadoutType,
     ResidualSumMode,
+    RNNType,
     TemporalMode,
 )
 
@@ -66,11 +67,14 @@ BackboneConfig = Annotated[
 
 
 class NeckConfig(BaseModel):
+    rnn_type: RNNType
     readout: ReadoutType
     glob_dout: int
     rnn_din: int
     rnn_dout: int
     mode: TemporalMode
+    raw_features_proj: bool
+    proj_dout: int
 
 
 class HeadConfig(BaseModel):

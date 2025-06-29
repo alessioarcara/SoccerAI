@@ -403,18 +403,6 @@ class GraphGPSBackbone(nn.Module):
             norm_factory=norm_fn,
         )
 
-        self.convs = nn.ModuleList()
-        for _ in range(cfg.n_layers):
-            mlp = build_mlp(cfg.dout, cfg.dout)
-            conv = pyg_nn.GPSConv(
-                cfg.dout,
-                pyg_nn.GINEConv(mlp),
-                heads=cfg.heads,
-                dropout=cfg.drop,
-                attn_kwargs={"dropout": cfg.attn_drop},
-            )
-            self.convs.append(conv)
-
     def forward(
         self,
         x: torch.Tensor,
