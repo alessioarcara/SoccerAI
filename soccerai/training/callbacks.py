@@ -1,3 +1,4 @@
+import copy
 from abc import ABC
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from torch_geometric.explain import Explainer, GNNExplainer
 import wandb
 from soccerai.training.metrics import Collector
 from soccerai.training.utils import (
+    EarlyStoppingException,
     fig_to_numpy,
     plot_average_feature_importance,
     plot_player_feature_importance,
@@ -92,65 +94,67 @@ class ExplainerCallback(Callback):
             plt.close(fig)
 
 
-class ValidationCheckpointCallback(Callback):
-    def __init__(
-        self,
-        monitor: str = "val_loss",
-        mode: str = "min",
-        artifact_name: str = "best_val_model",
-        artifact_type: str = "model",
-    ):
-        self.monitor = monitor
-        self.best = float("inf") if mode == "min" else -float("inf")
-        self.mode = mode
-        self.artifact_name = artifact_name
-        self.artifact_type = artifact_type
+class ModelMonitorCallback(Callback):
+    def __init__(self, history_key: str, minimize: bool):
+        super().__init__()
+        self.history_key = history_key
+        self.best = float("inf") if minimize else 0.0
+        self.minimize = minimize
+
+    def on_eval_end(self, trainer) -> bool:
+        curr = trainer.history.get(self.history_key)
+
+        if curr is None:
+            logger.warning(f"{self.history_key} not found in history; skipping.")
+            return False
+
+        improved = curr < self.best if self.minimize else curr > self.best
+        if improved:
+            self.best = curr
+            return True
+
+        return False
+
+
+class EarlyStoppingCallback(ModelMonitorCallback):
+    def __init__(self, history_key: str, minimize: bool, patience: int):
+        super().__init__(history_key, minimize)
+        self.patience = patience
+        self.counter = 0
 
     def on_eval_end(self, trainer):
-        current = trainer.metrics.get(self.monitor)
-        if current is None:
-            logger.warning(
-                f"Metric {self.monitor} not found in trainer.metrics; skipping update."
-            )
-            return
+        improved = super().on_eval_end(trainer)
 
-        improved = current < self.best if self.mode == "min" else current > self.best
-        if not improved:
-            logger.debug(
-                f"No improvement in {self.monitor}: current={current:.4f} vs best={self.best:.4f}."
-            )
-            return
+        if improved:
+            self.counter = 0
+        else:
+            self.counter += 1
 
-        old_best = self.best
-        self.best = current
-        logger.info(
-            f"Validation metric {self.monitor} improved from {old_best:.4f} to {self.best:.4f}."
-        )
+            if self.counter >= self.patience:
+                raise EarlyStoppingException()
 
 
-class FinalModelSaverCallback(Callback):
-    def __init__(
-        self,
-        model_name: str,
-        out_dir: str = "checkpoints",
-    ):
-        self.model_name = model_name
-        self.out_dir = Path(out_dir) / model_name
+class BestModelSaverCallback(ModelMonitorCallback):
+    def __init__(self, history_key: str, minimize: bool, model_name: str):
+        super().__init__(history_key, minimize)
+        self.out_dir = Path("checkpoints") / model_name
         self.out_dir.mkdir(parents=True, exist_ok=True)
-        self.artifact_name = model_name
+        self.model_name = model_name
+
+    def on_eval_end(self, trainer):
+        improved = super().on_eval_end(trainer)
+
+        if improved:
+            self.best_model = copy.deepcopy(trainer.model.state_dict())
 
     def on_train_end(self, trainer):
-        filename = self.out_dir / f"{wandb.run.id}.pth"
-        torch.save(trainer.model.state_dict(), str(filename))
-        logger.info(f"Saved final model checkpoint to {filename}")
-
-        artifact = wandb.Artifact(
-            name=self.artifact_name,
-            type="model",
+        checkpoint_name = (
+            f"{wandb.run.id}_{self.history_key}_{self.best_value:0.4f}.pth"
         )
+        checkpoint_path = self.out_dir / checkpoint_name
+        torch.save(self.best_model, checkpoint_path)
+        logger.info(f"Saved model checkpoint to {checkpoint_path}")
 
-        artifact.add_dir(str(self.out_dir))
+        artifact = wandb.Artifact(name=self.model_name, type="model")
+        artifact.add_file(str(checkpoint_path), name=checkpoint_name)
         wandb.run.log_artifact(artifact)
-        logger.success(
-            f"Logged artifact {artifact.name} for model {self.model_name} to W&B run {wandb.run.id}",
-        )

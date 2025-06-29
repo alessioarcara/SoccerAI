@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
 
 import matplotlib.pyplot as plt
 import torch
@@ -17,6 +17,7 @@ import wandb
 from soccerai.training.callbacks import Callback
 from soccerai.training.metrics import Metric
 from soccerai.training.trainer_config import Config
+from soccerai.training.utils import EarlyStoppingException
 
 BatchEvalResult = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
@@ -53,6 +54,7 @@ class BaseTrainer(ABC):
             total_steps=cfg.trainer.n_epochs * len(self.train_loader),
             pct_start=0.1,
         )
+        self.history: Dict[str, Any] = {}
 
     @abstractmethod
     def _train_step(self, item: Any) -> torch.Tensor:
@@ -80,7 +82,7 @@ class BaseTrainer(ABC):
 
     def _on_eval_end(self) -> None:
         """
-        Hook called at the end of training.
+        Hook called at the end of an evaluation.
         """
         for cb in self.callbacks:
             cb.on_eval_end(self)
@@ -105,7 +107,6 @@ class BaseTrainer(ABC):
                     colour="blue",
                 ):
                     loss = self._train_step(item)
-                    self.scheduler.step()
                     wandb.log(
                         {
                             "train/step_loss": loss.item(),
@@ -116,14 +117,18 @@ class BaseTrainer(ABC):
                 if epoch % self.cfg.trainer.eval_rate == 0:
                     self.eval("train")
                     self.eval("val")
+                    self._on_eval_end()
 
             self._on_training_end()
+
+        except EarlyStoppingException:
+            logger.info("Early stopping triggered! No improvement.")
 
         finally:
             wandb.finish()
 
     @torch.inference_mode()
-    def eval(self, split: str) -> None:
+    def eval(self, split: Literal["train", "val"]) -> None:
         self.model.eval()
         iterable = self._get_data_iterable(split)
 
@@ -153,11 +158,17 @@ class BaseTrainer(ABC):
                 m.update(preds_probs, true_labels, item)
 
         mean_loss = total_loss / num_items
+
+        if split == "val":
+            self.history["val/loss"] = mean_loss
         log_dict: Dict[str, Any] = {f"{split}/loss": mean_loss}
 
         for m in self.metrics:
             for name, value in m.compute():
+                if split == "val":
+                    self.history[f"val/{name}"] = value
                 log_dict[f"{split}/{name}"] = value
+
             for name, visual in m.plot():
                 if isinstance(visual, plt.Figure):
                     log_dict[f"{split}/{name}"] = wandb.Image(visual)
@@ -186,6 +197,7 @@ class Trainer(BaseTrainer):
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         self.optim.step()
+        self.scheduler.step()
         return loss
 
     def _eval_step(self, batch: Batch) -> BatchEvalResult:
@@ -259,6 +271,7 @@ class TemporalTrainer(BaseTrainer):
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         self.optim.step()
+        self.scheduler.step()
         return loss
 
     def _eval_step(self, batch: Discrete_Signal) -> BatchEvalResult:
