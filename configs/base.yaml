@@ -4,25 +4,27 @@ seed: 42
 
 model: 
   use_temporal: True 
+  use_cell_state: True 
 
   backbone:
     dout: 256
     drop: 0.0
     norm: "none"
+    residual_sum_mode: "none"
 
   neck:
     rnn_type: 'gru'
     readout: "mean"
-    rnn_din: 0
-    rnn_dout: 256 
+    rnn_din: 512
+    rnn_dout: 512 
     glob_dout: 256 
-    mode: "node"
-    use_node_proj: True
-    node_dout: 128
+    mode: "graph"
+    raw_features_proj: True
+    proj_dout: 128
 
   head:
     n_layers: 2
-    din: 512 
+    din: 512
     drop: 0.5
 
 trainer:

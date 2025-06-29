@@ -71,26 +71,28 @@ class TemporalFusion(nn.Module):
         cfg: NeckConfig,
     ):
         super().__init__()
-
         self.mode = cfg.mode
         self.fusion = GraphGlobalFusion(glob_din, cfg)
 
-        self.node_proj: nn.Module = nn.Identity()
         if self.mode == "node":
-            if cfg.use_node_proj:
-                self.node_proj = nn.Sequential(
-                    pyg_nn.Linear(node_dim, cfg.node_dout), nn.ReLU()
+            if cfg.raw_features_proj:
+                self.raw_features_proj: nn.Module = nn.Sequential(
+                    pyg_nn.Linear(node_dim, cfg.proj_dout), nn.ReLU()
                 )
-                grnn_din = backbone_dout + cfg.node_dout
+                grnn_din = backbone_dout + cfg.proj_dout
+
             else:
                 grnn_din = backbone_dout + node_dim
             self.grnn = GRNN_CELLS[cfg.rnn_type](
                 in_channels=grnn_din, out_channels=backbone_dout, K=1
             )
+
         elif self.mode == "graph":
+            self.raw_features_proj = nn.Identity()
             self.rnn = RNN_CELLS[cfg.rnn_type](
                 input_size=cfg.rnn_din, hidden_size=cfg.rnn_dout
             )
+
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
 
@@ -106,37 +108,43 @@ class TemporalFusion(nn.Module):
         prev_h: OptTensor = None,
         prev_c: OptTensor = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        x = self.node_proj(x)
+        x_proj = self.raw_features_proj(x)
 
         fused = self.fusion(z, u, batch, batch_size)
 
         if self.mode == "node":
+            grnn_input = torch.cat([z, x_proj], dim=-1)
+
             if isinstance(self.grnn, pygt_nn.GConvLSTM):
                 h, c = self.grnn(
-                    torch.cat([z, x], dim=-1),
+                    grnn_input,
                     edge_index,
                     edge_weight,
                     prev_h,
                     prev_c,
                 )
+
             elif isinstance(self.grnn, pygt_nn.GConvGRU):
                 h = self.grnn(
-                    torch.cat([z, x], dim=-1),
+                    grnn_input,
                     edge_index,
                     edge_weight,
                     prev_h,
                 )
                 c = None
+
             return fused, h, c
-        elif self.mode == "graph":
+
+        else:  # graph
             if isinstance(self.rnn, nn.LSTMCell):
-                lstm_state: Optional[Tuple[OptTensor, OptTensor]] = (prev_h, prev_c)
+                state: Optional[Tuple[OptTensor, OptTensor]] = (prev_h, prev_c)
                 if prev_h is None or prev_c is None:
-                    lstm_state = None
-                h, c = self.rnn(fused, lstm_state)
+                    state = None
+
+                h, c = self.rnn(fused, state)
+
             elif isinstance(self.rnn, nn.GRUCell):
                 h = self.rnn(fused, prev_h)
                 c = None
-            return h, h, c
 
-        raise RuntimeError(f"Unhandled mode: {self.mode}")
+            return h, h, c

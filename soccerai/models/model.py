@@ -34,7 +34,12 @@ class GNN(nn.Module):
 
 
 class TemporalGNN(nn.Module):
-    def __init__(self, backbone: nn.Module, neck: nn.Module, head: nn.Module):
+    def __init__(
+        self,
+        backbone: nn.Module,
+        neck: nn.Module,
+        head: nn.Module,
+    ):
         super().__init__()
         self.backbone = backbone
         self.neck = neck
@@ -52,16 +57,14 @@ class TemporalGNN(nn.Module):
         prev_h: OptTensor = None,
         prev_c: OptTensor = None,
     ):
-        if prev_h is not None:
-            if prev_c is not None:
-                residual = prev_h + prev_c
-            else:
-                residual = prev_h
-        else:
-            residual = None
-
         z = self.backbone(
-            x, edge_index, edge_weight, edge_attr, batch, batch_size, residual
+            x,
+            edge_index,
+            edge_weight,
+            edge_attr,
+            batch,
+            batch_size,
+            prev_h,
         )
         fused_emb, h, c = self.neck(
             z, u, x, edge_index, edge_weight, batch, batch_size, prev_h, prev_c

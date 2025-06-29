@@ -73,8 +73,8 @@ class NeckConfig(BaseModel):
     rnn_din: int
     rnn_dout: int
     mode: TemporalMode
-    use_node_proj: bool
-    node_dout: int
+    raw_features_proj: bool
+    proj_dout: int
 
 
 class HeadConfig(BaseModel):
