@@ -7,8 +7,9 @@ import torch_geometric.nn as pyg_nn
 from torch_geometric.typing import Adj, OptTensor
 from torch_geometric.utils import dropout_edge
 
+from soccerai.models.layers import BatchNorm, GNNPlusLayer, Identity
 from soccerai.models.typings import NormalizationType
-from soccerai.models.utils import build_layers, sum_residual
+from soccerai.models.utils import build_layers, build_mlp, sum_residual
 from soccerai.training.trainer_config import (
     GATv2Config,
     GCN2Config,
@@ -37,16 +38,6 @@ class BackboneRegistry:
         return cls._registry[name](*args, **kwargs)
 
 
-class Identity(nn.Identity):
-    def forward(self, input: torch.Tensor, *args, **kwargs) -> torch.Tensor:
-        return input
-
-
-class BatchNorm(pyg_nn.BatchNorm):
-    def forward(self, input: torch.Tensor, *args, **kwargs) -> torch.Tensor:
-        return super().forward(input)
-
-
 NORMALIZATIONS: Dict[NormalizationType, Type[nn.Module]] = {
     "none": Identity,
     "batch": BatchNorm,
@@ -64,7 +55,17 @@ class GCNBackbone(nn.Module):
         self.drop = nn.Dropout(cfg.drop)
 
         def conv_fn(d, _):
-            return pyg_nn.GCNConv(d, cfg.dout)
+            conv = pyg_nn.GCNConv(d, cfg.dout)
+            if cfg.plus:
+                return GNNPlusLayer(
+                    conv,
+                    d,
+                    cfg.dout,
+                    cfg.drop,
+                    NORMALIZATIONS[cfg.norm](cfg.dout),
+                )
+            else:
+                return conv
 
         def norm_fn(_):
             return NORMALIZATIONS[cfg.norm](cfg.dout)
@@ -100,7 +101,7 @@ class GCNBackbone(nn.Module):
             h = self.drop(
                 F.relu(
                     norm(
-                        conv(h, edge_index, edge_weight),
+                        conv(h, edge_index=edge_index, edge_weight=edge_weight),
                         batch=batch,
                         batch_size=batch_size,
                     ),
@@ -121,7 +122,11 @@ class GCNIIBackbone(nn.Module):
 
         def conv_fn(d, i):
             return pyg_nn.GCN2Conv(
-                cfg.dout, alpha=0.5, theta=1.0, layer=i + 1, shared_weights=False
+                cfg.dout,
+                alpha=0.5,
+                theta=1.0,
+                layer=i + 1,
+                shared_weights=False,
             )
 
         def norm_fn(_):
@@ -158,7 +163,12 @@ class GCNIIBackbone(nn.Module):
             h = self.drop(
                 F.relu(
                     norm(
-                        conv(h, h0, edge_index, edge_weight),
+                        conv(
+                            h,
+                            x_0=h0,
+                            edge_index=edge_index,
+                            edge_weight=edge_weight,
+                        ),
                         batch=batch,
                         batch_size=batch_size,
                     ),
@@ -313,10 +323,6 @@ class GATv2Backbone(nn.Module):
         return h
 
 
-def build_mlp(din: int, dmid: int) -> nn.Sequential:
-    return nn.Sequential(nn.Linear(din, dmid), nn.ReLU(), nn.Linear(dmid, dmid))
-
-
 @BackboneRegistry.register("gine")
 class GINEBackbone(nn.Module):
     def __init__(self, din: int, cfg: GINEConfig):
@@ -324,11 +330,18 @@ class GINEBackbone(nn.Module):
         self.drop = nn.Dropout(cfg.drop)
 
         def conv_fn(d, _):
-            return pyg_nn.GINEConv(
+            conv = pyg_nn.GINEConv(
                 nn=build_mlp(d, cfg.dout),
                 edge_dim=1,
                 train_eps=cfg.train_eps,
             )
+
+            if cfg.plus:
+                return GNNPlusLayer(
+                    conv, d, cfg.dout, cfg.drop, NORMALIZATIONS[cfg.norm](cfg.dout)
+                )
+            else:
+                return conv
 
         def norm_fn(_):
             return NORMALIZATIONS[cfg.norm](cfg.dout)
@@ -362,7 +375,7 @@ class GINEBackbone(nn.Module):
             h = self.drop(
                 F.relu(
                     norm(
-                        conv(h, edge_index, edge_attr=edge_attr),
+                        conv(h, edge_index=edge_index, edge_attr=edge_attr),
                         batch=batch,
                         batch_size=batch_size,
                     ),
