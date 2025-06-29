@@ -177,6 +177,7 @@ class Trainer(BaseTrainer):
         )
         loss: torch.Tensor = self.criterion(out, batch.y)
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         self.optim.step()
         return loss
 
@@ -249,6 +250,7 @@ class TemporalTrainer(BaseTrainer):
         self.optim.zero_grad(set_to_none=True)
         loss, _ = self._compute_signal_loss_and_last_pred(batch)
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         self.optim.step()
         return loss
 

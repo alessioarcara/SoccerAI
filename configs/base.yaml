@@ -1,9 +1,9 @@
 project_name: "soccerai"
-run_name: "gcn2"
+run_name: "gcn"
 seed: 42
 
 model: 
-  use_temporal: True
+  use_temporal: True 
 
   backbone:
     dout: 256
@@ -34,7 +34,7 @@ trainer:
   gamma: 0.9
   
 data:
-  include_goal_features: True 
+  include_goal_features: False 
   include_ball_features: True 
   use_macro_roles: True 
   use_augmentations: False 
