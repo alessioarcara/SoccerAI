@@ -5,9 +5,9 @@ import torch.nn as nn
 from torch_geometric.typing import Adj, OptTensor
 
 from soccerai.data.dataset import WorldCup2022Dataset
-from soccerai.models.backbone import BackboneRegistry
-from soccerai.models.head import GraphClassificationHead
-from soccerai.models.neck import GraphGlobalFusion, TemporalFusion
+from soccerai.models.backbones import BackboneRegistry
+from soccerai.models.heads import GraphClassificationHead
+from soccerai.models.necks import GraphGlobalFusion, TemporalFusion
 from soccerai.training.trainer_config import Config
 
 
