@@ -100,7 +100,7 @@ class GCNBackbone(nn.Module):
             h = self.drop(
                 F.relu(
                     norm(
-                        conv(x, edge_index, edge_weight),
+                        conv(h, edge_index, edge_weight),
                         batch=batch,
                         batch_size=batch_size,
                     ),
@@ -441,7 +441,7 @@ class GraphGPSBackbone(nn.Module):
                 n_layers=len(self.convs),
             )
             h = conv(
-                x=h,
+                h,
                 edge_index=edge_index,
                 edge_attr=edge_attr,
                 batch=batch,
