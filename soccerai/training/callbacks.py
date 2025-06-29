@@ -93,11 +93,6 @@ class ExplainerCallback(Callback):
 
 
 class ValidationCheckpointCallback(Callback):
-    """
-    Every time validation ends, if the monitored metric improves,
-    updates the best value and logs the improvement.
-    """
-
     def __init__(
         self,
         monitor: str = "val_loss",
@@ -137,30 +132,25 @@ class FinalModelSaverCallback(Callback):
     def __init__(
         self,
         model_name: str,
-        artifact_name: str = "final_model",
         out_dir: str = "checkpoints",
     ):
         self.model_name = model_name
-        self.artifact_name = artifact_name
         self.out_dir = Path(out_dir) / model_name
         self.out_dir.mkdir(parents=True, exist_ok=True)
+        self.artifact_name = model_name
 
     def on_train_end(self, trainer):
-        run_id = wandb.run.id if wandb.run else ""
-        filename = self.out_dir / f"{self.artifact_name}_{run_id}.pth"
-
+        filename = self.out_dir / f"{wandb.run.id}.pth"
         torch.save(trainer.model.state_dict(), str(filename))
-        logger.info("Saved final model checkpoint to {}", filename)
+        logger.info(f"Saved final model checkpoint to {filename}")
 
         artifact = wandb.Artifact(
-            name=f"{self.artifact_name}-{self.model_name}-{run_id}",
+            name=self.artifact_name,
             type="model",
         )
-        artifact.add_file(str(filename))
+
+        artifact.add_dir(str(self.out_dir))
         wandb.run.log_artifact(artifact)
         logger.success(
-            "Logged final artifact '{}' for model '{}' to W&B run {}",
-            artifact.name,
-            self.model_name,
-            run_id,
+            f"Logged artifact {artifact.name} for model {self.model_name} to W&B run {wandb.run.id}",
         )

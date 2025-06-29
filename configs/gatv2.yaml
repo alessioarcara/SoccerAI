@@ -16,8 +16,3 @@ model:
     n_layers: 2
     din: 512 
     drop: 0.0
-  
-
-trainer:
-  n_epochs: 5
-  
