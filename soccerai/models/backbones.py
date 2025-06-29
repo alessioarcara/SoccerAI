@@ -7,8 +7,9 @@ import torch_geometric.nn as pyg_nn
 from torch_geometric.typing import Adj, OptTensor
 from torch_geometric.utils import dropout_edge
 
+from soccerai.models.layers import BatchNorm, GNNPlusLayer, Identity
 from soccerai.models.typings import NormalizationType
-from soccerai.models.utils import build_layers, sum_residual
+from soccerai.models.utils import build_layers, build_mlp, sum_residual
 from soccerai.training.trainer_config import (
     GATv2Config,
     GCN2Config,
@@ -37,16 +38,6 @@ class BackboneRegistry:
         return cls._registry[name](*args, **kwargs)
 
 
-class Identity(nn.Identity):
-    def forward(self, input: torch.Tensor, *args, **kwargs) -> torch.Tensor:
-        return input
-
-
-class BatchNorm(pyg_nn.BatchNorm):
-    def forward(self, input: torch.Tensor, *args, **kwargs) -> torch.Tensor:
-        return super().forward(input)
-
-
 NORMALIZATIONS: Dict[NormalizationType, Type[nn.Module]] = {
     "none": Identity,
     "batch": BatchNorm,
@@ -54,55 +45,6 @@ NORMALIZATIONS: Dict[NormalizationType, Type[nn.Module]] = {
     "instance": pyg_nn.InstanceNorm,
     "graph": pyg_nn.GraphNorm,
 }
-
-
-def build_mlp(din: int, dmid: int, dout: Optional[int] = None) -> nn.Sequential:
-    if dout is None:
-        dout = dmid
-    return nn.Sequential(nn.Linear(din, dmid), nn.ReLU(), nn.Linear(dmid, dout))
-
-
-class GNNPlusLayer(nn.Module):
-    def __init__(
-        self,
-        conv_layer: nn.Module,
-        din: int,
-        dout: int,
-        p_drop: float,
-        norm: Optional[nn.Module] = None,
-    ):
-        super().__init__()
-
-        self.proj = pyg_nn.Linear(din, dout) if din != dout else Identity()
-
-        self.norm = norm if norm is not None else Identity()
-
-        self.drop = nn.Dropout(p_drop)
-
-        self.conv_layer = conv_layer
-
-        self.mlp = build_mlp(dout, dout * 2, dout)
-
-    def forward(
-        self,
-        x: torch.Tensor,
-        batch: OptTensor = None,
-        batch_size: Optional[int] = None,
-        **conv_kwargs,
-    ) -> torch.Tensor:
-        x_in = self.proj(x)
-
-        x = F.relu(
-            self.drop(
-                self.norm(
-                    self.conv_layer(x, **conv_kwargs),
-                    batch,
-                    batch_size,
-                )
-            )
-        )
-
-        return x + self.mlp(x_in + x)
 
 
 @BackboneRegistry.register("gcn")
