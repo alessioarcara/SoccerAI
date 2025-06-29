@@ -1,0 +1,10 @@
+model:
+  use_hierarchical: True
+
+  backbone: 
+    type: "gcn"
+    residual_sum_mode: "none"
+    n_layers: 2
+
+  head:
+    din: 192

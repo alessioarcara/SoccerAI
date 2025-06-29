@@ -60,7 +60,12 @@ class GraphGPSConfig(BackboneCommon):
 
 BackboneConfig = Annotated[
     Union[
-        GCNConfig, GCN2Config, GraphSAGEConfig, GATv2Config, GINEConfig, GraphGPSConfig
+        GCNConfig,
+        GCN2Config,
+        GraphSAGEConfig,
+        GATv2Config,
+        GINEConfig,
+        GraphGPSConfig,
     ],
     Field(discriminator="type"),
 ]
@@ -85,6 +90,7 @@ class HeadConfig(BaseModel):
 
 class ModelConfig(BaseModel):
     use_temporal: bool
+    use_hierarchical: bool
     backbone: BackboneConfig
     neck: NeckConfig
     head: HeadConfig

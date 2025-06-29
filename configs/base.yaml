@@ -1,5 +1,5 @@
 project_name: "soccerai"
-run_name: "gcn"
+run_name: "diffpool"
 seed: 42
 
 model: 
@@ -10,7 +10,6 @@ model:
     dout: 256
     drop: 0.0
     norm: "none"
-    residual_sum_mode: "none"
 
   neck:
     rnn_type: 'gru'

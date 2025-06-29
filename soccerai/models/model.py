@@ -6,6 +6,7 @@ from torch_geometric.typing import Adj, OptTensor
 
 from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.models.backbone import BackboneRegistry
+from soccerai.models.diffpool import HierarchicalGNN
 from soccerai.models.head import GraphClassificationHead
 from soccerai.models.neck import GraphGlobalFusion, TemporalFusion
 from soccerai.training.trainer_config import Config
@@ -73,10 +74,14 @@ class TemporalGNN(nn.Module):
 
 
 def build_model(cfg: Config, train_ds: WorldCup2022Dataset) -> nn.Module:
+    head = GraphClassificationHead(cfg.model.head)
+
+    if cfg.model.use_hierarchical:
+        return HierarchicalGNN(train_ds.num_node_features, head)
+
     backbone = BackboneRegistry.create(
         cfg.model.backbone.type, train_ds.num_node_features, cfg.model.backbone
     )
-    head = GraphClassificationHead(cfg.model.head)
 
     if cfg.model.use_temporal:
         return TemporalGNN(
@@ -89,9 +94,9 @@ def build_model(cfg: Config, train_ds: WorldCup2022Dataset) -> nn.Module:
             ),
             head,
         )
-    else:
-        return GNN(
-            backbone,
-            GraphGlobalFusion(train_ds.num_global_features, cfg.model.neck),
-            head,
-        )
+
+    return GNN(
+        backbone,
+        GraphGlobalFusion(train_ds.num_global_features, cfg.model.neck),
+        head,
+    )
