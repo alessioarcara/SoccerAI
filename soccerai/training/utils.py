@@ -274,7 +274,7 @@ def extract_chain(batch: Discrete_Signal, chain_idx: int) -> List[Data]:
         return Data(
             x=x,
             edge_index=edge_index,
-            edge_attr=edge_attr,
+            edge_weight=edge_attr,
             u=u,
             jersey_numbers=jersey_numbers,
             y=y,

@@ -3,11 +3,12 @@ from abc import ABC
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import torch.nn as nn
 from loguru import logger
 from torch_geometric.explain import Explainer, GNNExplainer
 
 import wandb
-from soccerai.training.metrics import Collector
+from soccerai.training.metrics import ChainCollector, Collector
 from soccerai.training.utils import (
     fig_to_numpy,
     plot_average_feature_importance,
@@ -88,3 +89,119 @@ class ExplainerCallback(Callback):
                 {f"explain/{pos_type}_average_feature_importance": wandb.Image(fig)}
             )
             plt.close(fig)
+
+
+class BestChainExplainerCallback(Callback):
+    def on_train_end(self, trainer):
+        chain_collectors = [m for m in trainer.metrics if isinstance(m, ChainCollector)]
+        if not chain_collectors:
+            return
+
+        class ModelForExplainer(nn.Module):
+            def __init__(self, base_model):
+                super().__init__()
+                self.base_model = base_model
+
+            def forward(
+                self,
+                x,
+                edge_index,
+                u=None,
+                edge_weight=None,
+                batch=None,
+                batch_size=None,
+                prev_h=None,
+            ):
+                out, _ = self.base_model(
+                    x=x,
+                    edge_index=edge_index,
+                    edge_weight=edge_weight,
+                    edge_attr=None,
+                    u=u,
+                    batch=batch,
+                    batch_size=batch_size,
+                    prev_h=prev_h,
+                )
+                return out
+
+        explainer = Explainer(
+            model=ModelForExplainer(trainer.model).to(trainer.device),
+            algorithm=GNNExplainer(epochs=200),
+            explanation_type="model",
+            node_mask_type="attributes",
+            edge_mask_type="object",
+            model_config=dict(
+                mode="binary_classification",
+                task_level="graph",
+                return_type="raw",
+            ),
+        )
+
+        for c in chain_collectors:
+            pos_type = "TP" if c.target_label == 1 else "FP"
+            _, (_, best_chain) = c.highest_confidence_chain
+
+            # List of (score, (probs_seq, List[Data]))
+            if not best_chain:
+                continue
+
+            h = None
+            frames_np = []
+
+            for frame_idx, data in enumerate(best_chain):
+                d = data.clone().to(trainer.device)
+
+                N = d.x.size(0)
+                jersey_numbers = d.jersey_numbers.cpu().numpy()
+                d.x = d.x.float().requires_grad_(True)
+                d.u = d.u.float().requires_grad_(True)
+                d.edge_weight = d.edge_weight.float()
+                batch_idx = torch.zeros(N, dtype=torch.long, device=trainer.device)
+
+                with torch.enable_grad():
+                    explanation = explainer(
+                        x=d.x,
+                        edge_index=d.edge_index,
+                        u=d.u,
+                        edge_weight=d.edge_weight,
+                        batch=batch_idx,
+                        batch_size=1,
+                        prev_h=h,
+                    )
+
+                mask = explanation.node_mask.detach().cpu().numpy()
+
+                _, h = trainer.model(
+                    x=d.x,
+                    edge_index=d.edge_index,
+                    edge_weight=d.edge_weight,
+                    edge_attr=None,
+                    u=d.u,
+                    batch=batch_idx,
+                    batch_size=1,
+                    prev_h=h,
+                )
+                h = h.detach()
+
+                fig = plot_player_feature_importance(
+                    mask,
+                    jersey_numbers,
+                    trainer.feature_names,
+                    positive_type=pos_type,
+                    frame_idx=frame_idx + 1,
+                )
+                frames_np.append(fig_to_numpy(fig))
+                plt.close(fig)
+
+            if not frames_np:
+                logger.warning(f"No frames to explain for chain {pos_type}")
+                continue
+
+            video_np = np.stack(frames_np).transpose(0, 3, 1, 2)
+            wandb.log(
+                {
+                    f"explain/temporal_{pos_type}_best_chain": wandb.Video(
+                        video_np, fps=1, format="mp4"
+                    )
+                }
+            )
