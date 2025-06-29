@@ -3,10 +3,10 @@ model:
     type: "gcn2"
     n_layers: 9 
     drop: 0.2
-    norm: "none"
-    residual_sum_mode: "every"
+    norm: "batch"
+    residual_sum_mode: "last"
   neck:
     rnn_type: 'gru'
-    use_node_proj: True
     node_dout: 128
     drop: 0.1
+    raw_features_proj: False

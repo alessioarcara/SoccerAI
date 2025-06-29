@@ -3,3 +3,4 @@ model:
     type: "gcn"
     n_layers: 2
     residual_sum_mode: "none"
+    plus: True

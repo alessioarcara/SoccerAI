@@ -74,9 +74,10 @@ class TemporalFusion(nn.Module):
         self.mode = cfg.mode
         self.fusion = GraphGlobalFusion(glob_din, cfg)
 
+        self.raw_features_proj: nn.Module = nn.Identity()
         if self.mode == "node":
             if cfg.raw_features_proj:
-                self.raw_features_proj: nn.Module = nn.Sequential(
+                self.raw_features_proj = nn.Sequential(
                     pyg_nn.Linear(node_dim, cfg.proj_dout), nn.ReLU()
                 )
                 grnn_din = backbone_dout + cfg.proj_dout
@@ -88,7 +89,6 @@ class TemporalFusion(nn.Module):
             )
 
         elif self.mode == "graph":
-            self.raw_features_proj = nn.Identity()
             self.rnn = RNN_CELLS[cfg.rnn_type](
                 input_size=cfg.rnn_din, hidden_size=cfg.rnn_dout
             )

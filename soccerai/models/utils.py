@@ -46,3 +46,9 @@ def build_layers(
         norms.append(norm_factory(i))
         din = dout
     return convs, norms
+
+
+def build_mlp(din: int, dmid: int, dout: Optional[int] = None) -> nn.Sequential:
+    if dout is None:
+        dout = dmid
+    return nn.Sequential(nn.Linear(din, dmid), nn.ReLU(), nn.Linear(dmid, dout))
