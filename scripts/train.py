@@ -14,9 +14,10 @@ from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.data.temporal_dataset import TemporalChainsDataset
 from soccerai.models.models import build_model
 from soccerai.training.callbacks import (
+    BestModelSaverCallback,
+    EarlyStoppingCallback,
     ExplainerCallback,
-    FinalModelSaverCallback,
-    ValidationCheckpointCallback,
+    ModelMonitorCallback,
 )
 from soccerai.training.metrics import (
     BinaryConfusionMatrix,
@@ -96,8 +97,15 @@ def main(args):
                 ChainCollector(0, cfg, train_ds.feature_names),
             ],
             callbacks=[
-                ValidationCheckpointCallback(),
-                FinalModelSaverCallback(cfg.model.backbone.type),
+                EarlyStoppingCallback(
+                    history_key="val_loss", minimize=True, patience=5
+                ),
+                ModelMonitorCallback(history_key="val_loss", minimize=True),
+                BestModelSaverCallback(
+                    history_key="val_loss",
+                    minimize=True,
+                    model_name=cfg.model.backbone.type,
+                ),
             ],
         )
 
@@ -132,8 +140,15 @@ def main(args):
             ],
             callbacks=[
                 ExplainerCallback(),
-                ValidationCheckpointCallback(),
-                FinalModelSaverCallback(),
+                EarlyStoppingCallback(
+                    history_key="val_loss", minimize=True, patience=2
+                ),
+                ModelMonitorCallback(history_key="val_loss", minimize=True),
+                BestModelSaverCallback(
+                    history_key="val_loss",
+                    minimize=True,
+                    model_name=cfg.model.backbone.type,
+                ),
             ],
         )
 

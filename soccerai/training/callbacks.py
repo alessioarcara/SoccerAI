@@ -148,9 +148,7 @@ class BestModelSaverCallback(ModelMonitorCallback):
             self.best_model = copy.deepcopy(trainer.model.state_dict())
 
     def on_train_end(self, trainer):
-        checkpoint_name = (
-            f"{wandb.run.id}_{self.history_key}_{self.best_value:0.4f}.pth"
-        )
+        checkpoint_name = f"{wandb.run.id}_{self.history_key}_{self.best:0.4f}.pth"
         checkpoint_path = self.out_dir / checkpoint_name
         torch.save(self.best_model, checkpoint_path)
         logger.info(f"Saved model checkpoint to {checkpoint_path}")

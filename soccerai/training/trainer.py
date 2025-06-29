@@ -160,13 +160,13 @@ class BaseTrainer(ABC):
         mean_loss = total_loss / num_items
 
         if split == "val":
-            self.history["val/loss"] = mean_loss
+            self.history["val_loss"] = mean_loss
         log_dict: Dict[str, Any] = {f"{split}/loss": mean_loss}
 
         for m in self.metrics:
             for name, value in m.compute():
                 if split == "val":
-                    self.history[f"val/{name}"] = value
+                    self.history[f"val_{name}"] = value
                 log_dict[f"{split}/{name}"] = value
 
             for name, visual in m.plot():
