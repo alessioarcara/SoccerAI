@@ -1,4 +1,7 @@
+import copy
 from abc import ABC
+from pathlib import Path
+from typing import List
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -8,6 +11,7 @@ from torch_geometric.explain import Explainer, GNNExplainer
 
 import wandb
 from soccerai.training.metrics import Collector
+from soccerai.training.trainer_config import Config
 from soccerai.training.utils import (
     fig_to_numpy,
     plot_average_feature_importance,
@@ -17,6 +21,29 @@ from soccerai.training.utils import (
 
 class Callback(ABC):
     def on_train_end(self, trainer): ...
+    def on_eval_end(self, trainer): ...
+
+
+def build_callbacks(cfg: Config) -> List[Callback]:
+    callbacks: List[Callback] = []
+
+    if cfg.trainer.early_stopping_callback:
+        callbacks.append(
+            EarlyStoppingCallback(**cfg.trainer.early_stopping_callback.model_dump())
+        )
+
+    if cfg.trainer.model_saving_callback:
+        callbacks.append(
+            ModelSavingCallback(
+                **cfg.trainer.model_saving_callback.model_dump(),
+                model_name=cfg.run_name,
+            )
+        )
+
+    if not cfg.model.use_temporal:
+        callbacks.append(ExplainerCallback())
+
+    return callbacks
 
 
 class ExplainerCallback(Callback):
@@ -88,3 +115,66 @@ class ExplainerCallback(Callback):
                 {f"explain/{pos_type}_average_feature_importance": wandb.Image(fig)}
             )
             plt.close(fig)
+
+
+class ModelMonitorCallback(Callback):
+    def __init__(self, history_key: str, minimize: bool):
+        super().__init__()
+        self.history_key = history_key
+        self.best = float("inf") if minimize else 0.0
+        self.minimize = minimize
+
+    def on_eval_end(self, trainer) -> bool:
+        curr = trainer.history.get(self.history_key)
+        if curr is None:
+            logger.warning(f"{self.history_key} not found in history; skipping.")
+            return False
+
+        improved = curr < self.best if self.minimize else curr > self.best
+        if improved:
+            self.best = curr
+            return True
+        return False
+
+
+class EarlyStoppingCallback(ModelMonitorCallback):
+    def __init__(self, history_key: str, minimize: bool, patience: int):
+        super().__init__(history_key, minimize)
+        self.patience = patience
+        self.counter = 0
+        self.should_stop = False
+
+    def on_eval_end(self, trainer):
+        improved = super().on_eval_end(trainer)
+
+        if improved:
+            self.counter = 0
+        else:
+            self.counter += 1
+
+            if self.counter >= self.patience:
+                self.should_stop = True
+
+
+class ModelSavingCallback(ModelMonitorCallback):
+    def __init__(self, history_key: str, minimize: bool, model_name: str):
+        super().__init__(history_key, minimize)
+        self.out_dir = Path("checkpoints") / model_name
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        self.model_name = model_name
+
+    def on_eval_end(self, trainer):
+        improved = super().on_eval_end(trainer)
+
+        if improved:
+            self.best_model = copy.deepcopy(trainer.model.state_dict())
+
+    def on_train_end(self, trainer):
+        checkpoint_name = f"{wandb.run.id}_{self.history_key}_{self.best:0.4f}.pth"
+        checkpoint_path = self.out_dir / checkpoint_name
+        torch.save(self.best_model, checkpoint_path)
+        logger.info(f"Saved model checkpoint to {checkpoint_path}")
+
+        artifact = wandb.Artifact(name=self.model_name, type="model")
+        artifact.add_file(str(checkpoint_path), name=checkpoint_name)
+        wandb.run.log_artifact(artifact)
