@@ -1,0 +1,17 @@
+model:
+  use_hierarchical: True
+
+  backbone: 
+    type: "diffpool"
+    residual_sum_mode: "none"
+    dhid: 128
+    pooling_ratio: 0.25
+    dhid_multiplier: 2
+
+  neck:
+    rnn_type: "lstm"
+    rnn_din: 1536 
+    rnn_dout: 1536 
+
+  head:
+    din: 1536

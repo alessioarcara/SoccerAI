@@ -60,9 +60,22 @@ class GraphGPSConfig(BackboneCommon):
     attn_drop: float
 
 
+class DiffPoolConfig(BackboneCommon):
+    type: Literal["diffpool"]
+    dhid: int
+    pooling_ratio: float
+    dhid_multiplier: int
+
+
 BackboneConfig = Annotated[
     Union[
-        GCNConfig, GCN2Config, GraphSAGEConfig, GATv2Config, GINEConfig, GraphGPSConfig
+        GCNConfig,
+        GCN2Config,
+        GraphSAGEConfig,
+        GATv2Config,
+        GINEConfig,
+        GraphGPSConfig,
+        DiffPoolConfig,
     ],
     Field(discriminator="type"),
 ]
@@ -87,6 +100,7 @@ class HeadConfig(BaseModel):
 
 class ModelConfig(BaseModel):
     use_temporal: bool
+    use_hierarchical: bool
     backbone: BackboneConfig
     neck: NeckConfig
     head: HeadConfig
