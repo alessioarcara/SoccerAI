@@ -60,6 +60,13 @@ class GraphGPSConfig(BackboneCommon):
     attn_drop: float
 
 
+class DiffPoolConfig(BackboneCommon):
+    type: Literal["diffpool"]
+    dhid: int
+    pooling_ratio: float
+    dhid_multiplier: int
+
+
 BackboneConfig = Annotated[
     Union[
         GCNConfig,
@@ -68,6 +75,7 @@ BackboneConfig = Annotated[
         GATv2Config,
         GINEConfig,
         GraphGPSConfig,
+        DiffPoolConfig,
     ],
     Field(discriminator="type"),
 ]

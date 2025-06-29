@@ -7,6 +7,7 @@ model:
   use_cell_state: True 
 
   backbone:
+    n_layers: 2
     dout: 256
     drop: 0.0
     norm: "none"

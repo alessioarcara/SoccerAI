@@ -12,7 +12,7 @@ from torch_geometric.nn import summary
 from soccerai.data.converters import create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.data.temporal_dataset import TemporalChainsDataset
-from soccerai.models.model import build_model
+from soccerai.models.models import build_model
 from soccerai.training.callbacks import ExplainerCallback
 from soccerai.training.metrics import (
     BinaryConfusionMatrix,
