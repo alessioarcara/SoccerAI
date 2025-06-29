@@ -18,9 +18,11 @@ PathLike = str | Path
 class BackboneCommon(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    n_layers: int
     dout: int
     drop: float
     norm: NormalizationType
+    residual_sum_mode: ResidualSumMode
 
 
 class GCNConfig(BackboneCommon):
@@ -29,44 +31,35 @@ class GCNConfig(BackboneCommon):
 
 class GCN2Config(BackboneCommon):
     type: Literal["gcn2"]
-    n_layers: int
-    residual_sum_mode: ResidualSumMode
 
 
 class GraphSAGEConfig(BackboneCommon):
     type: Literal["graphsage"]
-    n_layers: int
     aggr_type: AggregationType
     l2_norm: bool
-    residual_sum_mode: ResidualSumMode
-
-
-class GraphGPSConfig(BackboneCommon):
-    type: Literal["graphgps"]
-    n_layers: int
-    heads: int
-    attn_drop: float
-    residual_sum_mode: ResidualSumMode
 
 
 class GATv2Config(BackboneCommon):
     type: Literal["gatv2"]
-    n_layers: int
     use_edge_attr: bool
     num_heads: int
     edge_dropout: float
-    residual_sum_mode: ResidualSumMode
 
 
 class GINEConfig(BackboneCommon):
     type: Literal["gine"]
-    n_layers: int
     train_eps: bool
+
+
+class GraphGPSConfig(BackboneCommon):
+    type: Literal["graphgps"]
+    heads: int
+    attn_drop: float
 
 
 BackboneConfig = Annotated[
     Union[
-        GCNConfig, GCN2Config, GraphSAGEConfig, GINEConfig, GATv2Config, GraphGPSConfig
+        GCNConfig, GCN2Config, GraphSAGEConfig, GATv2Config, GINEConfig, GraphGPSConfig
     ],
     Field(discriminator="type"),
 ]

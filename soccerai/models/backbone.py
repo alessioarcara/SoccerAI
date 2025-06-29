@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Optional, Tuple, Type
+from typing import Callable, Dict, Optional, Type
 
 import torch
 import torch.nn as nn
@@ -7,7 +7,8 @@ import torch_geometric.nn as pyg_nn
 from torch_geometric.typing import Adj, OptTensor
 from torch_geometric.utils import dropout_edge
 
-from soccerai.models.typings import NormalizationType, ResidualSumMode
+from soccerai.models.typings import NormalizationType
+from soccerai.models.utils import build_layers, sum_residual
 from soccerai.training.trainer_config import (
     GATv2Config,
     GCN2Config,
@@ -55,57 +56,26 @@ NORMALIZATIONS: Dict[NormalizationType, Type[nn.Module]] = {
 }
 
 
-def sum_residual(
-    h: torch.Tensor,
-    residual: Optional[torch.Tensor],
-    mode: ResidualSumMode,
-    layer_idx: int,
-    n_layers: int,
-) -> torch.Tensor:
-    """
-    Apply residual tensor according to sum strategy.
-
-    - 'none' : no residual connection
-    - 'every': add residual at all layers except the first (layer_idx > 0)
-    - 'last' : add residual only before the final layer (layer_idx == n_layers - 1)
-    """
-    if residual is None or mode == "none":
-        return h
-
-    if mode == "every" and layer_idx > 0:
-        return h + residual
-
-    if mode == "last" and layer_idx == n_layers - 1:
-        return h + residual
-
-    return h
-
-
-def build_layers(
-    n_layers: int,
-    din: int,
-    dout: int,
-    conv_factory: Callable[[int, int], nn.Module],
-    norm_factory: Callable[[int], nn.Module],
-) -> Tuple[nn.ModuleList, nn.ModuleList]:
-    convs = nn.ModuleList()
-    norms = nn.ModuleList()
-    for i in range(n_layers):
-        convs.append(conv_factory(din, i))
-        norms.append(norm_factory(i))
-        din = dout
-    return convs, norms
-
-
 @BackboneRegistry.register("gcn")
 class GCNBackbone(nn.Module):
     def __init__(self, din: int, cfg: GCNConfig):
         super().__init__()
+        self.residual_sum_mode = cfg.residual_sum_mode
         self.drop = nn.Dropout(cfg.drop)
-        self.conv1 = pyg_nn.GCNConv(din, cfg.dout)
-        self.norm1 = NORMALIZATIONS[cfg.norm](cfg.dout)
-        self.conv2 = pyg_nn.GCNConv(cfg.dout, cfg.dout)
-        self.norm2 = NORMALIZATIONS[cfg.norm](cfg.dout)
+
+        def conv_fn(d, _):
+            return pyg_nn.GCNConv(d, cfg.dout)
+
+        def norm_fn(_):
+            return NORMALIZATIONS[cfg.norm](cfg.dout)
+
+        self.convs, self.norms = build_layers(
+            n_layers=cfg.n_layers,
+            din=din,
+            dout=cfg.dout,
+            conv_factory=conv_fn,
+            norm_factory=norm_fn,
+        )
 
     def forward(
         self,
@@ -117,28 +87,27 @@ class GCNBackbone(nn.Module):
         batch_size: Optional[int] = None,
         residual: OptTensor = None,
     ):
-        h = self.drop(
-            F.relu(
-                self.norm1(
-                    self.conv1(x, edge_index, edge_weight),
-                    batch=batch,
-                    batch_size=batch_size,
-                ),
-                inplace=True,
+        h = x
+
+        for layer_idx, (conv, norm) in enumerate(zip(self.convs, self.norms)):
+            h = sum_residual(
+                h,
+                residual,
+                self.residual_sum_mode,
+                layer_idx=layer_idx,
+                n_layers=len(self.convs),
             )
-        )
+            h = self.drop(
+                F.relu(
+                    norm(
+                        conv(x, edge_index, edge_weight),
+                        batch=batch,
+                        batch_size=batch_size,
+                    ),
+                    inplace=True,
+                )
+            )
 
-        if residual is not None:
-            h = h + residual
-
-        h = F.relu(
-            self.norm2(
-                self.conv2(h, edge_index, edge_weight),
-                batch=batch,
-                batch_size=batch_size,
-            ),
-            inplace=True,
-        )
         return h
 
 
@@ -177,7 +146,6 @@ class GCNIIBackbone(nn.Module):
         residual: OptTensor = None,
     ):
         h = h0 = self.node_proj(x)
-        n_layers = len(self.convs)
 
         for layer_idx, (conv, norm) in enumerate(zip(self.convs, self.norms)):
             h = sum_residual(
@@ -185,7 +153,7 @@ class GCNIIBackbone(nn.Module):
                 residual,
                 self.residual_sum_mode,
                 layer_idx=layer_idx,
-                n_layers=n_layers,
+                n_layers=len(self.convs),
             )
             h = self.drop(
                 F.relu(
@@ -243,7 +211,6 @@ class GraphSAGEBackbone(nn.Module):
         residual: OptTensor = None,
     ):
         h = x
-        n_layers = len(self.convs)
 
         for layer_idx, (conv, norm) in enumerate(zip(self.convs, self.norms)):
             h = sum_residual(
@@ -251,7 +218,7 @@ class GraphSAGEBackbone(nn.Module):
                 residual,
                 self.residual_sum_mode,
                 layer_idx=layer_idx,
-                n_layers=n_layers,
+                n_layers=len(self.convs),
             )
             h = self.drop(
                 F.relu(
@@ -465,15 +432,13 @@ class GraphGPSBackbone(nn.Module):
                 edge_attr = edge_attr.unsqueeze(-1)
             edge_attr = self.edge_proj(edge_attr)
 
-        n_layers = len(self.convs)
-
         for layer_idx, conv in enumerate(self.convs):
             h = sum_residual(
                 h,
                 residual,
                 self.residual_sum_mode,
                 layer_idx=layer_idx,
-                n_layers=n_layers,
+                n_layers=len(self.convs),
             )
             h = conv(
                 x=h,
