@@ -1,5 +1,5 @@
 project_name: "soccerai"
-run_name: "gcn"
+run_name: "gatv2"
 seed: 42
 
 model: 
@@ -18,7 +18,7 @@ model:
     rnn_din: 512
     rnn_dout: 512 
     glob_dout: 256 
-    mode: "graph"
+    mode: "node"
     raw_features_proj: True
     proj_dout: 128
 

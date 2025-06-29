@@ -17,3 +17,7 @@ model:
     din: 512 
     drop: 0.0
   
+
+trainer:
+  n_epochs: 5
+  

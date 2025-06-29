@@ -78,6 +78,13 @@ class BaseTrainer(ABC):
         for cb in self.callbacks:
             cb.on_train_end(self)
 
+    def _on_eval_end(self) -> None:
+        """
+        Hook called at the end of training.
+        """
+        for cb in self.callbacks:
+            cb.on_eval_end(self)
+
     def train(self, run_name: str):
         wandb.init(
             project=self.cfg.project_name, name=run_name, config=self.cfg.model_dump()
