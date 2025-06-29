@@ -1,5 +1,5 @@
 project_name: "soccerai"
-run_name: "gatv2"
+run_name: "gine"
 seed: 42
 
 model: 
@@ -32,8 +32,18 @@ trainer:
   n_epochs: 50
   lr: 1e-4
   wd: 1e-2
-  eval_rate: 2
   gamma: 0.9
+  eval_rate: 1
+
+  early_stopping_callback:
+    patience: 5
+    history_key: "val_loss"
+    minimize: True
+
+  model_saving_callback:
+    history_key: "val_loss"
+    minimize: True
+  
   
 data:
   include_goal_features: False 
@@ -47,10 +57,10 @@ data:
   val_ratio: 0.1
 
 collector:
-  n_frames: 12         
+  n_frames: 24        
 
 pitch_grid:
-  nrows: 3
+  nrows: 6
   ncols: 4
   figheight: 12
 

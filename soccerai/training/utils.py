@@ -22,9 +22,6 @@ _PITCH_KWARGS: dict = {
 }
 
 
-class EarlyStoppingException(Exception): ...
-
-
 def fix_random(seed: int):
     seed_everything(seed)
     torch.backends.cudnn.deterministic = True

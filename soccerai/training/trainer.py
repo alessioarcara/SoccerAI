@@ -14,10 +14,9 @@ from torch_geometric_temporal.signal import Discrete_Signal
 from tqdm import tqdm
 
 import wandb
-from soccerai.training.callbacks import Callback
+from soccerai.training.callbacks import Callback, EarlyStoppingCallback
 from soccerai.training.metrics import Metric
 from soccerai.training.trainer_config import Config
-from soccerai.training.utils import EarlyStoppingException
 
 BatchEvalResult = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
@@ -87,6 +86,12 @@ class BaseTrainer(ABC):
         for cb in self.callbacks:
             cb.on_eval_end(self)
 
+    def _check_for_early_stop(self) -> bool:
+        return any(
+            isinstance(cb, EarlyStoppingCallback) and cb.should_stop
+            for cb in self.callbacks
+        )
+
     def train(self, run_name: str):
         wandb.init(
             project=self.cfg.project_name, name=run_name, config=self.cfg.model_dump()
@@ -119,10 +124,11 @@ class BaseTrainer(ABC):
                     self.eval("val")
                     self._on_eval_end()
 
-            self._on_training_end()
+                    if self._check_for_early_stop():
+                        logger.info("Early stopping triggered! No improvement.")
+                        break
 
-        except EarlyStoppingException:
-            logger.info("Early stopping triggered! No improvement.")
+            self._on_training_end()
 
         finally:
             wandb.finish()

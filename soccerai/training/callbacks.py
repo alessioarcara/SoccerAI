@@ -1,6 +1,7 @@
 import copy
 from abc import ABC
 from pathlib import Path
+from typing import List
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,8 +11,8 @@ from torch_geometric.explain import Explainer, GNNExplainer
 
 import wandb
 from soccerai.training.metrics import Collector
+from soccerai.training.trainer_config import Config
 from soccerai.training.utils import (
-    EarlyStoppingException,
     fig_to_numpy,
     plot_average_feature_importance,
     plot_player_feature_importance,
@@ -21,6 +22,28 @@ from soccerai.training.utils import (
 class Callback(ABC):
     def on_train_end(self, trainer): ...
     def on_eval_end(self, trainer): ...
+
+
+def build_callbacks(cfg: Config) -> List[Callback]:
+    callbacks: List[Callback] = []
+
+    if cfg.trainer.early_stopping_callback:
+        callbacks.append(
+            EarlyStoppingCallback(**cfg.trainer.early_stopping_callback.model_dump())
+        )
+
+    if cfg.trainer.model_saving_callback:
+        callbacks.append(
+            ModelSavingCallback(
+                **cfg.trainer.model_saving_callback.model_dump(),
+                model_name=cfg.run_name,
+            )
+        )
+
+    if not cfg.model.use_temporal:
+        callbacks.append(ExplainerCallback())
+
+    return callbacks
 
 
 class ExplainerCallback(Callback):
@@ -103,7 +126,6 @@ class ModelMonitorCallback(Callback):
 
     def on_eval_end(self, trainer) -> bool:
         curr = trainer.history.get(self.history_key)
-
         if curr is None:
             logger.warning(f"{self.history_key} not found in history; skipping.")
             return False
@@ -112,7 +134,6 @@ class ModelMonitorCallback(Callback):
         if improved:
             self.best = curr
             return True
-
         return False
 
 
@@ -121,6 +142,7 @@ class EarlyStoppingCallback(ModelMonitorCallback):
         super().__init__(history_key, minimize)
         self.patience = patience
         self.counter = 0
+        self.should_stop = False
 
     def on_eval_end(self, trainer):
         improved = super().on_eval_end(trainer)
@@ -131,10 +153,10 @@ class EarlyStoppingCallback(ModelMonitorCallback):
             self.counter += 1
 
             if self.counter >= self.patience:
-                raise EarlyStoppingException()
+                self.should_stop = True
 
 
-class BestModelSaverCallback(ModelMonitorCallback):
+class ModelSavingCallback(ModelMonitorCallback):
     def __init__(self, history_key: str, minimize: bool, model_name: str):
         super().__init__(history_key, minimize)
         self.out_dir = Path("checkpoints") / model_name

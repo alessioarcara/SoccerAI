@@ -13,12 +13,7 @@ from soccerai.data.converters import create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.data.temporal_dataset import TemporalChainsDataset
 from soccerai.models.models import build_model
-from soccerai.training.callbacks import (
-    BestModelSaverCallback,
-    EarlyStoppingCallback,
-    ExplainerCallback,
-    ModelMonitorCallback,
-)
+from soccerai.training.callbacks import build_callbacks
 from soccerai.training.metrics import (
     BinaryConfusionMatrix,
     BinaryPrecisionRecallCurve,
@@ -67,6 +62,7 @@ def main(args):
         prefetch_factor=4,
     )
 
+    callbacks = build_callbacks(cfg)
     if cfg.model.use_temporal:
         train_ds = TemporalChainsDataset.from_worldcup_dataset(train_ds)
         val_ds = TemporalChainsDataset.from_worldcup_dataset(val_ds)
@@ -96,17 +92,7 @@ def main(args):
                 ChainCollector(1, cfg, train_ds.feature_names),
                 ChainCollector(0, cfg, train_ds.feature_names),
             ],
-            callbacks=[
-                EarlyStoppingCallback(
-                    history_key="val_loss", minimize=True, patience=5
-                ),
-                ModelMonitorCallback(history_key="val_loss", minimize=True),
-                BestModelSaverCallback(
-                    history_key="val_loss",
-                    minimize=True,
-                    model_name=cfg.model.backbone.type,
-                ),
-            ],
+            callbacks=callbacks,
         )
 
     else:
@@ -138,18 +124,7 @@ def main(args):
                 FrameCollector(1, cfg, train_ds.feature_names),
                 FrameCollector(0, cfg, train_ds.feature_names),
             ],
-            callbacks=[
-                ExplainerCallback(),
-                EarlyStoppingCallback(
-                    history_key="val_loss", minimize=True, patience=2
-                ),
-                ModelMonitorCallback(history_key="val_loss", minimize=True),
-                BestModelSaverCallback(
-                    history_key="val_loss",
-                    minimize=True,
-                    model_name=cfg.model.backbone.type,
-                ),
-            ],
+            callbacks=callbacks,
         )
 
     print(

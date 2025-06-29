@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Annotated, Any, Dict, Literal, Union
+from typing import Annotated, Any, Dict, Literal, Optional, Union
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -92,6 +92,19 @@ class ModelConfig(BaseModel):
     head: HeadConfig
 
 
+class ModelMonitorCallbackConfig(BaseModel):
+    history_key: str
+    minimize: bool
+
+
+class EarlyStoppingCallbackConfig(ModelMonitorCallbackConfig):
+    patience: int
+
+
+class ModelSavingCallbackConfig(ModelMonitorCallbackConfig):
+    pass
+
+
 class TrainerConfig(BaseModel):
     bs: int
     lr: float
@@ -99,6 +112,8 @@ class TrainerConfig(BaseModel):
     n_epochs: int
     eval_rate: int
     gamma: float
+    early_stopping_callback: Optional[EarlyStoppingCallbackConfig] = None
+    model_saving_callback: Optional[ModelSavingCallbackConfig] = None
 
 
 class DataConfig(BaseModel):
