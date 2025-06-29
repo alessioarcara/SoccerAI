@@ -6,6 +6,7 @@ model:
     norm: "none"
     drop: 0.1
     train_eps: True
+    plus: True
 
   neck:
     mode: "graph"

@@ -62,21 +62,20 @@ def build_mlp(din: int, dmid: int, dout: Optional[int] = None) -> nn.Sequential:
     return nn.Sequential(nn.Linear(din, dmid), nn.ReLU(), nn.Linear(dmid, dout))
 
 
-class GNNPlus(nn.Module):
+class GNNPlusLayer(nn.Module):
     def __init__(
         self,
         conv_layer: nn.Module,
+        din: int,
         dout: int,
         p_drop: float,
-        norm: Optional[Type[nn.Module]],
+        norm: Optional[nn.Module] = None,
     ):
         super().__init__()
 
-        if norm is not None:
-            self.norm1 = norm(dout)
-            self.norm2 = norm(dout)
-        else:
-            self.norm1 = self.norm2 = Identity()
+        self.proj = pyg_nn.Linear(din, dout) if din != dout else Identity()
+
+        self.norm = norm if norm is not None else Identity()
 
         self.drop = nn.Dropout(p_drop)
 
@@ -86,30 +85,24 @@ class GNNPlus(nn.Module):
 
     def forward(
         self,
-        x,
-        edge_index,
-        edge_weight: OptTensor = None,
-        edge_attr: OptTensor = None,
+        x: torch.Tensor,
         batch: OptTensor = None,
         batch_size: Optional[int] = None,
-    ):
-        x_in = x
+        **conv_kwargs,
+    ) -> torch.Tensor:
+        x_in = self.proj(x)
 
         x = F.relu(
             self.drop(
-                self.norm1(
-                    self.conv_layer(
-                        x,
-                    ),
+                self.norm(
+                    self.conv_layer(x, **conv_kwargs),
                     batch,
                     batch_size,
                 )
             )
         )
 
-        x = self.drop(self.norm2(x + self.mlp(x_in + x)))
-
-        return x
+        return x + self.mlp(x_in + x)
 
 
 @BackboneRegistry.register("gcn")
@@ -120,6 +113,14 @@ class GCNBackbone(nn.Module):
         self.drop = nn.Dropout(cfg.drop)
 
         def conv_fn(d, _):
+            if cfg.plus:
+                return GNNPlusLayer(
+                    pyg_nn.GCNConv(d, cfg.dout),
+                    d,
+                    cfg.dout,
+                    cfg.drop,
+                    NORMALIZATIONS[cfg.norm](cfg.dout),
+                )
             return pyg_nn.GCNConv(d, cfg.dout)
 
         def norm_fn(_):
@@ -156,7 +157,7 @@ class GCNBackbone(nn.Module):
             h = self.drop(
                 F.relu(
                     norm(
-                        conv(h, edge_index, edge_weight),
+                        conv(h, edge_index=edge_index, edge_weight=edge_weight),
                         batch=batch,
                         batch_size=batch_size,
                     ),
@@ -176,9 +177,22 @@ class GCNIIBackbone(nn.Module):
         self.node_proj = pyg_nn.Linear(din, cfg.dout)
 
         def conv_fn(d, i):
-            return pyg_nn.GCN2Conv(
-                cfg.dout, alpha=0.5, theta=1.0, layer=i + 1, shared_weights=False
+            conv = pyg_nn.GCN2Conv(
+                cfg.dout,
+                alpha=0.5,
+                theta=1.0,
+                layer=i + 1,
+                shared_weights=False,
             )
+            if cfg.plus:
+                return GNNPlusLayer(
+                    conv,
+                    d,
+                    cfg.dout,
+                    cfg.drop,
+                    NORMALIZATIONS[cfg.norm](cfg.dout),
+                )
+            return conv
 
         def norm_fn(_):
             return NORMALIZATIONS[cfg.norm](cfg.dout)
@@ -214,7 +228,12 @@ class GCNIIBackbone(nn.Module):
             h = self.drop(
                 F.relu(
                     norm(
-                        conv(h, h0, edge_index, edge_weight),
+                        conv(
+                            h,
+                            x_0=h0,
+                            edge_index=edge_index,
+                            edge_weight=edge_weight,
+                        ),
                         batch=batch,
                         batch_size=batch_size,
                     ),
@@ -376,11 +395,18 @@ class GINEBackbone(nn.Module):
         self.drop = nn.Dropout(cfg.drop)
 
         def conv_fn(d, _):
-            return pyg_nn.GINEConv(
+            conv = pyg_nn.GINEConv(
                 nn=build_mlp(d, cfg.dout),
                 edge_dim=1,
                 train_eps=cfg.train_eps,
             )
+
+            if cfg.plus:
+                return GNNPlusLayer(
+                    conv, d, cfg.dout, cfg.drop, NORMALIZATIONS[cfg.norm](cfg.dout)
+                )
+
+            return conv
 
         def norm_fn(_):
             return NORMALIZATIONS[cfg.norm](cfg.dout)
@@ -414,7 +440,7 @@ class GINEBackbone(nn.Module):
             h = self.drop(
                 F.relu(
                     norm(
-                        conv(h, edge_index, edge_attr=edge_attr),
+                        conv(h, edge_index=edge_index, edge_attr=edge_attr),
                         batch=batch,
                         batch_size=batch_size,
                     ),

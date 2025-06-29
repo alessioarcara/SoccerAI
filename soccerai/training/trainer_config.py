@@ -28,10 +28,12 @@ class BackboneCommon(BaseModel):
 
 class GCNConfig(BackboneCommon):
     type: Literal["gcn"]
+    plus: bool
 
 
 class GCN2Config(BackboneCommon):
     type: Literal["gcn2"]
+    plus: bool
 
 
 class GraphSAGEConfig(BackboneCommon):
@@ -50,6 +52,7 @@ class GATv2Config(BackboneCommon):
 class GINEConfig(BackboneCommon):
     type: Literal["gine"]
     train_eps: bool
+    plus: bool
 
 
 class GraphGPSConfig(BackboneCommon):
