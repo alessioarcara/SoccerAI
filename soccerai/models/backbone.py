@@ -250,23 +250,20 @@ class GATv2Backbone(nn.Module):
         self.convs = nn.ModuleList()
         self.norms = nn.ModuleList()
         for i in range(cfg.n_layers):
-            is_last_layer = i == cfg.n_layers - 1
+            is_last = i == cfg.n_layers - 1
             self.convs.append(
                 pyg_nn.GATv2Conv(
                     in_channels=din,
-                    out_channels=(
-                        cfg.dout if is_last_layer else cfg.dout // cfg.num_heads
-                    ),
+                    out_channels=(cfg.dout if is_last else cfg.dout // cfg.num_heads),
                     heads=cfg.num_heads,
-                    concat=(not is_last_layer),
+                    concat=(not is_last),
                     dropout=cfg.drop,
                     edge_dim=(1 if cfg.use_edge_attr else None),
                 )
             )
 
-            if not is_last_layer:
+            if not is_last:
                 self.norms.append(NORMALIZATIONS[cfg.norm](cfg.dout))
-
             din = cfg.dout
 
     def forward(
@@ -289,8 +286,6 @@ class GATv2Backbone(nn.Module):
                 training=self.training,
             )
 
-            edge_attr = edge_attr[edge_mask]
-
             h = sum_residual(
                 h,
                 residual,
@@ -298,11 +293,14 @@ class GATv2Backbone(nn.Module):
                 layer_idx=layer_idx,
                 n_layers=n_layers,
             )
-            h = conv(
-                h,
-                edge_index,
-                edge_attr=edge_attr if self.use_edge_attr else None,
+
+            edge_attr = (
+                edge_attr[edge_mask]
+                if (self.use_edge_attr and edge_attr is not None)
+                else None
             )
+
+            h = conv(h, edge_index, edge_attr=edge_attr)
             # Skip dropout, norm, and activation on last layer:
             # Final GAT layer averages heads (concat=False); further normalization would compress attention differences.
             if layer_idx < n_layers - 1:
