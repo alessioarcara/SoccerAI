@@ -2,5 +2,11 @@ model:
   backbone:
     type: "gcn2"
     n_layers: 9 
-    drop: 0.1
+    drop: 0.2
+    norm: "none"
     residual_sum_mode: "every"
+  neck:
+    rnn_type: 'gru'
+    use_node_proj: True
+    node_dout: 128
+    drop: 0.1

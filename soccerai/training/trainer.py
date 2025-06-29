@@ -177,6 +177,7 @@ class Trainer(BaseTrainer):
         )
         loss: torch.Tensor = self.criterion(out, batch.y)
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         self.optim.step()
         return loss
 
@@ -220,10 +221,11 @@ class TemporalTrainer(BaseTrainer):
         pred_per_timestep = torch.empty_like(weights)
 
         h = None
+        c = None
         for t, snapshot in enumerate(signal):
             snapshot.to(self.device, non_blocking=True)
 
-            out, h = self.model(
+            out, h, c = self.model(
                 x=snapshot.x,
                 edge_index=snapshot.edge_index,
                 edge_weight=snapshot.edge_attr,
@@ -232,6 +234,7 @@ class TemporalTrainer(BaseTrainer):
                 batch=snapshot.batch,
                 batch_size=snapshot.num_graphs,
                 prev_h=h,
+                prev_c=c,
             )
 
             loss_per_timestep[t] = F.binary_cross_entropy_with_logits(
@@ -247,6 +250,7 @@ class TemporalTrainer(BaseTrainer):
         self.optim.zero_grad(set_to_none=True)
         loss, _ = self._compute_signal_loss_and_last_pred(batch)
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         self.optim.step()
         return loss
 

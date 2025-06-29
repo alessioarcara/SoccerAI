@@ -1,0 +1,17 @@
+model:
+  backbone: 
+    type: "graphgps"
+    n_layers: 3
+    heads: 4
+    dout: 256
+    drop: 0.1
+    attn_drop: 0.5
+    residual_sum_mode: "every"
+
+  neck:
+    rnn_dout: 384 
+    glob_dout: 128
+
+  head:
+    din: 384
+    drop: 0.5
