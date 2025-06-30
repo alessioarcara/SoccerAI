@@ -1,0 +1,48 @@
+---
+output-file: index
+title: SoccerAI
+subtitle: Big Data Analytics And Text Mining
+footer: Big Data Analytics And Text Mining
+
+authors:
+  - name: Alessio Arcara
+    url: https://github.com/alessioarcara
+    affiliations: University of Bologna
+  - name: Francesco Baiocchi
+    url: https://github.com/francescobaio
+    affiliations: University of Bologna
+  - name: Leonardo Petrilli
+    url: https://github.com/leonardopetrilli
+    affiliations: University of Bologna
+date: "2025-07-01"
+
+format:
+  revealjs:
+    logo: images/logo_unibo.png
+    theme: [default, custom.scss]
+    embed-resources: false
+    smaller: true
+    slide-number: false
+    incremental: false
+    history: false
+    chalkboard: false
+    preview-links: auto
+    highlight-style: github
+    code-overflow: scroll
+    code-line-numbers: false
+
+---
+
+{{< include _problem.qmd >}}
+
+<!-- introduction, dataset, filtering  -->
+{{< include _dataset.qmd >}}
+
+<!-- method  -->
+{{< include _method.qmd >}}
+
+<!-- results  -->
+{{< include _results.qmd >}}
+
+<!-- outcomes, final thoughts, additional material  -->
+{{< include _future.qmd >}}

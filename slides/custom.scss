@@ -1,0 +1,117 @@
+/*-- scss:defaults --*/
+
+// FONTS
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700&display=swap');
+
+$presentation-heading-font: 'Montserrat', sans-serif;
+
+$accent: #0c4e8a;
+
+// Font Awesome Brands
+@import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css');
+
+/*-- scss:rules --*/
+
+// Title and headings styling
+#title-slide {
+    text-align: center;
+
+    .title {
+        font-family: $presentation-heading-font;
+        font-weight: 400;
+        font-size: 2.5em;
+        color: $accent;
+    }
+
+    .subtitle {
+        color: $accent;
+        font-style: italic;
+    }
+
+    .quarto-title-authors {
+        display: flex;
+        justify-content: center;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 2em;
+
+        .quarto-title-author {
+            position: relative;
+            padding-left: 1.5em;
+
+            // GitHub icon 
+            &::before {
+                font-family: 'Font Awesome 5 Brands';
+                content: "\f09b";
+                position: absolute;
+                left: 0;
+                top: 50%;
+                transform: translateY(-50%);
+                font-size: 1em;
+                color: $accent;
+            }
+        }
+    }
+
+    .author,
+    .quarto-title-author-name {
+        color: $body-color;
+        font-size: 1.2em;
+    }
+
+    .institute,
+    .quarto-title-affiliation,
+    .quarto-title-author-email {
+        font-style: italic;
+        font-size: 80%;
+    }
+
+    .date {
+        font-weight: 400;
+        font-size: 1em;
+        color: $body-color;
+        margin-top: 1em;
+    }
+}
+
+// Control heading size and weight for non-title slides
+.reveal h1:not(#title-slide h1) {
+    font-size: 2.0em;
+    font-weight: 600;
+}
+
+.reveal h2:not(#title-slide h2) {
+    font-size: 1.7em;
+    font-weight: 550;
+}
+
+.reveal h3:not(#title-slide h3) {
+    font-size: 1.3em;
+    font-weight: 500;
+}
+
+/*-- Logo --*/
+.reveal .slide-logo {
+    max-width: unset !important;
+    max-height: 8% !important;
+}
+
+/*-- vertically center columns (or any container) --*/
+.v-center-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 90%;
+}
+
+/*-- Get rid of column margins - quarto revealjs has strange behaviour --*/
+.reveal .columns> {
+
+    .column,
+    .column:last-child {
+        > :not(ul, ol) {
+            margin-left: 0em;
+            margin-right: 0em;
+        }
+    }
+}

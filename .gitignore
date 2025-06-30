@@ -176,3 +176,6 @@ data/frames
 wandb
 *.pt
 checkpoints/
+*_files/
+*.tar.gz
+index.html
