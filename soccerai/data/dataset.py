@@ -16,7 +16,7 @@ from sklearn.preprocessing import (
     QuantileTransformer,
 )
 from torch_geometric.data import InMemoryDataset
-from torchvision.transforms import Compose
+from torch_geometric.transforms import Compose
 
 from soccerai.data.config import SHOOTING_STATS, X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
 from soccerai.data.converters import GraphConverter
