@@ -39,15 +39,15 @@ $accent: #0c4e8a;
             position: relative;
             padding-left: 1.5em;
 
-            // GitHub icon 
+            // GitHub icon before author name
             &::before {
                 font-family: 'Font Awesome 5 Brands';
-                content: "\f09b";
+                content: "\f09b"; // escaped for Sass
                 position: absolute;
-                left: 0;
+                left: 0.2em; // adjust horizontal position
                 top: 50%;
                 transform: translateY(-50%);
-                font-size: 1em;
+                font-size: 0.8em; // smaller icon size
                 color: $accent;
             }
         }
@@ -76,17 +76,17 @@ $accent: #0c4e8a;
 
 // Control heading size and weight for non-title slides
 .reveal h1:not(#title-slide h1) {
-    font-size: 2.0em;
+    font-size: 1.5em;
     font-weight: 600;
 }
 
 .reveal h2:not(#title-slide h2) {
-    font-size: 1.7em;
+    font-size: 1.3em;
     font-weight: 550;
 }
 
 .reveal h3:not(#title-slide h3) {
-    font-size: 1.3em;
+    font-size: 0.75em;
     font-weight: 500;
 }
 
@@ -104,14 +104,23 @@ $accent: #0c4e8a;
     height: 90%;
 }
 
-/*-- Get rid of column margins - quarto revealjs has strange behaviour --*/
-.reveal .columns> {
+video {
+    width: 87%;
+    display: block;
+    margin: auto;
+}
 
-    .column,
-    .column:last-child {
-        > :not(ul, ol) {
-            margin-left: 0em;
-            margin-right: 0em;
-        }
-    }
+div.column {
+    width: 48%;
+    margin-right: 15px;
+}
+
+.reveal .columns>.column:last-child>:not(ul, ol) {
+    margin-right: 0;
+    margin-left: 1.3rem;
+}
+
+.reveal .slide ul li,
+.reveal .slide ol li {
+    font-size: 0.75em;
 }

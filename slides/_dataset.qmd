@@ -1,1 +1,69 @@
-# Dataset
+## Dataset
+
+::: columns
+::: column
+### Data Sources & Statistics
+
+- **Dataset**: [FIFA World Cup 2022 (PFF.com)](https://www.blog.fc.pff.com/blog/pff-fc-release-2022-world-cup-data)  
+  - 64 matches total:
+    - 48 group-stage → training set 
+    - 16 knockout → validation set 
+  - **Tracking Data**: camera-based, frame-by-frame positions (30 fps)  
+  - **Event Data**: manually labeled actions (passes, shots, etc.)  
+
+- **Our Focus: Event Data**
+  - Event data with 60-frame tracking data to compute player velocity and direction.
+  - Total of 19 048 frames, each belonging to a chain that represents a football action.
+
+- **Chain Statistics**:
+  - 3 716 total chains  
+    - 2 546 Negative chains  
+    - 1 170 Positive chains 
+
+
+- **Additional Player Statistics**:
+  - Player Statistics → Player profiles and performance scraped from **TransferMarkt** & **FBRef**
+
+
+<div style="display: flex; align-items: center; gap: 1em;">
+
+<img src="resources/pff_logo.png" alt="PFF Logo" style="height: 60px;" />
+
+<img src="resources/tm_logo.svg" alt="TransferMarkt Logo" id="tm_logo" style="height: 60px;width: 120px" />
+
+<img src="resources/fb_logo.svg" alt="FBRef Logo" id="fb_logo" style="height: 60px;width: 150px" />
+
+</div>
+
+::: 
+::: column
+
+
+### Feature Engineering & Normalization
+
+- **Spatial features**
+  - **x, y** → player position scaled by pitch dimensions ([0,1])
+  - **vx,vy** → velocity components
+  - **sinθ, cosθ** → player’s direction ([-1,1])
+  - **ball_dist** → distance between player and ball ([0,$\sqrt{2}$])
+  - **ball_direction_sim** → cosine similarity between player and ball direction ([-1,1])
+  - **dz** → distance between player and ball’s z-axis coordinate ([0,1])
+
+- **Categorical (one-hot encoded)**: 
+  - **is_ball_carrier** → the player has possession of the ball
+  - **is_possession_team** → the player’s team has the ball
+  - **player_Role** → player’s tactical role
+
+
+- **Global features**: 
+  - **possesionEventType**: type of possession action (one-hot)
+  - **frameTime**: timestamp of the current frame (z-score)
+  - **duration**: length of the possession event in seconds (z-score)
+
+- **Player Stats**
+  - **Player Metadata** → height, weight, market value (z-score)
+  - **Player Shooting stats** → goals, shots, etc. (z-score)
+
+:::
+
+:::

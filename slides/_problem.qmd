@@ -1,9 +1,21 @@
 ## Problem
 
-- **Context**: In football analytics, understanding and predicting shot events is crucial for evaluating team performance and tactics.
-- **Formal Problem**:  
-  - **Input**: A sequence of match events represented as a graph.  
-  - **Output**: For each graph, predict the probability of a shot attempt.  
-- **Challenges**:  
-  - **Class Imbalance**: Shots are relatively rare compared to other events, making training difficult.  
-- **Objective**: Design and train a Graph Neural Network that leverages player interaction to accurately predict shot events.  
+::: columns
+
+::: column
+- **Shot Prediction**: Identify actions likely to end in a shot versus non-shot actions, using team positional and individual player statistics.  
+- **Goal**: Develop a Graph Neural Network that, as a black-box oracle, ingests the current game state (capturing evolving spatio-temporal patterns) and outputs the probability of a shot.
+- **Class Imbalance**: Shots are relatively rare compared to other events, making training difficult. 
+
+:::
+
+::: column
+<video src="resources/video.mp4" autoplay loop style="width:87%;display: block;margin: auto;">
+  Your browser does not support the video tag.
+</video>
+
+
+![](resources/chain.gif){width="100%"}
+:::
+
+:::

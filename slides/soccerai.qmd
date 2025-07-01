@@ -18,7 +18,7 @@ date: "2025-07-01"
 
 format:
   revealjs:
-    logo: images/logo_unibo.png
+    logo: resources/logo_unibo.png
     theme: [default, custom.scss]
     embed-resources: false
     smaller: true
@@ -37,6 +37,9 @@ format:
 
 <!-- introduction, dataset, filtering  -->
 {{< include _dataset.qmd >}}
+
+<!-- graph converter  -->
+{{< include _conversion.qmd >}}
 
 <!-- method  -->
 {{< include _method.qmd >}}
