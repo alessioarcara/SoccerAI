@@ -1,2 +1,49 @@
-# Method 
+## Method
+
+::: columns
+
+::: column
+
+- **Temporal predictions (Seq2Seq)** 
+    - We encoded football actions as sequences of graphs of arbitrary length by taking chains of events during which one team maintains possession of the ball.
+    - **Input**: A sequence of graphs $\mathbf{G_1, G_2, \dots, G_T}$, one for each timestep $\mathbf{t} \in \{1, \dots, T\}$.
+    - **Output**: For every timestep $\mathbf{t}$, a probability $\mathbf{{p}_t}$ that the current possession state will result in a shot.  
+    - **Key Idea**: By learning over the entire sequence, the network captures how earlier timesteps build toward shooting opportunities.  
+
+- **Architecture** 
+    - Following the work of [Ryota et al.](https://www.mdpi.com/1424-8220/23/9/4506) we design our model as follows:
+    - **Backbone**: GNN to extract spatial informations from the input graph 
+        - **Input**: A graph $\mathbf{G_t = (X_t, E_t)}$, where $\mathbf{X_t}$ are the node features and $\mathbf{E_t}$ are the edges
+        - **Output**: refined node features $\mathbf{Z_t}$ that embed deep spatial features  
+    - **Neck**: Readout + GCRN for temporal processing 
+        - **Input**: $X_t,Z_t,h_{t-1}$, where $\mathbf{h_{t-1}}$ is the GCRN hidden state at timestep $\mathbf{t-1}$.
+        - **Output**: $h_{G_t},h_t$, where $\mathbf{h_{G_t}}$ is the graph embedding 
+    - **Head**: an MLP with dropout
+        - **Input**: $\mathbf{h_{G_t}}$, a graph embedding computed by pooling node embeddings
+        - **Output**: $\mathbf{p_t}$, shooting probability at timestep $\mathbf{t}$
+
+
+<div style="display: flex; align-items: center; gap: 1em;">
+
+<img src="resources/pyg_logo.svg" alt="Pyg Logo" style="width: 120px" />
+<img src="resources/wandb_logo.svg" alt="Wandb Logo" style="height: 60px;width: 120px;margin-bottom:0;margin-left: 15px"/>
+
+</div>
+
+:::
+
+::: column
+
+![](resources/chain_palette.png){.lightbox .no-margin}
+
+![Ryota et al.’s GCRN architecture](resources/ryota_net.png){.lightbox .no-margin}
+<span id="ryota-caption">
+  <a href="https://www.mdpi.com/1424-8220/23/9/4506#sec3dot2-sensors-23-04506" target="_blank">Ryota et al.</a> GCRN architecture
+</span>
+:::
+
+:::
+
+
+
 
