@@ -13,7 +13,7 @@
 :::
 
 ::: column
-<video src="resources/video.mp4" autoplay loop style="width:87%;display: block;margin: auto;">
+<video src="resources/video.mp4" autoplay loop muted style="width:87%;display: block;margin: auto;">
   Your browser does not support the video tag.
 </video>
 
@@ -23,3 +23,16 @@
 :::
 
 :::
+
+
+<script src="soccerai_files\libs\revealjs\dist\reveal.js"></script>
+<script>
+  Reveal.initialize();
+  Reveal.on('slidechanged', (event) => {
+    const video = event.currentSlide.querySelector('video');
+    if (video && video.currentTime != 0) {
+      video.currentTime = 0;
+      video.play();
+    }
+  });
+</script>
