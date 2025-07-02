@@ -3,88 +3,111 @@ import os
 from pathlib import Path
 from typing import Optional, Tuple
 
-import numpy as np
 import torch
+import torch.nn as nn
 from loguru import logger
 from torch.utils.data.dataloader import DataLoader as TorchDataLoader
 from tqdm import tqdm
 
 import wandb
+import wandb.errors
 from soccerai.data.converters import create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.data.temporal_dataset import TemporalChainsDataset
 from soccerai.models.models import build_model
+from soccerai.training.metrics import BinaryConfusionMatrix
 from soccerai.training.trainer_config import Config
 
 NUM_WORKERS = (os.cpu_count() or 1) - 1
 
 
-def find_best_checkpoint(model_dir: Path) -> Optional[Tuple[str, str]]:
-    checkpoint_files = list(model_dir.glob("*.pth"))
+def find_best_checkpoint(model_dir: Path) -> Optional[Tuple[str, Path]]:
+    """Return the `(wandb_run_id, checkpoint_path)` with the lowest metric.
 
-    best_run_id: str | None = None
-    best_metric: float = np.inf
-
-    found = None
-    for ckpt_path in checkpoint_files:
-        # example: k5ed88ly_val_loss_0.5446.pth
-        # the cktpt name is made of run_id, history key and the history value
-        # ["k5ed88ly", "val", "loss", "0.5446"]
-        parts = ckpt_path.stem.split("_")
-        run_id = parts[0]
-        metric_value = float(parts[3])
-
-        if metric_value < best_metric:
-            best_run_id = run_id
-            best_metric = metric_value
-            found = ckpt_path
-
-    if best_run_id is None:
+    The checkpoint filenames are expected to follow
+    `{run_id}_{metric_key}_{metric_name}_{metric_value}.pth`.
+    """
+    ckpts = list(model_dir.glob("*.pth"))
+    if not ckpts:
         return None
 
-    return best_run_id, found
+    best: Optional[Tuple[str, Path, float]] = None
+    for path in ckpts:
+        parts = path.stem.split("_")
+        run_id = parts[0]
+        metric_value = float(parts[3])
+        if best is None or metric_value < best[2]:
+            best = (run_id, path, metric_value)
+
+    if best is None:
+        return None
+
+    wandb_id, ckpt_path, _ = best
+    return wandb_id, ckpt_path
 
 
-def evaluate(model, loader):
-    for signal in tqdm(loader):
-        masks = torch.tensor(signal.masks, dtype=torch.bool, device="cuda").T
-        h = None
-        c = None
+def evaluate(
+    model: nn.Module, loader: TorchDataLoader, device: torch.device, cfg: Config
+):
+    model.eval()
+    m = BinaryConfusionMatrix(cfg.metrics)
 
-        preds_per_timestep = torch.empty_like(masks)
-        for t, snapshot in enumerate(tqdm(signal)):
-            snapshot.to("cuda", non_blocking=True)
-            out, h, c = model(
-                x=snapshot.x,
-                edge_index=snapshot.edge_index,
-                edge_weight=snapshot.edge_attr,
-                edge_attr=snapshot.edge_attr,
-                u=snapshot.u,
-                batch=snapshot.batch,
-                batch_size=snapshot.num_graphs,
-                prev_h=h,
-                prev_c=c,
-            )
-            preds_per_timestep[t] = out.unsqueeze(-1)
+    with torch.inference_mode():
+        for signal in tqdm(loader, desc="signals", leave=False):
+            h = c = None
+            last_preds: Optional[torch.Tensor] = None
+
+            for snapshot in signal:
+                snapshot = snapshot.to(device, non_blocking=True)
+                mask = snapshot.masks.bool()
+
+                out, h, c = model(
+                    x=snapshot.x,
+                    edge_index=snapshot.edge_index,
+                    edge_weight=snapshot.edge_attr,
+                    edge_attr=snapshot.edge_attr,
+                    u=snapshot.u,
+                    batch=snapshot.batch,
+                    batch_size=snapshot.num_graphs,
+                    prev_h=h,
+                    prev_c=c,
+                )
+
+                if last_preds is None:
+                    last_preds = torch.zeros_like(out)
+
+                last_preds[mask] = out[mask]
+            preds_probs = torch.sigmoid(out[mask])
+            true_labels = snapshot.y[mask].cpu().long()
+            m.update(preds_probs, true_labels, snapshot)
+
+        print(m.compute())
 
 
 def main(args):
-    api = wandb.Api()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info("Using device: {}", device)
 
     model_dir = Path("checkpoints") / args.name
+    best = find_best_checkpoint(model_dir)
+    if best is None:
+        logger.warning("No checkpoints were found in {}", model_dir)
+        raise SystemExit(1)
 
-    best_run_id, model_ckpt_path = find_best_checkpoint(model_dir)
+    best_run_id, ckpt_path = best
 
-    if best_run_id is None:
-        logger.info("no ckpt found.")
-        return
-
-    run = api.run(f"soccerai/soccerai/{best_run_id}")
+    # load W&B config
+    api = wandb.Api()
+    try:
+        run = api.run(f"soccerai/soccerai/{best_run_id}")
+    except wandb.errors.CommError:
+        logger.exception("Failed to fetch run {} from W&B", best_run_id)
+        raise SystemExit(1)
 
     cfg = Config(**run.config)
 
     converter = create_graph_converter(cfg.data.connection_mode)
-    val_ds = WorldCup2022Dataset(
+    ds = WorldCup2022Dataset(
         split="val",
         root="soccerai/data/resources",
         converter=converter,
@@ -93,37 +116,32 @@ def main(args):
         force_reload=True,
     )
 
-    model = build_model(cfg, val_ds)
-    model.load_state_dict(torch.load(model_ckpt_path))
-    model.eval()
-    model.to("cuda")
+    model = build_model(cfg, ds)
 
-    loader_kwargs = dict(
+    chain_ds = TemporalChainsDataset.from_worldcup_dataset(ds)
+
+    loader = TorchDataLoader(
+        chain_ds,
+        collate_fn=TemporalChainsDataset.collate,
+        shuffle=False,
         batch_size=cfg.trainer.bs,
         num_workers=NUM_WORKERS,
-        pin_memory=True,
+        pin_memory=(device.type == "cuda"),
         persistent_workers=True,
         prefetch_factor=4,
     )
+    model.load_state_dict(torch.load(ckpt_path))
+    model.to(device)
 
-    val_ds = TemporalChainsDataset.from_worldcup_dataset(val_ds)
-
-    val_loader = TorchDataLoader(
-        val_ds,
-        collate_fn=TemporalChainsDataset.collate,
-        shuffle=False,
-        **loader_kwargs,
-    )
-
-    evaluate(model, val_loader)
+    evaluate(model, loader, device, cfg)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--name",
-        help="the name of the best model to choose",
+        help="Experiment directory under 'checkpoints/'",
     )
-    parser.add_argument("--device")
+
     args = parser.parse_args()
     main(args)
