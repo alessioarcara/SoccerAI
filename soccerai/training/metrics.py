@@ -107,6 +107,20 @@ class BinaryConfusionMatrix(Metric):
         plt.tight_layout()
         return [("confusion_matrix", fig)]
 
+    def print(self) -> None:
+        cm_np = self.cm.cpu().numpy()
+        tn, fp = cm_np[0, 0], cm_np[0, 1]
+        fn, tp = cm_np[1, 0], cm_np[1, 1]
+
+        print("\n" + "Confusion Matrix".center(35))
+        print("\n" + " " * 14 + "Predicted")
+        print(" " * 15 + "0     1")
+        print(" " * 11 + "┌─────┬─────┐")
+        print("  True   0 │ {:>3} │ {:>3} │".format(tn, fp))
+        print("  Label    ├─────┼─────┤")
+        print("         1 │ {:>3} │ {:>3} │".format(fn, tp))
+        print(" " * 11 + "└─────┴─────┘\n")
+
 
 class BinaryPrecisionRecallCurve(Metric):
     def __init__(self, ignore_value: Optional[int] = None):

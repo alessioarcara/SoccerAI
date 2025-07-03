@@ -99,6 +99,7 @@ def evaluate(
         cm_results = cm.compute()
         ap_results = ap.compute()
 
+        cm.print()
         print("Evaluation results:")
         for metric_name, value in cm_results + ap_results:
             print(f"{metric_name}: {value:.4f}")
