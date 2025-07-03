@@ -15,8 +15,8 @@ from soccerai.data.converters import create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.data.temporal_dataset import TemporalChainsDataset
 from soccerai.models.models import build_model
-from soccerai.training.metrics import BinaryConfusionMatrix
-from soccerai.training.trainer_config import Config
+from soccerai.training.metrics import BinaryConfusionMatrix, BinaryPrecisionRecallCurve
+from soccerai.training.trainer_config import Config, MetricsConfig
 
 NUM_WORKERS = (os.cpu_count() or 1) - 1
 
@@ -47,10 +47,19 @@ def find_best_checkpoint(model_dir: Path) -> Optional[Tuple[str, Path]]:
 
 
 def evaluate(
-    model: nn.Module, loader: TorchDataLoader, device: torch.device, cfg: Config
+    model: nn.Module,
+    loader: TorchDataLoader,
+    device: torch.device,
+    threshold: float,
+    fbeta: float,
 ):
     model.eval()
-    m = BinaryConfusionMatrix(cfg.metrics)
+
+    cm = BinaryConfusionMatrix(MetricsConfig(thr=threshold, fbeta=fbeta))
+    ap = BinaryPrecisionRecallCurve()
+
+    cm.reset()
+    ap.reset()
 
     with torch.inference_mode():
         for signal in tqdm(loader, desc="signals", leave=False):
@@ -77,11 +86,21 @@ def evaluate(
                     last_preds = torch.zeros_like(out)
 
                 last_preds[mask] = out[mask]
-            preds_probs = torch.sigmoid(out[mask])
-            true_labels = snapshot.y[mask].cpu().long()
-            m.update(preds_probs, true_labels, snapshot)
 
-        print(m.compute())
+            assert last_preds is not None
+
+            preds_probs = torch.sigmoid(last_preds)
+            true_labels = torch.tensor(signal.targets[0], device=device)
+
+            cm.update(preds_probs, true_labels, snapshot)
+            ap.update(preds_probs, true_labels, snapshot)
+
+        cm_results = cm.compute()
+        ap_results = ap.compute()
+
+        print("Evaluation results:")
+        for metric_name, value in cm_results + ap_results:
+            print(f"{metric_name}: {value:.4f}")
 
 
 def main(args):
@@ -113,7 +132,7 @@ def main(args):
         converter=converter,
         cfg=cfg.data,
         random_state=cfg.seed,
-        force_reload=True,
+        force_reload=False,
     )
 
     model = build_model(cfg, ds)
@@ -133,7 +152,7 @@ def main(args):
     model.load_state_dict(torch.load(ckpt_path))
     model.to(device)
 
-    evaluate(model, loader, device, cfg)
+    evaluate(model, loader, device, args.threshold, args.fbeta)
 
 
 if __name__ == "__main__":
@@ -142,6 +161,12 @@ if __name__ == "__main__":
         "--name",
         help="Experiment directory under 'checkpoints/'",
     )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.5,
+    )
+    parser.add_argument("--fbeta", type=float, default=1.0)
 
     args = parser.parse_args()
     main(args)

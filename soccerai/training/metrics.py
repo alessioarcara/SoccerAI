@@ -8,7 +8,10 @@ import torch
 from matplotlib.collections import LineCollection
 from torch_geometric.data import Batch, Data
 from torch_geometric_temporal.signal import Discrete_Signal
-from torchmetrics.functional.classification import binary_precision_recall_curve
+from torchmetrics.functional.classification import (
+    binary_average_precision,
+    binary_precision_recall_curve,
+)
 
 from soccerai.training.trainer_config import Config, MetricsConfig
 from soccerai.training.utils import (
@@ -125,7 +128,11 @@ class BinaryPrecisionRecallCurve(Metric):
         self.all_true_labels.append(labels_flat)
 
     def compute(self) -> List[Tuple[str, float]]:
-        return []
+        all_preds_probs_flat = torch.cat(self.all_preds_probs)
+        all_true_labels_flat = torch.cat(self.all_true_labels).long()
+
+        ap = binary_average_precision(all_preds_probs_flat, all_true_labels_flat)
+        return [("average_precision", ap.item())]
 
     def reset(self):
         self.all_preds_probs = []
