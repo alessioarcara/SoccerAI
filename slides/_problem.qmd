@@ -3,12 +3,22 @@
 ::: columns
 
 ::: column
-- **Shot Prediction**: 
-  - Identify actions likely to end in a shot versus non-shot actions, using team positional and individual player statistics.  
-- **Goal**:
-  - Develop a Graph Neural Network that, as a black-box oracle, ingests the current game state (capturing evolving spatio-temporal patterns) and outputs the probability of a shot.
-- **Class Imbalance**:
-  - Shots are relatively rare compared to other events, making training difficult. 
+- **Context**: 
+  - Over recent years, sports data analysis has gone from basic post game stats to using detailed time and space information to shape tactics, evaluate players and guide decisions during matches.
+
+  ::: notes 
+  - Teams can now see exactly where players move and interact throughout a match, helping them spot key opportunities and adjust tactics on the fly.
+  :::
+
+
+- **Our Task: Shot Prediction** 
+  - **Objective**: Identify soccer actions that are likely to lead to a shot (versus non-shot actions) and quantify each player’s contribution to those actions.
+
+  - **Input**: A combination of team-level positional data and individual player statistics.
+
+- **Solution**:
+  - Develop a Graph Neural Network that, as an oracle, ingests the current game state (capturing evolving spatio-temporal patterns) and outputs the probability of a shot. 
+  - On top of that we want to understand the network’s probability outputs to uncover the patterns and features that drive its predictions.
 
 :::
 

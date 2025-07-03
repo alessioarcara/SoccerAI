@@ -120,6 +120,8 @@ div.column {
     margin-left: 1.3rem;
 }
 
+
+
 .reveal .slide ul li,
 .reveal .slide ol li {
     font-size: 0.75em;
@@ -130,7 +132,7 @@ figure figcaption {
     text-align: center;
 }
 
-#ryota-caption {
+#my-caption {
     display: block;
     text-align: center;
     font-size: 0.5em;
@@ -143,4 +145,9 @@ figure figcaption {
 
 #method .column p {
     margin-top: 0px !important;
+}
+
+#machine-learning-on-graphs .columns>.column:last-child>:not(ul, ol) {
+    margin-right: 0;
+    margin-left: 0px !important;
 }

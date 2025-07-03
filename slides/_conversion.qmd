@@ -30,9 +30,21 @@
 
 ::: column
 
+![](resources/bipartite_graph.svg){width=100% fig-alt="Complete 11×11 bipartite graph between attackers and defenders"}
 
-![](resources/bipartite_graph.svg){width=80% fig-alt="Complete 11×11 bipartite graph between attackers and defenders"}
+::: {.columns style="display: flex;"}
+::: {.column width="45%"}
+![](resources/no_weighted_graph.png){fig-alt="Complete bipartite graph" height=200px}
+<span id="my-caption">No weights</span>
 
 :::
+::: {.column width="45%"}
+![](resources/weighted_graph.png){fig-alt="Complete weighted bipartite graph"}
+<span id="my-caption">With weights</span>
+:::
+:::
+
+:::
+
 
 :::

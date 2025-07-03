@@ -16,9 +16,10 @@
   - Total of 19 048 frames, each belonging to a chain that represents a football action.
 
 - **Chain Statistics**:
-  - 3 716 total chains  
+  - 3 716 total chains  che rappresentano le azioni
     - 2 546 Negative chains  
     - 1 170 Positive chains 
+  - Total of 19 048 frames
 
 
 - **Additional Player Statistics**:
@@ -49,7 +50,7 @@
   - **ball_direction_sim** → cosine similarity between player and ball direction ([-1,1])
   - **dz** → distance between player and ball’s z-axis coordinate ([0,1])
 
-- **Categorical (one-hot encoded)**: 
+- **Categorical (one-hot)**: 
   - **is_ball_carrier** → the player has possession of the ball
   - **is_possession_team** → the player’s team has the ball
   - **player_Role** → player’s tactical role
