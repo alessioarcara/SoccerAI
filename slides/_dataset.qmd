@@ -14,8 +14,8 @@
 
 
 - **Focus: Event Data**
-  - We start from the official **event logs** and enrich each event with the **60 preceding tracking frames**, allowing us to compute every player’s instantaneous speed and direction.
-  - In total we analyse **19,048 tracking frames**, organised into chains that capture individual football actions.
+  - We've used **event data** and enrich each event computing every player’s speed and direction with the **60 preceding tracking frames**.
+  - In total we analyse **19 048 tracking frames**, organised into chains that capture individual football actions.
 
 - **Chain Statistics**:
   - 3 716 total chains
@@ -43,7 +43,7 @@
   - **x, y** → player position scaled by pitch dimensions ([0,1])
   - **vx,vy** → velocity components
   - **sinθ, cosθ** → player’s direction ([-1,1])
-  - **ball_dist** → distance between player and ball ([0,$\sqrt{2}$])
+  - **ball_dist** → distance between player and ball ([0,1])
   - **ball_direction_sim** → cosine similarity between player and ball direction ([-1,1])
   - **dz** → distance between player and ball’s z-axis coordinate ([0,1])
 

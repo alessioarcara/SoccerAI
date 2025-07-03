@@ -1,0 +1,22 @@
+## Necks
+
+::: columns
+::: column
+
+- **RNN type**
+    - **GRU** → 2-gate RNN: *update* and *reset* gates keep or discard features on the fly. [Read more](https://arxiv.org/pdf/1406.1078.pdf)
+    - **LSTM** → 3-gate RNN: a cell state plus *input*, *forget*, and *output* gates hold long-term patterns. [Read more](https://arxiv.org/pdf/1402.1128.pdf)
+
+- **Mode**
+  - **Node** → following Ryota 
+  ![](resources/ryota_net.png){.lightbox .no-margin}
+
+  - **Graph** → following TGCN 
+  ![](resources/tgcn.png){.lightbox .no-margin}
+  
+:::
+
+::: column
+:::
+
+:::

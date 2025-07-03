@@ -44,8 +44,11 @@ format:
 <!-- method  -->
 {{< include _method.qmd >}}
 
-<!-- backbones, necks, head  -->
-{{< include _architectures.qmd >}}
+<!-- backbones  -->
+{{< include _backbones.qmd >}}
+
+<!-- necks  -->
+{{< include _necks.qmd >}}
 
 <!-- results  -->
 {{< include _results.qmd >}}
