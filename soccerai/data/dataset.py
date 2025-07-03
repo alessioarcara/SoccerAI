@@ -10,11 +10,7 @@ from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.experimental import enable_iterative_imputer  # noqa: F401
 from sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import (
-    OneHotEncoder,
-    PowerTransformer,
-    QuantileTransformer,
-)
+from sklearn.preprocessing import OneHotEncoder, PowerTransformer, QuantileTransformer
 from torch_geometric.data import InMemoryDataset
 from torch_geometric.transforms import Compose
 
@@ -300,7 +296,12 @@ class WorldCup2022Dataset(InMemoryDataset):
 
         numeric_steps = [
             ("imputer", imputer),
-            ("scaler", QuantileTransformer(output_distribution="normal")),
+            (
+                "scaler",
+                QuantileTransformer(
+                    output_distribution="normal", random_state=self.random_state
+                ),
+            ),
         ]
 
         if self.cfg.use_pca_on_roster_cols:

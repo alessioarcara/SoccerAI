@@ -17,6 +17,7 @@ from soccerai.data.temporal_dataset import TemporalChainsDataset
 from soccerai.models.models import build_model
 from soccerai.training.metrics import BinaryConfusionMatrix, BinaryPrecisionRecallCurve
 from soccerai.training.trainer_config import Config, MetricsConfig
+from soccerai.training.utils import fix_random
 
 NUM_WORKERS = (os.cpu_count() or 1) - 1
 
@@ -124,6 +125,7 @@ def main(args):
         raise SystemExit(1)
 
     cfg = Config(**run.config)
+    fix_random(cfg.seed)
 
     converter = create_graph_converter(cfg.data.connection_mode)
     ds = WorldCup2022Dataset(
@@ -132,7 +134,7 @@ def main(args):
         converter=converter,
         cfg=cfg.data,
         random_state=cfg.seed,
-        force_reload=False,
+        force_reload=True,
     )
 
     model = build_model(cfg, ds)
