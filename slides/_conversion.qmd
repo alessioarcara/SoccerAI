@@ -8,7 +8,7 @@
         - **Node features** embed informations about each player.  
         - **Edge connections** define how relationships between players are represented and influence message flow in the network. 
 
-    - We model the problem as a **complete weighted bipartite graph** where each player is connected to every opponent and each edge’s weight is determined by the distance between the two players. 
+    - We model the problem as a **complete weighted bipartite graph** where each player is connected to every opponent. 
 
 - **Why bipartite connection?** 
 
