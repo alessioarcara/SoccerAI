@@ -41,9 +41,6 @@ format:
 <!-- graph converter  -->
 {{< include _conversion.qmd >}}
 
-<!-- from single frame to temporal  -->
-{{< include _approaches.qmd >}}
-
 <!-- method  -->
 {{< include _method.qmd >}}
 

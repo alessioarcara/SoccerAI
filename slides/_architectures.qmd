@@ -7,26 +7,25 @@
 ### Backbones
 
 - **Baselines**
-  - **GCN** → **first** spectral GNN: applies renormalized Laplacian convolution to fuse each node with neighbors’ features for semi-supervised classification. [Read more](https://arxiv.org/pdf/1609.02907.pdf)
-  - **GraphSAGE** → first **message-passing** GNN: samples neighbors, aggregates their features (mean/LSTM/pool) to embed nodes, enabling inductive generalisation to unseen graphs. [Read&nbsp;more](https://arxiv.org/pdf/1706.02216.pdf)
+  - **GCN** → **first** spectral GNN: applies renormalized Laplacian convolution to fuse each node with neighbors’ features. [🔗](https://arxiv.org/pdf/1609.02907.pdf) 
+  - **GraphSAGE** → first **message-passing** GNN: samples neighbors, aggregates their features with a more general aggregation functions compared to GCN (mean/LSTM/pool) to embed node. [🔗](https://arxiv.org/pdf/1706.02216.pdf)
 
 
 - **Advanced**: 
-    - **GCNII** → deep GCN with initial residual + identity mapping to reduce oversmoothing and enable deep propagation. [Read more](https://arxiv.org/pdf/2007.02133.pdf)
+    - **GCNII** → deep GCN with initial residual + identity mapping to enable deep networks and extracting deep features. [Read more](https://arxiv.org/pdf/2007.02133.pdf)
 
-    - **GATv2** → dynamic attention assigns importance weights to edges after feature projection, enabling adaptive **weighted** message passing. [Read more](https://arxiv.org/pdf/2105.14491.pdf)
+    - **GATv2** → dynamic attention assigns importance weights to edges enabling adaptive **weighted** message passing to scale down less important nodes and emphasize more important ones. [Read more](https://arxiv.org/pdf/2105.14491.pdf)
 
-    - **GINE** → builds on **GIN**’s WL-expressive node-sum + MLP backbone. It injects edge features via $ReLU(h_j + e_{ji})$ before aggregation → **edge-aware** messages suited to molecular and other edge-rich graphs [GIN](https://arxiv.org/pdf/1810.00826.pdf) - [GINE](https://arxiv.org/pdf/1905.12265.pdf)
+    - **GINE** → it matches the expressive power of the Weisfeiler–Leman 1-test which can distinguish most graph classes by implementing the aggregation step as an injective MLP (a universal function approximator), making it an exceptionally expressive graph neural network. [GIN](https://arxiv.org/pdf/1810.00826.pdf) - [GINE](https://arxiv.org/pdf/1905.12265.pdf)
 
-    - **GPS** → **hybrid** local MPNN + global Transformer attention with structural positional encodings, enabling scalable and expressive graph learning. [Read more](https://arxiv.org/pdf/2205.12454.pdf) 
 
 
 - **Other approches**: 
-  - **GNN+**: type of possession action (one-hot)
-  - **Diffpool**: timestamp of the current frame (z-score)
+  - **GPS** → **hybrid** local MPNN + global Transformer attention that is currently SOTA architecture, that is more expressive wrt WL 1-test.[Read more](https://arxiv.org/pdf/2205.12454.pdf) 
+  - **GNN+**  → wraps the original message-passing layer into the wrapped layer: a batch norm, a skip conntection and a FFN -> vedi il paper -> trovare un'architettura al pari di un GTrasformer 
+  - **Diffpool** → considera un pooling gerarchico differenziabile ottenendo delle rappresentazioni sempre di più grossolane (supernodi) prima di arrivare al readout finale permettendo quindi una sorta di clustering sui nodi. 
 
 :::
-
 
 ::: column
 ### Necks 
@@ -37,24 +36,11 @@
 
 
 - **Mode**
-  - **Node** → **first** spectral GNN: applies renormalized Laplacian convolution to fuse each node with neighbors’ features for semi-supervised classification. [Read more](https://arxiv.org/pdf/1609.02907.pdf)
-  - **Graph** → first **message-passing** GNN: samples neighbors, aggregates their features (mean/LSTM/pool) to embed nodes, enabling inductive generalisation to unseen graphs. [Read more](https://arxiv.org/pdf/1706.02216.pdf)
-
+    - **Node** → following Ryota 
+    - **Graph** → following TGCN 
 
 
 ![](resources/archteture.png){.lightbox .no-margin}
-
-
-
-<div style="display: flex; align-items: center; gap: 1em;">
-
-<img src="resources/pff_logo.png" alt="PFF Logo" style="height: 60px;" />
-
-<img src="resources/tm_logo.svg" alt="TransferMarkt Logo" id="tm_logo" style="height: 60px;width: 120px" />
-
-<img src="resources/fb_logo.svg" alt="FBRef Logo" id="fb_logo" style="height: 60px;width: 150px" />
-
-</div>
 
 ::: 
 :::

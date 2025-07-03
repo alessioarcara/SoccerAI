@@ -10,20 +10,17 @@
     - 16 knockout → validation set 
   - **Tracking Data**: camera-based, frame-by-frame positions (30 fps)  
   - **Event Data**: manually labeled actions (passes, shots, etc.)  
+  - **Additional Player Statistics**: player profiles and performance scraped from **TransferMarkt** & **FBRef**
 
-- **Our Focus: Event Data**
-  - Event data with 60-frame tracking data to compute player velocity and direction.
-  - Total of 19 048 frames, each belonging to a chain that represents a football action.
+
+- **Focus: Event Data**
+  - We start from the official **event logs** and enrich each event with the **60 preceding tracking frames**, allowing us to compute every player’s instantaneous speed and direction.
+  - In total we analyse **19,048 tracking frames**, organised into chains that capture individual football actions.
 
 - **Chain Statistics**:
-  - 3 716 total chains  che rappresentano le azioni
+  - 3 716 total chains
     - 2 546 Negative chains  
     - 1 170 Positive chains 
-  - Total of 19 048 frames
-
-
-- **Additional Player Statistics**:
-  - Player Statistics → Player profiles and performance scraped from **TransferMarkt** & **FBRef**
 
 
 <div style="display: flex; align-items: center; gap: 1em;">

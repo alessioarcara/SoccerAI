@@ -191,3 +191,23 @@ figure figcaption {
 #problem .left-col>ul>li:nth-of-type(2) {
     margin-top: 30px;
 }
+
+
+a.link-icon {
+    text-decoration: none;
+    position: relative;
+    color: inherit;
+}
+
+a.link-icon::after {
+    content: "🔗";
+    font-size: 1.1em;
+}
+
+a.link-icon span {
+    position: absolute;
+    clip: rect(0 0 0 0);
+    height: 1px;
+    width: 1px;
+    overflow: hidden;
+}
