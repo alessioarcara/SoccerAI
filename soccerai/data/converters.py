@@ -25,7 +25,9 @@ class GraphConverter(ABC):
     ) -> Tuple[List[Data], List[str]]:
         data_list: List[Data] = []
 
-        for _, event_df in df.group_by(["gameEventId", "possessionEventId"]):
+        for _, event_df in df.group_by(
+            ["gameEventId", "possessionEventId"], maintain_order=True
+        ):
             if event_df.height != self.NUM_PLAYERS:
                 continue
 

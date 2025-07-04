@@ -8,7 +8,13 @@ authors = [
   { name = "Francesco Baiocchi", email = "francesco.baiocchi2@studio.unibo.it" },
   { name = "Leonardo Petrilli", email = "leonardo.petrilli@studio.unibo.it" },
 ]
+
 dependencies = [
+  "torch_geometric",
+  "torch_geometric_temporal",
+  "torchmetrics",
+  "tabulate",
+  "scikit-learn",
   "polars",
   "mplsoccer",
   "Levenshtein",
@@ -19,9 +25,10 @@ dependencies = [
   "IPython",
   "ipywidgets",
   "wandb",
+  "wandb[media]",
 ]
 name = "soccerai"
-version = "0.3.0"
+version = "0.5.0"
 requires-python = ">= 3.11"
 readme = "README.md"
 
