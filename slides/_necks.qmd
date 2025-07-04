@@ -3,14 +3,20 @@
 ::: columns
 ::: column
 
-- **RNN type**
-    - **GRU** → 2-gate RNN: *update* and *reset* gates keep or discard features on the fly. [Read more](https://arxiv.org/pdf/1406.1078.pdf)
-    - **LSTM** → 3-gate RNN: a cell state plus *input*, *forget*, and *output* gates hold long-term patterns. [Read more](https://arxiv.org/pdf/1402.1128.pdf)
+- **Readout**
+  - A pooling operation is applied to the backbone's output to obtain a **graph embedding**.
+  - An MLP processes the global features to produce a **global embedding**.
+  - Graph and global embeddings are then combined into a **fused embedding**.   
 
 - **Mode**
-  - **Node** → following Ryota 
-  - **Graph** → following TGCN 
 
+  - **Node** → Thanks to skip connections, both the backbone and the GCRN process spatio-temporal information at each timestep. However only the output of the backbone is passed first to the readout and then to the head to generate the final prediction. 
+
+  - **Graph** → Following the T-GCN architecture, output embeddings from the backbone are passed through a RNN cell to compute the next hidden state. Final predictions are based only on these hidden states, clearly separating spatial feature extraction from temporal modeling.
+
+- **RNN type**
+    - **GRU** → 2-gate RNN: *update* and *reset* gates keep or discard features on the fly. [🔗](https://arxiv.org/pdf/1409.1259)
+    - **LSTM** → 3-gate RNN: a cell state plus *input*, *forget*, and *output* gates hold long-term patterns. [🔗](https://www.bioinf.jku.at/publications/older/2604.pdf)
 
 :::
 
@@ -18,11 +24,11 @@
 
 ![](resources/necks/ryota_net.png){.lightbox .no-margin}
 <span id="my-caption">
-  <a href="https://www.mdpi.com/1424-8220/23/9/4506#sec3dot2-sensors-23-04506" target="_blank">Ryota et al.</a> GCRN architecture
+  <a href="https://www.mdpi.com/1424-8220/23/9/4506#sec3dot2-sensors-23-04506" target="_blank">Goka et al.</a> GCRN architecture
 </span>
 ![](resources/necks/tgcn.png){.lightbox .no-margin}
 <span id="my-caption">
-  <a href="https://www.mdpi.com/1424-8220/23/9/4506#sec3dot2-sensors-23-04506" target="_blank">Ryota et al.</a> GCRN architecture
+  <a href="https://arxiv.org/pdf/1811.05320" target="_blank">Zhao et al.</a> T-GCN architecture
 </span>
 
 

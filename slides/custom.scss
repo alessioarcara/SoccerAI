@@ -221,3 +221,25 @@ a.link-icon span {
 #backbones .img-col p {
     margin: 0;
 }
+
+.reveal table td {
+    border-bottom: none;
+}
+
+.reveal table th {
+    border-top: 2px solid;
+    border-bottom: 2px solid;
+}
+
+tbody > tr:last-child {
+    border-bottom: 2px solid;
+}
+
+table{
+    font-size: 0.70em;
+    margin-left: 7rem !important;
+}
+
+#results .column > .columns{
+    margin-top: 2rem;
+}

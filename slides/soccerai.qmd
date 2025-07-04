@@ -30,7 +30,6 @@ format:
     highlight-style: github
     code-overflow: scroll
     code-line-numbers: false
-
 ---
 
 {{< include _problem.qmd >}}
