@@ -1,15 +1,18 @@
 ## Machine Learning on Graphs
 
+
+::: columns
+
+:::{.column .left-col}
+
 - **Why graphs?**
     - Graphs effectively represent spatial interactions between players, capturing and modelling the complexity of soccer. 
         - **Node features** embed informations about each player.  
         - **Edge connections** define how relationships between players are represented and influence message flow in the network. 
     
     - We model the problem as a **complete weighted bipartite graph** where each player is connected to every opponent. 
+    - Inspired by Google DeepMind [TacticAI](https://rdcu.be/eult8) and [Goka et al.](https://www.mdpi.com/1424-8220/23/9/4506)
 
-::: columns
-
-::: column
 
 - **Why bipartite connection?** 
 
@@ -19,19 +22,14 @@
         - **1-hop edges** → how many opposing players are nearby.
         - **2-hop edges** → how many of a player's own teammates are near those opponents.
 
-    - Inspired by Google DeepMind [TacticAI](https://rdcu.be/eult8) and [Ryota et al.](https://www.mdpi.com/1424-8220/23/9/4506)
-
-
-
 - **Why weight the edges?**
     - Nearby interactions matter most, so we apply an **exponential decay** to pairwise **distances**, down weighting distant players and highlighting close ones.
-    - Edge weights are computed as $\displaystyle w_{ij} = e^{-d_{ij}}$, where $\displaystyle d_{ij} = \lVert {p}_i - {p}_j\rVert_2$ and ${p}_i, {p}_j$ denote the 2D field coordinates of players $i$ and $j$.
-
+    - Thus, edge weights are computed as $\displaystyle w_{ij} = e^{-d_{ij}}$, where $\displaystyle d_{ij} = \lVert {p}_i - {p}_j\rVert_2$ and ${p}_i, {p}_j$ denote the 2D field coordinates of players $i$ and $j$.
 :::
 
 ::: column
 
-![](resources/conversion/bipartite_graph.svg){width=100% fig-alt="Complete 11×11 bipartite graph between attackers and defenders"}
+![](resources/conversion/pitch_graph.png){fig-alt="Complete bipartite graph"}
 
 ::: {.columns style="display: flex;"}
 ::: {.column width="45%"}

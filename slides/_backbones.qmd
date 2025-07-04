@@ -1,34 +1,41 @@
 ## Backbones
 
 ::: columns
-::: column
+::: {.column .left-col}
 
 - **Baselines**
-  - **GCN** → **first** spectral GNN: applies renormalized Laplacian convolution to fuse each node with neighbors’ features. [🔗](https://arxiv.org/pdf/1609.02907.pdf) 
-  - **GraphSAGE** → first **message-passing** GNN: samples neighbors, aggregates their features with a more general aggregation functions compared to GCN (mean/LSTM/pool). [🔗](https://arxiv.org/pdf/1706.02216.pdf)
+  - **GCN** → first **spectral** GNN: applies renormalized Laplacian convolution to fuse each node with local neighbors’ features. [🔗](https://arxiv.org/pdf/1609.02907.pdf) 
+  - **GraphSAGE** → first **message-passing** GNN: samples neighbors, aggregates their features with a more general aggregation function compared to GCN *(mean/LSTM/pool)*. [🔗](https://arxiv.org/pdf/1706.02216.pdf)
 
 
 - **Advanced**: 
-    - **GCNII** → deep GCN with initial residual + identity mapping to enable deep networks and extracting deep features. [🔗](https://arxiv.org/pdf/2007.02133.pdf)
+    - **GCNII** → deep GCN with initial residual + **identity mapping** to enable deep networks and extracting deep features. [🔗](https://arxiv.org/pdf/2007.02133.pdf)
 
     - **GATv2** → dynamic attention assigns importance weights to edges enabling adaptive **weighted** message passing to scale down less important nodes and emphasize more important ones. [🔗](https://arxiv.org/pdf/2105.14491.pdf)
 
-    - **GINE** → it matches the expressive power of the WL 1-test which can distinguish most graph classes by implementing the aggregation step as an injective MLP, making it an exceptionally expressive graph neural network. [GIN](https://arxiv.org/pdf/1810.00826.pdf) - [GINE](https://arxiv.org/pdf/1905.12265.pdf)
+    - **GINE** → it matches the power of the **1-WL** which can distinguish most graph classes by implementing the aggregation step as an injective function approximating it with an MLP, making it an exceptionally expressive GNN. [GIN 🔗](https://arxiv.org/pdf/1810.00826.pdf) - [GINE 🔗](https://arxiv.org/pdf/1905.12265.pdf)
 
 - **Other approches**: 
-  - **GPS** → **hybrid** local MPNN + global Transformer attention that is currently SOTA architecture, that is more expressive wrt WL 1-test.[🔗](https://arxiv.org/pdf/2205.12454.pdf) 
-  - **GNN+**  → wraps the original message-passing layer into the wrapped layer: a batch norm, a skip conntection and a FFN -> vedi il paper -> trovare un'architettura al pari di un GTrasformer 
-  - **Diffpool** → considera un pooling gerarchico differenziabile ottenendo delle rappresentazioni sempre di più grossolane (supernodi) prima di arrivare al readout finale permettendo quindi una sorta di clustering sui nodi. 
-
+  - **GPS** → **hybrid** MPNN + global Transformer attention that is a **SOTA** architecture, that is more expressive wrt 1-WL. [🔗](https://arxiv.org/pdf/2205.12454.pdf) 
+  - **GNN+** → each message-passing layer is encapsulated in a transformer-style wrapper producing an architecture on par with a Graph Transformer. [🔗](https://arxiv.org/pdf/2502.09263)
+  - **Diffpool** → uses differentiable hierarchical pooling to build coarser graph representations creating super nodes before the final readout, thereby clustering the original nodes along the way. [🔗](https://arxiv.org/pdf/1806.08804)
 
 :::
 
 :::{.column .img-col}
 
-![](resources/backbones/gcn.png){style="margin:0; height:200px;" fig-alt="GCN backbone"}
-![](resources/backbones/gatv2.png){height=300px style="margin:0; height:200px;" fig-alt="GCN backbone"}
-![](resources/backbones/gps.png){height=200px style="margin:0; height:200px;" fig-alt="GPS backbone"}
-
+![](resources/backbones/gcn.png){.column style="margin: 0 auto;display: block;height:160px;" fig-alt="GCN backbone"}
+<span id="my-caption">
+  <a href="https://arxiv.org/pdf/1609.02907" target="_blank">Kipf et al.</a> Graph Convolutional Network
+</span>
+![](resources/backbones/gatv2.png){.column style="margin: 0 auto;display: block;height:190px;" fig-alt="GATv2 backbone"}
+<span id="my-caption">
+  <a href="https://arxiv.org/pdf/1710.10903" target="_blank">Velicković et al.</a> attention mechanism
+</span>
+![](resources/backbones/gps.png){.column style="margin: 20px auto;display: block;height:210px;" fig-alt="GPS backbone"}
+<span id="my-caption">
+  <a href="https://pytorch-geometric.readthedocs.io/en/latest/tutorial/graph_transformer.html" target="gps-layer-and-graphgps-model">PyG figure</a> of a GPS Layer 
+</span>
 
 ::: 
 :::

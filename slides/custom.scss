@@ -157,7 +157,7 @@ figure figcaption {
 #problem .rounded-media {
     border: 10px solid #ffffff;
     border-radius: 16px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }
 
 .left-col {
@@ -165,7 +165,7 @@ figure figcaption {
 
     background-color: #fff;
     background-image: linear-gradient(0deg,
-            rgba(30, 144, 255, .04) 0%,
+            rgba(30, 144, 255, .06) 0%,
             rgba(255, 255, 255, 0) 100%);
 }
 
@@ -218,6 +218,26 @@ a.link-icon span {
     margin-top: 30px;
 }
 
+#conversion div ul li {
+    margin-top: 0.6em;
+}
+
 #backbones .img-col p {
     margin: 0;
+}
+
+#backbones h2 {
+    margin-bottom: 0 !important;
+}
+
+#backbones #my-caption {
+    font-size: 0.4em;
+    margin-bottom: 5px;
+}
+
+
+
+#machine-learning-on-graphs ul li,
+#machine-learning-on-graphs ol li {
+    margin-top: 0.7em;
 }
