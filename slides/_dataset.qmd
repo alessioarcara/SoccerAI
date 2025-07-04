@@ -14,8 +14,8 @@
 
 
 - **Focus: Event Data**
-  - We've used **event data** and enrich each event computing every player’s speed and direction with the **60 preceding tracking frames**.
-  - In total we analyse **19 048 tracking frames**, organised into chains that capture individual football actions.
+  - We enrich each event computing every player’s speed and direction with the **60 preceding tracking frames**.
+  - In total we analyze **19 048 tracking frames**, organised into chains that capture individual football actions.
 
 
 - **Chain Statistics**:

@@ -2,28 +2,23 @@
 
 ::: columns
 
-::: column
+::: {.column .left-col}
 
-- **Temporal predictions (Seq2Seq)** 
-    - We encoded football actions as sequences of graphs of arbitrary length by taking chains of events during which one team maintains possession of the ball.
+- **Workflow: From Frames to Chains** 
+    - **First attempt**: We treated each frame as an independent sample and trained the network on these single frames, as they constituted a very large pool of training examples.
+    - **Problem**: After several unsuccessful experiments, we realised that ignoring temporal dynamics severely limited the model’s performance on this task.
+    - **Solution**: We encoded football actions as sequences of graphs of arbitrary length during which one team maintains possession of the ball.
+    - **Augmentation**: We achieved a **4× increase** in the dataset by mirroring each sequence across the pitch, giving us a much larger pool of training examples. 
+
+- **Temporal approach (Many-to-Many)** 
     - **Input**: A sequence of graphs $\mathbf{G_1, G_2, \dots, G_T}$, one for each timestep $\mathbf{t} \in \{1, \dots, T\}$.
+    - **Architecture**: 
+        - A **backbone** to extract **spatial informations** from the input graph 
+        - A **neck** to **readout** and for **temporal processing** 
+        - An **head** (MLP with dropout) for **prediction**
     - **Output**: For every timestep $\mathbf{t}$, a probability $\mathbf{{p}_t}$ that the current possession state will result in a shot.  
-    - **Key Idea**: By learning over the entire sequence, the network captures how earlier timesteps build toward shooting opportunities.  
 
-- **Architecture** 
-    - Following the work of [Ryota et al.](https://www.mdpi.com/1424-8220/23/9/4506) we design our model as follows:
-    - **Backbone**: GNN to extract spatial informations from the input graph 
-        - **Input**: A graph $\mathbf{G_t = (X_t, E_t)}$, where $\mathbf{X_t}$ are the node features and $\mathbf{E_t}$ are the edges
-        - **Output**: refined node features $\mathbf{Z_t}$ that embed deep spatial features  
-    - **Neck**: Readout + GCRN for temporal processing 
-        - **Input**: $X_t,Z_t,h_{t-1}$, where $\mathbf{h_{t-1}}$ is the GCRN hidden state at timestep $\mathbf{t-1}$.
-        - **Output**: $h_{G_t},h_t$, where $\mathbf{h_{G_t}}$ is the graph embedding 
-    - **Head**: an MLP with dropout
-        - **Input**: $\mathbf{h_{G_t}}$, a graph embedding computed by pooling node embeddings
-        - **Output**: $\mathbf{p_t}$, shooting probability at timestep $\mathbf{t}$
-
-
-<div style="display: flex; align-items: center; gap: 1em;">
+<div style="display: flex; align-items: center; gap: 1em; height: 80px;">
 
 <img src="resources/method/pyg_logo.svg" alt="Pyg Logo" style="width: 120px" />
 <img src="resources/method/wandb_logo.svg" alt="Wandb Logo" style="height: 60px;width: 120px;margin-bottom:0;margin-left: 15px"/>
@@ -32,16 +27,16 @@
 
 :::
 
+
+
 ::: column
 
 ![](resources/method/chain_palette.png){.lightbox .no-margin}
+![](resources/method/chain_palette.png){.lightbox .no-margin}
 
-![Ryota et al.’s GCRN architecture](resources/method/archteture.png){.lightbox .no-margin}
-
-:::
 
 :::
-
+:::
 
 
 
