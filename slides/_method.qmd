@@ -25,8 +25,8 @@
 
 <div style="display: flex; align-items: center; gap: 1em;">
 
-<img src="resources/pyg_logo.svg" alt="Pyg Logo" style="width: 120px" />
-<img src="resources/wandb_logo.svg" alt="Wandb Logo" style="height: 60px;width: 120px;margin-bottom:0;margin-left: 15px"/>
+<img src="resources/method/pyg_logo.svg" alt="Pyg Logo" style="width: 120px" />
+<img src="resources/method/wandb_logo.svg" alt="Wandb Logo" style="height: 60px;width: 120px;margin-bottom:0;margin-left: 15px"/>
 
 </div>
 
@@ -34,12 +34,10 @@
 
 ::: column
 
-![](resources/chain_palette.png){.lightbox .no-margin}
+![](resources/method/chain_palette.png){.lightbox .no-margin}
 
-![Ryota et al.’s GCRN architecture](resources/archteture.png){.lightbox .no-margin}
-<span id="my-caption">
-  <a href="https://www.mdpi.com/1424-8220/23/9/4506#sec3dot2-sensors-23-04506" target="_blank">Ryota et al.</a> GCRN architecture
-</span>
+![Ryota et al.’s GCRN architecture](resources/method/archteture.png){.lightbox .no-margin}
+
 :::
 
 :::

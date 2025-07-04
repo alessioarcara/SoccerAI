@@ -9,14 +9,22 @@
 
 - **Mode**
   - **Node** → following Ryota 
-  ![](resources/ryota_net.png){.lightbox .no-margin}
-
   - **Graph** → following TGCN 
-  ![](resources/tgcn.png){.lightbox .no-margin}
-  
+
+
 :::
 
 ::: column
-:::
 
+![](resources/necks/ryota_net.png){.lightbox .no-margin}
+<span id="my-caption">
+  <a href="https://www.mdpi.com/1424-8220/23/9/4506#sec3dot2-sensors-23-04506" target="_blank">Ryota et al.</a> GCRN architecture
+</span>
+![](resources/necks/tgcn.png){.lightbox .no-margin}
+<span id="my-caption">
+  <a href="https://www.mdpi.com/1424-8220/23/9/4506#sec3dot2-sensors-23-04506" target="_blank">Ryota et al.</a> GCRN architecture
+</span>
+
+
+:::
 :::

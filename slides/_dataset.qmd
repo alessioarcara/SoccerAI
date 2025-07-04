@@ -1,7 +1,7 @@
 ## Dataset
 
 ::: columns
-::: column
+:::{.column .left-col}
 ### Data Sources & Statistics
 
 - **Dataset**: [FIFA World Cup 2022 (PFF.com)](https://www.blog.fc.pff.com/blog/pff-fc-release-2022-world-cup-data)  
@@ -10,12 +10,13 @@
     - 16 knockout → validation set 
   - **Tracking Data**: camera-based, frame-by-frame positions (30 fps)  
   - **Event Data**: manually labeled actions (passes, shots, etc.)  
-  - **Additional Player Statistics**: player profiles and performance scraped from **TransferMarkt** & **FBRef**
+  - **Additional Player Statistics**: player profiles and performance scraped from [TransferMarkt](https://www.transfermarkt.com/) & [FBRef](https://fbref.com/en/)
 
 
 - **Focus: Event Data**
   - We've used **event data** and enrich each event computing every player’s speed and direction with the **60 preceding tracking frames**.
   - In total we analyse **19 048 tracking frames**, organised into chains that capture individual football actions.
+
 
 - **Chain Statistics**:
   - 3 716 total chains
@@ -23,15 +24,16 @@
     - 1 170 Positive chains 
 
 
-<div style="display: flex; align-items: center; gap: 1em;">
+<div style="display: flex; align-items: center; gap: 1em; height: 75px;">
 
-<img src="resources/pff_logo.png" alt="PFF Logo" style="height: 60px;" />
+<img src="resources/dataset/pff_logo.png" alt="PFF Logo" style="height: 60px;" />
 
-<img src="resources/tm_logo.svg" alt="TransferMarkt Logo" id="tm_logo" style="height: 60px;width: 120px" />
+<img src="resources/dataset/tm_logo.svg" alt="TransferMarkt Logo" id="tm_logo" style="height: 60px;width: 120px" />
 
-<img src="resources/fb_logo.svg" alt="FBRef Logo" id="fb_logo" style="height: 60px;width: 150px" />
+<img src="resources/dataset/fb_logo.svg" alt="FBRef Logo" id="fb_logo" style="height: 60px;width: 150px" />
 
 </div>
+
 
 ::: 
 ::: column

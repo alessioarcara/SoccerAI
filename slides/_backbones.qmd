@@ -1,33 +1,33 @@
-## Architectures
+## Backbones
 
 ::: columns
 ::: column
 
-
-### Backbones
-
 - **Baselines**
   - **GCN** → **first** spectral GNN: applies renormalized Laplacian convolution to fuse each node with neighbors’ features. [🔗](https://arxiv.org/pdf/1609.02907.pdf) 
-  - **GraphSAGE** → first **message-passing** GNN: samples neighbors, aggregates their features with a more general aggregation functions compared to GCN (mean/LSTM/pool) to embed node. [🔗](https://arxiv.org/pdf/1706.02216.pdf)
+  - **GraphSAGE** → first **message-passing** GNN: samples neighbors, aggregates their features with a more general aggregation functions compared to GCN (mean/LSTM/pool). [🔗](https://arxiv.org/pdf/1706.02216.pdf)
 
 
 - **Advanced**: 
-    - **GCNII** → deep GCN with initial residual + identity mapping to enable deep networks and extracting deep features. [Read more](https://arxiv.org/pdf/2007.02133.pdf)
+    - **GCNII** → deep GCN with initial residual + identity mapping to enable deep networks and extracting deep features. [🔗](https://arxiv.org/pdf/2007.02133.pdf)
 
-    - **GATv2** → dynamic attention assigns importance weights to edges enabling adaptive **weighted** message passing to scale down less important nodes and emphasize more important ones. [Read more](https://arxiv.org/pdf/2105.14491.pdf)
+    - **GATv2** → dynamic attention assigns importance weights to edges enabling adaptive **weighted** message passing to scale down less important nodes and emphasize more important ones. [🔗](https://arxiv.org/pdf/2105.14491.pdf)
 
-    - **GINE** → it matches the expressive power of the Weisfeiler–Leman 1-test which can distinguish most graph classes by implementing the aggregation step as an injective MLP (a universal function approximator), making it an exceptionally expressive graph neural network. [GIN](https://arxiv.org/pdf/1810.00826.pdf) - [GINE](https://arxiv.org/pdf/1905.12265.pdf)
+    - **GINE** → it matches the expressive power of the WL 1-test which can distinguish most graph classes by implementing the aggregation step as an injective MLP, making it an exceptionally expressive graph neural network. [GIN](https://arxiv.org/pdf/1810.00826.pdf) - [GINE](https://arxiv.org/pdf/1905.12265.pdf)
+
+- **Other approches**: 
+  - **GPS** → **hybrid** local MPNN + global Transformer attention that is currently SOTA architecture, that is more expressive wrt WL 1-test.[🔗](https://arxiv.org/pdf/2205.12454.pdf) 
+  - **GNN+**  → wraps the original message-passing layer into the wrapped layer: a batch norm, a skip conntection and a FFN -> vedi il paper -> trovare un'architettura al pari di un GTrasformer 
+  - **Diffpool** → considera un pooling gerarchico differenziabile ottenendo delle rappresentazioni sempre di più grossolane (supernodi) prima di arrivare al readout finale permettendo quindi una sorta di clustering sui nodi. 
 
 
 :::
 
-::: column
+:::{.column .img-col}
 
-
-- **Other approches**: 
-  - **GPS** → **hybrid** local MPNN + global Transformer attention that is currently SOTA architecture, that is more expressive wrt WL 1-test.[Read more](https://arxiv.org/pdf/2205.12454.pdf) 
-  - **GNN+**  → wraps the original message-passing layer into the wrapped layer: a batch norm, a skip conntection and a FFN -> vedi il paper -> trovare un'architettura al pari di un GTrasformer 
-  - **Diffpool** → considera un pooling gerarchico differenziabile ottenendo delle rappresentazioni sempre di più grossolane (supernodi) prima di arrivare al readout finale permettendo quindi una sorta di clustering sui nodi. 
+![](resources/backbones/gcn.png){style="margin:0; height:200px;" fig-alt="GCN backbone"}
+![](resources/backbones/gatv2.png){height=300px style="margin:0; height:200px;" fig-alt="GCN backbone"}
+![](resources/backbones/gps.png){height=200px style="margin:0; height:200px;" fig-alt="GPS backbone"}
 
 
 ::: 

@@ -1,14 +1,15 @@
 ## Machine Learning on Graphs
 
-::: columns
-
-::: column
 - **Why graphs?**
     - Graphs effectively represent spatial interactions between players, capturing and modelling the complexity of soccer. 
         - **Node features** embed informations about each player.  
         - **Edge connections** define how relationships between players are represented and influence message flow in the network. 
-
+    
     - We model the problem as a **complete weighted bipartite graph** where each player is connected to every opponent. 
+
+::: columns
+
+::: column
 
 - **Why bipartite connection?** 
 
@@ -30,16 +31,16 @@
 
 ::: column
 
-![](resources/bipartite_graph.svg){width=100% fig-alt="Complete 11×11 bipartite graph between attackers and defenders"}
+![](resources/conversion/bipartite_graph.svg){width=100% fig-alt="Complete 11×11 bipartite graph between attackers and defenders"}
 
 ::: {.columns style="display: flex;"}
 ::: {.column width="45%"}
-![](resources/no_weighted_graph.png){fig-alt="Complete bipartite graph" height=200px}
+![](resources/conversion/no_weighted_graph.png){fig-alt="Complete bipartite graph" height=200px}
 <span id="my-caption">No weights</span>
 
 :::
 ::: {.column width="45%"}
-![](resources/weighted_graph.png){fig-alt="Complete weighted bipartite graph"}
+![](resources/conversion/weighted_graph.png){fig-alt="Complete weighted bipartite graph"}
 <span id="my-caption">With weights</span>
 :::
 :::

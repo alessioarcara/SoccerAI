@@ -15,7 +15,7 @@
 :::
 
 ::: column
-<video src="resources/video.mp4" autoplay loop muted class="rounded-media"></video>
+<video src="resources/problem/video.mp4" autoplay loop muted class="rounded-media"></video>
 
 </video>
 :::
@@ -29,7 +29,7 @@
 :::
 
 ::: column
-![](resources/chain.gif){.lightbox}
+![](resources/problem/chain.gif){.lightbox}
 :::
 :::
 
