@@ -6,7 +6,7 @@
   - Over recent years, sports data analysis has gone from basic post game stats to using detailed time and space information to shape tactics, evaluate players and guide decisions during matches.
 
 - **Our Task: Shot Prediction** 
-  - **Objective**: Identify soccer actions that are likely to lead to a shot (versus non-shot actions) and quantify each player’s contribution to those actions.
+  - **Objective**: Identify soccer actions that are likely to lead to a shot and quantify each player’s contribution to those actions.
 
 ::: notes
 - Teams can now see exactly where players move and interact throughout a match, helping them spot key opportunities and adjust tactics on the fly.

@@ -16,9 +16,13 @@
     - **GINE** → it matches the power of the **1-WL** which can distinguish most graph classes by implementing the aggregation step as an injective function approximating it with an MLP, making it an exceptionally expressive GNN. [GIN 🔗](https://arxiv.org/pdf/1810.00826.pdf) - [GINE 🔗](https://arxiv.org/pdf/1905.12265.pdf)
 
 - **Other approches**: 
-  - **GPS** → **hybrid** MPNN + global Transformer attention that is a **SOTA** architecture, that is more expressive wrt 1-WL. [🔗](https://arxiv.org/pdf/2205.12454.pdf) 
-  - **GNN+** → each message-passing layer is encapsulated in a transformer-style wrapper producing an architecture on par with a Graph Transformer. [🔗](https://arxiv.org/pdf/2502.09263)
-  - **Diffpool** → uses differentiable hierarchical pooling to build coarser graph representations creating super nodes before the final readout, thereby clustering the original nodes along the way. [🔗](https://arxiv.org/pdf/1806.08804)
+  - **GPS** →  combines message propagation with global attention to capture both neighborhood and long-range interactions. This **SOTA** design offers higher expressiveness compared to **1-WL**. [🔗](https://arxiv.org/pdf/2205.12454.pdf) 
+  - **GNN+** → every message-passing is encapsulated in a **wrapper** with normalization, dropout, skip connection and a FFN, producing an architecture matching the performance of Graph Transformer. [🔗](https://arxiv.org/pdf/2502.09263)
+  - **Diffpool** → uses **differentiable hierarchical pooling** to build coarser representations of graphs before the final readout. [🔗](https://arxiv.org/pdf/1806.08804)
+
+
+
+
 
 :::
 
@@ -30,11 +34,11 @@
 </span>
 ![](resources/backbones/gatv2.png){.column style="margin: 0 auto;display: block;height:180px;" fig-alt="GATv2 backbone"}
 <span id="my-caption">
-  <a href="https://arxiv.org/pdf/1710.10903" target="_blank">Velicković et al.</a> attention mechanism
+  <a href="https://arxiv.org/pdf/1710.10903" target="_blank">Velicković et al.</a> GAT attention
 </span>
 ![](resources/backbones/gps.png){.column style="margin: 20px auto;display: block;height:200px;" fig-alt="GPS backbone"}
 <span id="my-caption">
-  <a href="https://arxiv.org/pdf/2205.12454" target="gps-layer-and-graphgps-model">Rampášek et al. </a> GPS Layer
+  <a href="https://arxiv.org/pdf/2205.12454" target="gps-layer-and-graphgps-model">Rampášek et al.</a> GPS Layer
 </span>
 
 ::: 

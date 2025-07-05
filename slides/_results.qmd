@@ -4,14 +4,14 @@
 - **Class imbalance** → The dataset is imbalanced because of the task’s nature,  therefore we considered applying a `pos_weight` term to the loss.
 
 
-| Method | Acc. ↑|  F1 ↑ |  mAP ↑| 
-|:-------|:-----:|:-----:|:-----:|
-| GCN    | 73.68 | 85.77 | 88.13 |
-| SAGE   | 73.68 | 85.77 | 88.13 |
-| GCNII  | 73.68 | 85.77 | 88.13 | 
-| GATv2  | 73.68 | 85.77 | 88.13 |
-| GINE   | 73.68 | 85.77 | 88.13 | 
-| GPS    | 73.68 | 85.77 | 88.13 |
-
+| Method   | Acc. ↑|  F1 ↑ |  mAP ↑| 
+|:------   |:-----:|:-----:|:-----:|
+| GCN      | 73.68 | 85.77 | 88.13 |
+| SAGE     | 73.68 | 85.77 | 88.13 |
+| GCNII    | 73.68 | 85.77 | 88.13 | 
+| GATv2    | 73.68 | 85.77 | 88.13 |
+| GINE     | 73.68 | 85.77 | 88.13 | 
+| GPS      | 73.68 | 85.77 | 88.13 |
+| DiffPool | 73.68 | 85.77 | 88.13 |
 
 
