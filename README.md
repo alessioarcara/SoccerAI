@@ -180,3 +180,5 @@ to train a model provided by us by specyfing the name in the main config "base.y
 you can --reload to create the dataset and specyfing a 
 
 ## Acknowledgments
+
+This project leverages the **transfermarkt-api** repository by *Felipe Almeida* (MIT License) — https://github.com/felipeall/transfermarkt-api — to scrape player profile data from Transfermarkt.
