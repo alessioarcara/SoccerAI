@@ -19,12 +19,12 @@
     - This type of connection can reflect both direct **proximity** to opponents and the local defensive/offensive support structure.
 
     - When extended to a two-hop view, this construction captures:
-        - **1-hop edges** → how many opposing players are nearby.
-        - **2-hop edges** → how many of a player's own teammates are near those opponents.
+        - **1-hop edges** → how many **opposing** players are nearby.
+        - **2-hop edges** → how many of a player's own **teammates** are near those opponents.
 
 - **Why weight the edges?**
     - Nearby interactions matter most, so we apply an **exponential decay** to pairwise **distances**, down weighting distant players and highlighting close ones.
-    - Thus, edge weights are computed as $\displaystyle w_{ij} = e^{-d_{ij}}$, where $\displaystyle d_{ij} = \lVert {p}_i - {p}_j\rVert_2$ and ${p}_i, {p}_j$ denote the 2D field coordinates of players $i$ and $j$.
+    - Thus, edge weights are computed as $w_{ij} = e^{-d_{ij}}$, where $d_{ij} = \lVert {p}_i - {p}_j\rVert_2$ and ${p}_i, {p}_j$ denote the 2D field coordinates of players $i$ and $j$.
 :::
 
 ::: column

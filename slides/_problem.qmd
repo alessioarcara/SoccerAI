@@ -7,7 +7,6 @@
 
 - **Our Task: Shot Prediction** 
   - **Objective**: Identify soccer actions that are likely to lead to a shot (versus non-shot actions) and quantify each player’s contribution to those actions.
-  - **Input**: Team-level positional data and individual player statistics.
 
 ::: notes
 - Teams can now see exactly where players move and interact throughout a match, helping them spot key opportunities and adjust tactics on the fly.
@@ -23,7 +22,7 @@
 
 ::: columns
 ::: {.column style="margin-top:60px;" .left-col}
-- **Solution**: 
+- **Our Method**: 
   - Develop a **Graph Neural Network** that, as an oracle, ingests the current game state (capturing evolving spatio-temporal patterns) and outputs the probability of a **shot**. 
   - On top of that we want to understand the network’s probability outputs to uncover the patterns and features that drive its predictions.
 :::

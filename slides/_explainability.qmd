@@ -1,0 +1,26 @@
+## Explainability
+
+::: {.columns style="display: flex;margin-top: 0;"}
+::: {.column style="width: 45%;"}
+- **GNN Explainer**
+
+    - [GNNExplainer](https://pytorch-geometric.readthedocs.io/en/latest/generated/torch_geometric.explain.algorithm.GNNExplainer.html#torch_geometric.explain.algorithm.GNNExplainer) identifies a compact subgraph and a small subset of node features critical to the GNN’s prediction. [🔗](https://arxiv.org/pdf/1903.03894)
+    - By visualizing the learned masks below, we can highlight the key player interactions and feature contributions that drive each prediction.
+
+:::
+
+::: {.column .my-pitch .lightbox}
+
+![](resources/explainability/pitch.png){.lightbox .no-margin style="max-width: 100%;aspect-ratio: auto; height: 280px;"}
+:::
+:::
+
+::: {.columns style="display: flex;margin-top: 0;"}
+::: {.column style="width: 45%; margin-top: 20px;"}
+![](resources/explainability/explainer.png){.lightbox .no-margin}
+:::
+::: {.column width="45%"}
+![](resources/explainability/boxplot.png){.lightbox .no-margin style="aspect-ratio: auto; height: 350px;"}
+:::
+
+:::

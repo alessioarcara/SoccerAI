@@ -235,18 +235,18 @@ a.link-icon span {
     border-bottom: 2px solid;
 }
 
-tbody > tr:last-child {
+tbody>tr:last-child {
     border-bottom: 2px solid;
 }
 
-table{
+table {
     font-size: 0.70em;
-    margin-left: 7rem !important;
 }
 
-#results .column > .columns{
+#results .column>.columns {
     margin-top: 2rem;
 }
+
 #backbones h2 {
     margin-bottom: 0 !important;
 }
@@ -261,4 +261,19 @@ table{
 #machine-learning-on-graphs ul li,
 #machine-learning-on-graphs ol li {
     margin-top: 0.7em;
+}
+
+#explainability ul {
+    margin-bottom: 0;
+}
+
+#explainability .my-pitch {
+    display: block;
+    margin: auto;
+    width: fit-content;
+    margin-left: 80px;
+}
+
+#explainability div p {
+    margin: 0;
 }

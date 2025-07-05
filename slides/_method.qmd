@@ -31,8 +31,8 @@
 
 ::: column
 
-![](resources/method/chain_palette.png){.lightbox .no-margin}
-![](resources/method/chain_palette.png){.lightbox .no-margin}
+![](resources/method/chain_prediction.png){.lightbox .no-margin}
+![](resources/method/architecture.svg){.lightbox style="margin-top: 70px;"}
 
 
 :::

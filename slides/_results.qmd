@@ -1,45 +1,17 @@
 ##  Results
 
-::: columns
-::: column
+- **Evaluation criterion** → We judged each sequence as correctly or incorrectly labeled based only on the prediction for its final frame.
+- **Class imbalance** → The dataset is imbalanced because of the task’s nature,  therefore we considered applying a `pos_weight` term to the loss.
 
-- **Results**
-    - **GRU** → 2-gate RNN: *update* and *reset* gates keep or discard features on the fly. [Read more](https://arxiv.org/pdf/1406.1078.pdf)
-    - **LSTM** → 3-gate RNN: a cell state plus *input*, *forget*, and *output* gates hold long-term patterns. [Read more](https://arxiv.org/pdf/1402.1128.pdf)
 
-| Method | Acc.  |  F1   |  mAP | 
+| Method | Acc. ↑|  F1 ↑ |  mAP ↑| 
 |:-------|:-----:|:-----:|:-----:|
 | GCN    | 73.68 | 85.77 | 88.13 |
-| GCNII  | 73.68 | 85.77 | 88.13 |  
-| GATv2  | 73.68 | 85.77 | 88.13 |
 | SAGE   | 73.68 | 85.77 | 88.13 |
+| GCNII  | 73.68 | 85.77 | 88.13 | 
+| GATv2  | 73.68 | 85.77 | 88.13 |
+| GINE   | 73.68 | 85.77 | 88.13 | 
 | GPS    | 73.68 | 85.77 | 88.13 |
-| GINE   | 73.68 | 85.77 | 88.13 |
-
-: Performance comparison
-<!-- ![](resources/results/boxplot.png){.lightbox .no-margin} -->
 
 
-:::
 
-
-::: column
-
-- **Explainability**
-    - **Pitch** → following TGCN 
-    - **Node** → following Ryota 
-    - **Node** → following Ryota
-
-
-::: {.columns style="display: flex; width: 40rem;"}
-::: {.column width="45%"}
-
-![](resources/results/pitch.png){.lightbox .no-margin}
-
-:::
-::: {.column width="45%"}
-
-![](resources/results/explainer.png){.lightbox .no-margin}
-
-:::
-:::

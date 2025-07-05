@@ -34,11 +34,12 @@ format:
 
 {{< include _problem.qmd >}}
 
-<!-- introduction, dataset, filtering  -->
-{{< include _dataset.qmd >}}
 
 <!-- graph converter  -->
 {{< include _conversion.qmd >}}
+
+<!-- introduction, dataset, filtering  -->
+{{< include _dataset.qmd >}}
 
 <!-- method  -->
 {{< include _method.qmd >}}
@@ -52,5 +53,5 @@ format:
 <!-- results  -->
 {{< include _results.qmd >}}
 
-<!-- outcomes, final thoughts, additional material  -->
-{{< include _future.qmd >}}
+<!-- _explainability, final thoughts,   -->
+{{< include _explainability.qmd >}}

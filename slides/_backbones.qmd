@@ -1,4 +1,4 @@
-## Backbones
+## Architecture: Backbones
 
 ::: columns
 ::: {.column .left-col}
@@ -28,13 +28,13 @@
 <span id="my-caption">
   <a href="https://arxiv.org/pdf/1609.02907" target="_blank">Kipf et al.</a> Graph Convolutional Network
 </span>
-![](resources/backbones/gatv2.png){.column style="margin: 0 auto;display: block;height:190px;" fig-alt="GATv2 backbone"}
+![](resources/backbones/gatv2.png){.column style="margin: 0 auto;display: block;height:180px;" fig-alt="GATv2 backbone"}
 <span id="my-caption">
   <a href="https://arxiv.org/pdf/1710.10903" target="_blank">Velicković et al.</a> attention mechanism
 </span>
-![](resources/backbones/gps.png){.column style="margin: 20px auto;display: block;height:210px;" fig-alt="GPS backbone"}
+![](resources/backbones/gps.png){.column style="margin: 20px auto;display: block;height:200px;" fig-alt="GPS backbone"}
 <span id="my-caption">
-  <a href="https://pytorch-geometric.readthedocs.io/en/latest/tutorial/graph_transformer.html" target="gps-layer-and-graphgps-model">PyG figure</a> of a GPS Layer 
+  <a href="https://arxiv.org/pdf/2205.12454" target="gps-layer-and-graphgps-model">Rampášek et al. </a> GPS Layer
 </span>
 
 ::: 
