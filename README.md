@@ -13,7 +13,7 @@ In this work, we benchmark several graph-neural-network (GNN) architectures to e
        alt="Chain"
        style="display:block;
               margin:0 auto;
-              width:50%;
+              width:75%;
               height:auto;">
 </div>
 
@@ -49,7 +49,7 @@ We fused event data with short bursts of tracking data, capturing not only *what
        alt="Chain"
        style="display:block;
               margin:0 auto;
-              width:50%;
+              width:75%;
               height:auto;">
 </div>
 
@@ -62,8 +62,7 @@ The architecture is fully modular: you can use different backbones to capture sp
        alt="Chain"
        style="display:block;
               margin:0 auto;
-              background: white;
-              width:50%;
+              width:75%;
               height:auto;">
 </div>
 
