@@ -8,13 +8,10 @@
 
 In this work, we benchmark several graph-neural-network (GNN) architectures to estimate the probability that a given action will culminate in a shot, thereby quantifying how dangerous each action is. Once the shot-likelihood model is trained, we shift our attention to explainability: identifying and interpreting the key factors that drive the network predictions.
 
-<div>
+<div align="center">
   <img src="./media/chain.gif"
        alt="Chain"
-       style="display:block;
-              margin:0 auto;
-              width:75%;
-              height:auto;">
+       style="width:75%;">
 </div>
 
 ### Dataset 
@@ -44,26 +41,20 @@ We fused event data with short bursts of tracking data, capturing not only *what
   * Positional statistics (location, velocity, etc.).
   * Player-specific statistics (market value, age, and other attributes scraped from *Transfermarkt* and *FBref*).
 
-<div>
+<div align="center">
   <img src="./media/pitch_graph.png"
-       alt="Chain"
-       style="display:block;
-              margin:0 auto;
-              width:75%;
-              height:auto;">
+       alt="Graph"
+       style="width:75%;">
 </div>
 
 ### Model architecture:
 
 The architecture is fully modular: you can use different backbones to capture spatial features, choose a temporal neck that works on graph or node embeddings, and fine-tune each component through its own configuration file.
 
-<div>
+<div align="center">
   <img src="./media/model_architecture.png"
-       alt="Chain"
-       style="display:block;
-              margin:0 auto;
-              width:75%;
-              height:auto;">
+       alt="Architecture"
+       style="width:75%;">
 </div>
 
 Available backbones:
