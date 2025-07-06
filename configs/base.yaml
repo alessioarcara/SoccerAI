@@ -4,7 +4,7 @@ seed: 42
 
 model: 
   use_temporal: True 
-  use_cell_state: True 
+  use_cell_state: False 
 
   backbone:
     n_layers: 2
@@ -19,7 +19,7 @@ model:
     rnn_dout: 512 
     glob_dout: 256 
     mode: "node"
-    raw_features_proj: True
+    raw_features_proj: False
     proj_dout: 128
 
   head:
@@ -29,10 +29,10 @@ model:
 
 trainer:
   bs: 32 
-  n_epochs: 50
+  n_epochs: 100
   lr: 1e-4
   wd: 1e-2
-  gamma: 0.9
+  gamma: 1.0
   eval_rate: 1
 
   early_stopping_callback:
@@ -44,7 +44,6 @@ trainer:
     history_key: "val_loss"
     minimize: True
   
-  
 data:
   include_goal_features: False 
   include_ball_features: True 
@@ -54,7 +53,7 @@ data:
   use_pca_on_roster_cols: False 
   mask_non_possession_shooting_stats: False 
   connection_mode: "bipartite"
-  val_ratio: 0.1
+  val_ratio: 0.2
 
 collector:
   n_frames: 24        
