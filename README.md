@@ -135,25 +135,26 @@ That’s it—you’re ready to run the code!
 
 ## Repository Structure
 ```bash
-configs/                         # Default settings and per-model configuration files
+configs/                         # Default and per-model configs
 scripts/ 
-├── preload_video_frames.py      # Pre-downloads all video frames needed for labelling to avoid repeated I/O
-├── train.py                     # train project's mode
-└── eval.py                      # 
+├── preload_video_frames.py      # Pre-downloads video frames needed for labelling to avoid repeated I/O
+├── train.py                     # Trains a selected model
+└── eval.py                      # Selects the best checkpoint of a model type and computes accuracy/F1/AP
 notebooks/
-└── data_collection.ipynb        # Used to manually filtering the unwanted chains and to build the Shot-Prediction dataset
+└── data_collection.ipynb        # Used for manually filtering the unwanted chains and to build the Shot-Prediction dataset
 soccerai/              
 └── data/              
-│   ├── converters.py            # Turns tabular inputs into sparse PyG graphs with a particular connectivity...
-│   ├── data.py 
+│   ├── converters.py            # Turns tabular data into sparse PyG graphs (bipartite / FC)
+│   ├── data.py                  # Loads World Cup 2022 data and exports Parquet.
 │   ├── dataset.py               # PyG-style dataset class; handles preprocessing, imputing, normalisation & splits
-│   ├── transformers.py            
-│   ├── visualize.py             # Includes a visual function to filter low-quality chains
+│   ├── transformers.py          # scikit-learn transformers for feature engineering & normalization
+│   ├── visualize.py             # Pitch frame visualizer (players, ball, side video)
+│   ├── temporal_dataset.py      # Torch dataset that groups all frames of each chain into a sequence and pads/collates them so multiple chains can be batched together.
 │   ├── enrichers/
-│   │   ├── player_velocity.py   # Adds direction & velocity from the last 60 tracking frames
+│   │   ├── player_velocity.py   # Adds direction & velocity from the last 60 tracking data frames
 │   │   └── rosters.py           # Scrapes FBref & Transfermarkt to build player-stat CSV for the World Cup
-│   └── label.py                 # Builds positive/negative chains and includes a visual function to filter low-quality chains
-└── models/ vedi slides          # Modular model architecture that let's you specify the backbone type, the neck type and the head and customize it
+│   └── label.py                 # Builds positive/negative chains and includes a visual function to filter low-quality ones
+└── models/                      # Modular architecture that let's you specify a configurable backbone, neck & head 
 │   ├── backbones.py 
 │   ├── diffpool.py
 │   ├── heads.py
@@ -162,11 +163,11 @@ soccerai/
 │   ├── necks.py
 │   ├── typings.py
 │   └── utils.py       
-└── training/                    # Modular training loop with callbacks, metrics, and augmentations
+└── training/                    # Modular training loop with callbacks, metrics & augmentations
     ├── callbacks.py
     ├── metrics.py
     ├── trainer.py
-    ├── trainer_config.py 
+    ├── trainer_config.py        # Schema for configs
     ├── transforms.py
     └── utils.py      
 ```
@@ -181,4 +182,4 @@ you can --reload to create the dataset and specyfing a
 
 ## Acknowledgments
 
-This project leverages the **transfermarkt-api** repository by *Felipe Almeida* (MIT License) — https://github.com/felipeall/transfermarkt-api — to scrape player profile data from Transfermarkt.
+This project leverages the **transfermarkt-api** repository by *Felipe Almeida* (MIT License) — https://github.com/felipeall/transfermarkt-api — to obtain player profile data from Transfermarkt.
