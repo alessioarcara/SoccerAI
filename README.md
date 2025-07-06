@@ -174,11 +174,30 @@ soccerai/
 
 ## Usage
 
-Two possibilities:
+### Training a model
 
-to train a model provided by us by specyfing the name in the main config "base.yaml" and then calling the train script in the "./scripts/train.py"
+1. **Set the model name**
+   
+   Open `config/base.yaml` and fill in the `run_name` field with your chosen model identifier.
 
-you can --reload to create the dataset and specyfing a 
+2. **Launch training**
+
+   ```bash
+   python ./scripts/train.py
+   ```
+
+   * Add `--reload` **only** if you have changed any dataset-related entries in the YAML file; this forces the dataset to be rebuilt so the changes take effect.
+
+---
+
+### Evaluating a trained model
+
+```bash
+python ./scripts/eval.py --name <model_name>
+```
+
+* The script automatically picks the best checkpoint from `./checkpoints/<model_name>/`.
+* If you want to evaluate a specific checkpoint, move or delete any other checkpoints in that directory before running the command.
 
 ## Acknowledgments
 
