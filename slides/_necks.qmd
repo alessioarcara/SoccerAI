@@ -4,17 +4,25 @@
 ::: {.column .left-col}
 
 - **Readout**
-  - A pooling operation is applied to the backbone's output to obtain a **graph embedding**.
+  - A pooling operation is applied to the backbone's output to obtain a **graph
+  embedding**.
 
 - **Fusion**
-  - A projection layer processes the global features to produce a **global embedding**.
-  - Graph and global embeddings are then concatenated into a **fused embedding**.   
-
+  - A projection layer takes the global features as input and produces a
+  **global embedding**.
+  - The graph and global embeddings are then concatenated into a **fused
+  embedding**.
 
 - **Two main modalities:**
-  - **Graph** → Following the T-GCN architecture, the output embeddings from the backbone are passed through first a readout layer, then a fusion module and lastly a **RNN cell** to compute the next hidden state. Final predictions are based only on these hidden states, clearly separating spatial feature extraction from temporal modeling.
-
-  - **Node** → Both the backbone and the **GCRN** process spatio-temporal information at each timestep. However, only the output of the backbone is passed through a readout layer, followed by a fusion module and a prediction head to produce the final output.
+  - **Graph** → Following the T-GCN architecture, the output embeddings from the
+  backbone are passed through first a readout layer, then a fusion module and
+  lastly a **RNN cell** to compute the next hidden state. Final predictions are
+  based only on these hidden states, clearly separating spatial feature
+  extraction from temporal modeling.
+  - **Node** → Both the backbone and the **GCRN** process spatio-temporal
+  information at each timestep. However, only the output of the backbone is
+  passed through a readout layer, followed by a fusion module and a prediction
+  head to produce the final output.
 
 - **RNN type**
     - **GRU/LSTM** for *graph* mode
@@ -32,8 +40,6 @@
 <span id="my-caption">
   <a href="https://www.mdpi.com/1424-8220/23/9/4506#sec3dot2-sensors-23-04506" target="_blank">Goka et al.</a> GCRN architecture
 </span>
-
-
 
 :::
 :::

@@ -1,8 +1,7 @@
 ##  Results
 
-- **Evaluation criterion** → We judged each sequence as correctly or incorrectly labeled based only on the prediction for its final frame.
+- **Evaluation criterion** → We judged each sequence as correctly or incorrectly labeled based only on the prediction for the final frame.
 - **Class imbalance** → The dataset is imbalanced because of the task’s nature,  therefore we considered applying a `pos_weight` term to the loss.
-
 
 | Method   | Acc. ↑|  F1 ↑ |  mAP ↑| 
 |:------   |:-----:|:-----:|:-----:|
