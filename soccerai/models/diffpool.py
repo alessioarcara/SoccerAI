@@ -65,14 +65,16 @@ class DenseSageGNN(torch.nn.Module):
 
 
 class HierarchicalGNN(nn.Module):
-    def __init__(self, din: int, cfg: ModelConfig, head: nn.Module):
+    def __init__(self, din: int, glob_din: int, cfg: ModelConfig, head: nn.Module):
         super().__init__()
 
         assert isinstance(cfg.backbone, DiffPoolConfig)
         pooling_ratio = cfg.backbone.pooling_ratio
         base_dhid = cfg.backbone.dhid
         factor = cfg.backbone.dhid_multiplier
+        self.readout = cfg.neck.readout
 
+        # Backbone
         dhid_levels = [max(1, int(base_dhid * (factor**i))) for i in range(3)]
         dhid1, dhid2, dhid3 = dhid_levels
 
@@ -86,10 +88,14 @@ class HierarchicalGNN(nn.Module):
 
         self.gnn3_embed = DenseSageGNN(3 * dhid2, dhid3, dhid3, lin=False)
 
+        # Neck
+        self.global_proj = pyg_nn.Linear(glob_din, cfg.neck.glob_dout)
+
         self.rnn = RNN_CELLS[cfg.neck.rnn_type](
             input_size=cfg.neck.rnn_din, hidden_size=cfg.neck.rnn_dout
         )
 
+        # Head
         self.head = head
 
     def forward(
@@ -119,17 +125,25 @@ class HierarchicalGNN(nn.Module):
 
         x = self.gnn3_embed(x, adj)
 
-        x = x.mean(dim=1)
+        if self.readout == "mean":
+            graph_emb = x.mean(dim=1)
+        elif self.readout == "sum":
+            graph_emb = x.sum(dim=1)
+        else:  # "max"
+            graph_emb, _ = x.max(dim=1)
+
+        glob_emb = F.relu(self.global_proj(u), inplace=True)
+        fused = torch.cat([graph_emb, glob_emb], dim=-1)
 
         if isinstance(self.rnn, nn.LSTMCell):
-            state: Optional[Tuple[OptTensor, OptTensor]] = (prev_h, prev_c)
-            if prev_h is None or prev_c is None:
-                state = None
-
-            h, c = self.rnn(x, state)
-
-        elif isinstance(self.rnn, nn.GRUCell):
-            h = self.rnn(x, prev_h)
+            state: Optional[Tuple[OptTensor, OptTensor]] = (
+                prev_h,
+                prev_c,
+            )
+            h, c = self.rnn(fused, state if prev_h is not None else None)
+        else:  # GRUCell
+            h = self.rnn(fused, prev_h)
             c = None
 
-        return self.head(h), h, c
+        logits = self.head(h)
+        return logits, h, c

@@ -1,16 +1,18 @@
 project_name: "soccerai"
-run_name: "gine"
+run_name: "diffpool"
 seed: 42
 
 model: 
   use_temporal: True 
-  use_cell_state: False 
+  use_cell_state: True 
+  use_hierarchical: False
 
   backbone:
     n_layers: 2
     dout: 256
     drop: 0.0
     norm: "none"
+    residual_sum_mode: "none"
 
   neck:
     rnn_type: 'gru'
@@ -28,15 +30,15 @@ model:
     drop: 0.5
 
 trainer:
-  bs: 32 
+  bs: 256 
   n_epochs: 100
   lr: 1e-4
-  wd: 1e-2
-  gamma: 1.0
+  wd: 1e-4
+  gamma: 0.1
   eval_rate: 1
 
   early_stopping_callback:
-    patience: 5
+    patience: 10
     history_key: "val_loss"
     minimize: True
 
@@ -45,23 +47,23 @@ trainer:
     minimize: True
   
 data:
-  include_goal_features: False 
-  include_ball_features: True 
-  use_macro_roles: True 
-  use_augmentations: False 
-  use_regression_imputing: False
-  use_pca_on_roster_cols: False 
+  include_goal_features: True 
+  include_ball_features: True
+  use_macro_roles: False
+  use_augmentations: True 
+  use_regression_imputing: False 
+  use_pca_on_roster_cols: True 
   mask_non_possession_shooting_stats: False 
   connection_mode: "bipartite"
   val_ratio: 0.2
 
 collector:
-  n_frames: 24        
+  n_frames: 12        
 
 pitch_grid:
   nrows: 6
   ncols: 4
-  figheight: 12
+  figheight: 12 
 
 metrics:
   thr: 0.5
