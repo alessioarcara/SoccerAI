@@ -63,7 +63,7 @@ collector:
 pitch_grid:
   nrows: 6
   ncols: 4
-  figheight: 12
+  figheight: 12 
 
 metrics:
   thr: 0.5

@@ -78,7 +78,12 @@ def build_model(cfg: Config, train_ds: WorldCup2022Dataset) -> nn.Module:
 
     if cfg.model.use_temporal:
         if cfg.model.use_hierarchical:
-            return HierarchicalGNN(train_ds.num_node_features, cfg.model, head)
+            return HierarchicalGNN(
+                train_ds.num_node_features,
+                train_ds.num_global_features,
+                cfg.model,
+                head,
+            )
 
     backbone = BackboneRegistry.create(
         cfg.model.backbone.type, train_ds.num_node_features, cfg.model.backbone

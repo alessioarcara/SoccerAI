@@ -1,17 +1,30 @@
 model:
-  use_hierarchical: True
-
-  backbone: 
-    type: "diffpool"
-    residual_sum_mode: "none"
-    dhid: 128
-    pooling_ratio: 0.25
-    dhid_multiplier: 2
+  use_temporal: true
+  use_cell_state: true
+  use_hierarchical: true
 
   neck:
+    mode: "graph"
+    readout: "sum"
+    rnn_din: 256
+    rnn_dout: 256
     rnn_type: "lstm"
-    rnn_din: 1536 
-    rnn_dout: 1536 
+    glob_dout: 64
+
+  backbone:
+    dhid: 64
+    dout: 256
+    drop: 0
+    norm: "none"
+    type: "diffpool"
+    n_layers: 2
+    pooling_ratio: 0.25
+    dhid_multiplier: 1
+    residual_sum_mode: "none"
 
   head:
-    din: 1536
+    din: 256
+    drop: 0.2
+    n_layers: 3
+
+
