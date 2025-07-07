@@ -1,5 +1,4 @@
 import argparse
-import os
 from pathlib import Path
 
 import torch
@@ -28,7 +27,7 @@ CONFIG_DIR = Path("configs")
 
 torch.set_float32_matmul_precision("high")
 
-NUM_WORKERS = (os.cpu_count() or 1) - 1
+NUM_WORKERS = 4
 
 
 def main(args):
