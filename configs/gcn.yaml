@@ -4,3 +4,8 @@ model:
     n_layers: 2
     residual_sum_mode: "none"
     plus: True
+    norm: "batch"
+    drop: 0.0
+  neck:
+    rnn_type: 'lstm'
+    readout: "sum"

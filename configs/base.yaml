@@ -1,10 +1,10 @@
 project_name: "soccerai"
-run_name: "diffpool"
+run_name: "gcn2"
 seed: 42
 
 model: 
   use_temporal: True 
-  use_cell_state: True 
+  use_cell_state: True
   use_hierarchical: False
 
   backbone:
@@ -48,12 +48,12 @@ trainer:
   
 data:
   include_goal_features: True 
-  include_ball_features: True
-  use_macro_roles: False
+  include_ball_features: True 
+  use_macro_roles: False 
   use_augmentations: True 
-  use_regression_imputing: False 
+  use_regression_imputing: False
   use_pca_on_roster_cols: True 
-  mask_non_possession_shooting_stats: False 
+  mask_non_possession_shooting_stats: False
   connection_mode: "bipartite"
   val_ratio: 0.2
 
