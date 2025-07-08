@@ -1,6 +1,8 @@
 ---
 output-file: index
-title: SoccerAI
+title: |
+  <img src="../resources/logo_soccerai.svg" alt="Logo SoccerAI" style="width:300px; margin:0;">
+
 subtitle: Big Data Analytics And Text Mining
 footer: Big Data Analytics And Text Mining
 
@@ -32,6 +34,7 @@ format:
     code-line-numbers: false
 ---
 
+
 {{< include _problem.qmd >}}
 
 
@@ -55,3 +58,5 @@ format:
 
 <!-- _explainability, final thoughts,   -->
 {{< include _explainability.qmd >}}
+
+

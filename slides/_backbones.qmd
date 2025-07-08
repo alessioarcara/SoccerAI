@@ -9,11 +9,11 @@
 
 
 - **Advanced**: 
-    - **GCNII** → deep GCN with initial residual + **identity mapping** to enable deep networks and extracting deep features. [🔗](https://arxiv.org/pdf/2007.02133.pdf)
+    - **GCNII** → deep GCN with **initial residual** + **identity mapping** to enable deep networks and extract deep features. [🔗](https://arxiv.org/pdf/2007.02133.pdf)
 
     - **GATv2** → dynamic attention assigns importance weights to edges enabling adaptive **weighted** message passing to scale down less important nodes and emphasize more important ones. [🔗](https://arxiv.org/pdf/2105.14491.pdf)
 
-    - **GINE** → it matches the power of the **1-WL** which can distinguish most graph classes by implementing the aggregation step as an injective function approximating it with an MLP, making it an exceptionally expressive GNN. [GIN 🔗](https://arxiv.org/pdf/1810.00826.pdf) - [GINE 🔗](https://arxiv.org/pdf/1905.12265.pdf)
+    - **GINE** → it matches the power of the **1-WL** which can distinguish most graph classes by implementing the aggregation step as an injective function approximating it with a MLP, making it an exceptionally expressive GNN. [GIN 🔗](https://arxiv.org/pdf/1810.00826.pdf) - [GINE 🔗](https://arxiv.org/pdf/1905.12265.pdf)
 
 - **Other approches**: 
   - **GPS** → a hybrid architecture that combines MPNN with graph transformers, reaching expressiveness beyond **1-WL** and achieving **SOTA** results. [🔗](https://arxiv.org/pdf/2205.12454.pdf)
