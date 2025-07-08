@@ -80,7 +80,7 @@ Available heads:
 - **Graph Classification**
 
 End-to-End alternatives:
-- **Diffpool**
+- **Diffpool** [\[paper\]](https://arxiv.org/pdf/1806.08804)
 
 > [!TIP]
 > Consult the configuration files for additional, specific parameters available for each backbone, neck, and head.
