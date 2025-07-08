@@ -1,5 +1,5 @@
 project_name: "soccerai"
-run_name: "gcn2"
+run_name: "gcn"
 seed: 42
 
 model: 
