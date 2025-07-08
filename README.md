@@ -1,8 +1,8 @@
-<div align="center" style="width:500px; height:200px; overflow:hidden;">
+<div align="center">
   <img src="./media/soccerai_horizontal_logo.svg"
        alt="SoccerAI"
-       style="width:1000px; height:auto; object-fit:cover; object-position:center;">
-</div>
+       style="width:75%; margin-bottom:1rem;"
+       >
 
 [Alessio Arcara](https://github.com/alessioarcara), [Francesco Baiocchi](https://github.com/francescobaio), [Leonardo Petrilli](https://github.com/leonardopetrilli)
 </div>
