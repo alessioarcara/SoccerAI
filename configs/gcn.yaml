@@ -1,11 +1,20 @@
 model: 
+
   backbone:
     type: "gcn"
-    n_layers: 2
-    residual_sum_mode: "none"
-    plus: True
-    norm: "batch"
-    drop: 0.0
+    n_layers: 4
+    plus: False
+    norm: "none"
+    drop: 0.2
+
   neck:
     rnn_type: 'lstm'
     readout: "sum"
+    mode: "graph"
+
+trainer:
+  bs: 64
+  lr: 1e-5
+
+data:
+  use_augmentations: False 
