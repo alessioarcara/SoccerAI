@@ -1,15 +1,6 @@
 model:
-  use_temporal: true
-  use_cell_state: true
-  use_hierarchical: true
-
-  neck:
-    mode: "graph"
-    readout: "sum"
-    rnn_din: 256
-    rnn_dout: 256
-    rnn_type: "lstm"
-    glob_dout: 64
+  use_cell_state: True
+  use_hierarchical: True
 
   backbone:
     dhid: 64
@@ -20,7 +11,15 @@ model:
     n_layers: 2
     pooling_ratio: 0.25
     dhid_multiplier: 1
-    residual_sum_mode: "none"
+    residual_sum_mode: "none" 
+    
+  neck:
+    mode: "graph"
+    readout: "sum"
+    rnn_din: 256
+    rnn_dout: 256
+    rnn_type: "lstm"
+    glob_dout: 64
 
   head:
     din: 256
