@@ -1,0 +1,58 @@
+[
+  {
+    "objectID": "index.html#problem",
+    "href": "index.html#problem",
+    "title": "",
+    "section": "Problem",
+    "text": "Problem\n\n\n\nContext ⚽\n\nOver recent years, sports data analysis has gone from basic post game stats to using detailed time and space information to shape tactics, evaluate players and guide decisions during matches.\n\nOur Task: Shot Prediction\n\nObjective: Identify soccer actions that are likely to lead to a shot and quantify each player’s contribution to those actions.\n\n\n\n\nTeams can now see exactly where players move and interact throughout a match, helping them spot key opportunities and adjust tactics on the fly.\n\n\n\n\n\n\n\n\n\n\nOur Method:\n\nDevelop a Graph Neural Network that, as an oracle, ingests the current game state (capturing evolving spatio-temporal patterns) and outputs the probability of a shot.\nOn top of that we want to understand the network’s probability outputs to uncover the patterns and features that drive its predictions."
+  },
+  {
+    "objectID": "index.html#machine-learning-on-graphs",
+    "href": "index.html#machine-learning-on-graphs",
+    "title": "",
+    "section": "Machine Learning on Graphs",
+    "text": "Machine Learning on Graphs\n\n\n\nWhy graphs?\n\nGraphs effectively represent spatial interactions between players, capturing and modelling the complexity of soccer.\n\nNode features embed informations about each player.\n\nEdge connections define how relationships between players are represented and influence message flow in the network.\n\nWe model the problem as a complete weighted bipartite graph where each player is connected to every opponent.\nInspired by Google DeepMind TacticAI and Goka et al.\n\nWhy bipartite connection?\n\nThis type of connection can reflect both direct proximity to opponents and the local defensive/offensive support structure.\nWhen extended to a two-hop view, this construction captures:\n\n1-hop edges → how many opposing players are nearby.\n2-hop edges → how many of a player’s own teammates are near those opponents.\n\n\nWhy weight the edges?\n\nNearby interactions matter most, so we apply an exponential decay to pairwise distances, down weighting distant players and highlighting close ones.\nThus, edge weights are computed as \\(w_{ij} = e^{-d_{ij}}\\), where \\(d_{ij} = \\lVert {p}_i - {p}_j\\rVert_2\\) and \\({p}_i, {p}_j\\) denote the 2D field coordinates of players \\(i\\) and \\(j\\).\n\n\n\n\n\n\n No weights\n\n With weights"
+  },
+  {
+    "objectID": "index.html#dataset",
+    "href": "index.html#dataset",
+    "title": "",
+    "section": "Dataset",
+    "text": "Dataset\n\n\nData Sources & Statistics\n\nDataset: FIFA World Cup 2022 (PFF.com)\n\n64 matches total:\n\n48 group-stage → training set\n16 knockout → validation set\n\nTracking Data: camera-based, frame-by-frame positions (30 fps)\n\nEvent Data: manually labeled actions (passes, shots, etc.)\n\nAdditional Player Statistics: player profiles and performance scraped from TransferMarkt & FBRef\n\nFocus: Event Data\n\nWe enrich each event computing every player’s speed and direction with the 60 preceding tracking frames.\nIn total we analyze 19 048 frames, organised into chains that capture individual football actions.\n\nChain Statistics:\n\n3 716 total chains\n\n2 546 Negative chains\n\n1 170 Positive chains\n\n\n\n\n\n\n\n\n\nFeature Engineering & Normalization\n\nSpatial features\n\nx, y → player position scaled by pitch dimensions ([0,1])\nvx,vy → velocity components\nsinθ, cosθ → player’s direction ([-1,1])\nball_dist → distance between player and ball ([0,1])\nball_direction_sim → cosine similarity between player and ball direction ([-1,1])\ndz → distance between player and ball’s z-axis coordinate ([0,1])\n\nCategorical (one-hot):\n\nis_ball_carrier → the player has possession of the ball\nis_possession_team → the player’s team has the ball\nplayer_Role → player’s tactical role\n\nGlobal features:\n\npossesionEventType: type of possession action (one-hot)\nframeTime: timestamp of the current frame (z-score)\nduration: length of the possession event in seconds (z-score)\n\nPlayer Stats\n\nPlayer Metadata → height, weight, market value (z-score)\nPlayer Shooting stats → goals, shots, etc. (z-score)"
+  },
+  {
+    "objectID": "index.html#method",
+    "href": "index.html#method",
+    "title": "",
+    "section": "Method",
+    "text": "Method\n\n\n\nWorkflow: From Frames to Chains\n\nFirst attempt: We treated each frame as an independent sample and trained the network on these single frames, as they constituted a very large pool of training examples.\nProblem: After several unsuccessful experiments, we realised that ignoring temporal dynamics severely limited the model’s performance on this task.\nSolution: We encoded football actions as sequences of graphs of arbitrary length during which one team maintains possession of the ball.\nAugmentation: We achieved a 4× increase in the dataset by mirroring each sequence across the pitch, giving us a much larger pool of training examples.\n\nTemporal approach (Many-to-Many)\n\nInput: A sequence of graphs \\(\\mathbf{G_1, G_2, \\dots, G_T}\\), one for each timestep \\(\\mathbf{t} \\in \\{1, \\dots, T\\}\\).\nArchitecture:\n\nA backbone to extract spatial informations from the input graph\nA neck to readout and for temporal processing\nAn head (MLP with dropout) for prediction\n\nOutput: For every timestep \\(\\mathbf{t}\\), a probability \\(\\mathbf{{p}_t}\\) that the current possession state will result in a shot."
+  },
+  {
+    "objectID": "index.html#architecture-backbones",
+    "href": "index.html#architecture-backbones",
+    "title": "",
+    "section": "Architecture: Backbones",
+    "text": "Architecture: Backbones\n\n\n\nBaselines\n\nGCN → first spectral GNN: applies renormalized Laplacian convolution to fuse each node with local neighbors’ features. 🔗\nGraphSAGE → first message-passing GNN: samples neighbors, aggregates their features with a more general aggregation function compared to GCN (mean/LSTM/pool). 🔗\n\nAdvanced:\n\nGCNII → deep GCN with initial residual + identity mapping to enable deep networks and extract deep features. 🔗\nGATv2 → dynamic attention assigns importance weights to edges enabling adaptive weighted message passing to scale down less important nodes and emphasize more important ones. 🔗\nGINE → it matches the power of the 1-WL which can distinguish most graph classes by implementing the aggregation step as an injective function approximating it with a MLP, making it an exceptionally expressive GNN. GIN 🔗 - GINE 🔗\n\nOther approches:\n\nGPS → a hybrid architecture that combines MPNN with graph transformers, reaching expressiveness beyond 1-WL and achieving SOTA results. 🔗\nGNN+ → every message-passing is encapsulated in a wrapper with normalization, dropout, skip connection and a FFN, producing an architecture matching the performance of Graph Transformer. 🔗\nDiffpool → uses differentiable hierarchical pooling to build coarser representations of graphs before the final readout. 🔗\n\n\n\n  Kipf et al. Graph Convolutional Network    Velicković et al. GAT attention    Rampášek et al. GPS Layer"
+  },
+  {
+    "objectID": "index.html#architecture-necks",
+    "href": "index.html#architecture-necks",
+    "title": "",
+    "section": "Architecture: Necks",
+    "text": "Architecture: Necks\n\n\n\nReadout\n\nA pooling operation is applied to the backbone’s output to obtain a graph embedding.\n\nFusion\n\nA projection layer takes the global features as input and produces a global embedding.\nThe graph and global embeddings are then concatenated into a fused embedding.\n\nTwo main modalities:\n\nGraph → Following the T-GCN architecture, the output embeddings from the backbone are passed through first a readout layer, then a fusion module and lastly a RNN cell to compute the next hidden state. Final predictions are based only on these hidden states, clearly separating spatial feature extraction from temporal modeling.\nNode → Both the backbone and the GCRN process spatio-temporal information at each timestep. However, only the output of the backbone is passed through a readout layer, followed by a fusion module and a prediction head to produce the final output.\n\nRNN type\n\nGRU/LSTM for graph mode\nGConvGRU/GConvLSTM for node mode\n\n\n\n  Zhao et al. T-GCN architecture    Goka et al. GCRN architecture"
+  },
+  {
+    "objectID": "index.html#results",
+    "href": "index.html#results",
+    "title": "",
+    "section": "Results",
+    "text": "Results\n\nEvaluation criterion → We judged each sequence as correctly or incorrectly labeled based only on the prediction for the final frame.\nNeck → a common finding is that T-GCN gives the most solid results as a neck; with this established, we then turned our attention to analyzing the backbones.\n\n\n\n\nMethod\nAcc. ↑\nF1 ↑\nAP ↑\n\n\n\n\nGCN\n74.48\n61.95\n72.36\n\n\nSAGE\n74.18\n59.53\n74.03\n\n\nGCNII\n73.29\n60.18\n73.96\n\n\nGATv2\n74.18\n58.37\n74.24\n\n\nGINE+\n75.96\n64.32\n75.36\n\n\nGPS\n—–\n—–\n—–\n\n\nDiffPool\n72.11\n52.04\n72.90"
+  },
+  {
+    "objectID": "index.html#explainability",
+    "href": "index.html#explainability",
+    "title": "",
+    "section": "Explainability",
+    "text": "Explainability\n\n\n\nGNN Explainer\n\nGNNExplainer identifies a compact subgraph and a small subset of node features critical to the GNN’s prediction. 🔗\nBy visualizing the learned masks below, we can highlight the key player interactions and feature contributions that drive each prediction."
+  }
+]

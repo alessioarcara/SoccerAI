@@ -1,0 +1,46 @@
+## Problem
+
+::: columns
+::: {.column style="margin-top:0px;" .left-col}
+- **Context** ⚽
+  - Over recent years, sports data analysis has gone from basic post game stats to using detailed time and space information to shape tactics, evaluate players and guide decisions during matches.
+
+- **Our Task: Shot Prediction** 
+  - **Objective**: Identify soccer actions that are likely to lead to a shot and quantify each player’s contribution to those actions.
+
+::: notes
+- Teams can now see exactly where players move and interact throughout a match, helping them spot key opportunities and adjust tactics on the fly.
+:::
+:::
+
+::: column
+<video src="resources/problem/video.mp4" autoplay loop muted class="rounded-media"></video>
+
+</video>
+:::
+:::
+
+::: columns
+::: {.column style="margin-top:60px;" .left-col}
+- **Our Method**: 
+  - Develop a **Graph Neural Network** that, as an oracle, ingests the current game state (capturing evolving spatio-temporal patterns) and outputs the probability of a **shot**. 
+  - On top of that we want to understand the network’s probability outputs to uncover the patterns and features that drive its predictions.
+:::
+
+::: column
+![](resources/problem/chain.gif){.lightbox}
+:::
+:::
+
+
+<!-- <script src="site_libs/revealjs/dist/reveal.js"></script>
+<script>
+  Reveal.initialize();
+  Reveal.on('slidechanged', (event) => {
+    const video = event.currentSlide.querySelector('video');
+    if (video && video.currentTime !== 0) {
+      video.currentTime = 0;
+      video.play();
+    }
+  });
+</script> -->

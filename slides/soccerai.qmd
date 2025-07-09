@@ -1,0 +1,35 @@
+---
+output-file: index
+title: |
+  <img src="resources/logo_soccerai.svg" alt="Logo SoccerAI" style="width:300px; margin:0;">
+pagetitle: "SoccerAI"
+subtitle: Big Data Analytics And Text Mining
+footer: Big Data Analytics And Text Mining
+---
+
+
+{{< include _problem.qmd >}}
+
+
+<!-- graph converter  -->
+{{< include _conversion.qmd >}}
+
+<!-- introduction, dataset, filtering  -->
+{{< include _dataset.qmd >}}
+
+<!-- method  -->
+{{< include _method.qmd >}}
+
+<!-- backbones  -->
+{{< include _backbones.qmd >}}
+
+<!-- necks  -->
+{{< include _necks.qmd >}}
+
+<!-- results  -->
+{{< include _results.qmd >}}
+
+<!-- _explainability, final thoughts,   -->
+{{< include _explainability.qmd >}}
+
+

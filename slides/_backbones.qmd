@@ -1,0 +1,42 @@
+## Architecture: Backbones
+
+::: columns
+::: {.column .left-col}
+
+- **Baselines**
+  - **GCN** → first **spectral** GNN: applies renormalized Laplacian convolution to fuse each node with local neighbors’ features. [🔗](https://arxiv.org/pdf/1609.02907.pdf) 
+  - **GraphSAGE** → first **message-passing** GNN: samples neighbors, aggregates their features with a more general aggregation function compared to GCN *(mean/LSTM/pool)*. [🔗](https://arxiv.org/pdf/1706.02216.pdf)
+
+
+- **Advanced**: 
+    - **GCNII** → deep GCN with **initial residual** + **identity mapping** to enable deep networks and extract deep features. [🔗](https://arxiv.org/pdf/2007.02133.pdf)
+
+    - **GATv2** → dynamic attention assigns importance weights to edges enabling adaptive **weighted** message passing to scale down less important nodes and emphasize more important ones. [🔗](https://arxiv.org/pdf/2105.14491.pdf)
+
+    - **GINE** → it matches the power of the **1-WL** which can distinguish most graph classes by implementing the aggregation step as an injective function approximating it with a MLP, making it an exceptionally expressive GNN. [GIN 🔗](https://arxiv.org/pdf/1810.00826.pdf) - [GINE 🔗](https://arxiv.org/pdf/1905.12265.pdf)
+
+- **Other approches**: 
+  - **GPS** → a hybrid architecture that combines MPNN with graph transformers, reaching expressiveness beyond **1-WL** and achieving **SOTA** results. [🔗](https://arxiv.org/pdf/2205.12454.pdf)
+  - **GNN+** → every message-passing is encapsulated in a **wrapper** with normalization, dropout, skip connection and a FFN, producing an architecture matching the performance of Graph Transformer. [🔗](https://arxiv.org/pdf/2502.09263)
+  - **Diffpool** → uses **differentiable hierarchical pooling** to build coarser representations of graphs before the final readout. [🔗](https://arxiv.org/pdf/1806.08804)
+
+
+:::
+
+:::{.column .img-col}
+
+![](resources/backbones/gcn.png){.column style="margin: 0 auto;display: block;height:160px;" fig-alt="GCN backbone"}
+<span id="my-caption">
+  <a href="https://arxiv.org/pdf/1609.02907" target="_blank">Kipf et al.</a> Graph Convolutional Network
+</span>
+![](resources/backbones/gatv2.png){.column style="margin: 0 auto;display: block;height:180px;" fig-alt="GATv2 backbone"}
+<span id="my-caption">
+  <a href="https://arxiv.org/pdf/1710.10903" target="_blank">Velicković et al.</a> GAT attention
+</span>
+![](resources/backbones/gps.png){.column style="margin: 20px auto;display: block;height:200px;" fig-alt="GPS backbone"}
+<span id="my-caption">
+  <a href="https://arxiv.org/pdf/2205.12454" target="gps-layer-and-graphgps-model">Rampášek et al.</a> GPS Layer
+</span>
+
+::: 
+:::

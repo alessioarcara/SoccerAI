@@ -1,0 +1,49 @@
+## Machine Learning on Graphs
+
+
+::: columns
+
+:::{.column .left-col}
+
+- **Why graphs?**
+    - Graphs effectively represent spatial interactions between players, capturing and modelling the complexity of soccer. 
+        - **Node features** embed informations about each player.  
+        - **Edge connections** define how relationships between players are represented and influence message flow in the network. 
+    
+    - We model the problem as a **complete weighted bipartite graph** where each player is connected to every opponent. 
+    - Inspired by Google DeepMind [TacticAI](https://rdcu.be/eult8) and [Goka et al.](https://www.mdpi.com/1424-8220/23/9/4506)
+
+
+- **Why bipartite connection?** 
+
+    - This type of connection can reflect both direct **proximity** to opponents and the local defensive/offensive support structure.
+
+    - When extended to a two-hop view, this construction captures:
+        - **1-hop edges** → how many **opposing** players are nearby.
+        - **2-hop edges** → how many of a player's own **teammates** are near those opponents.
+
+- **Why weight the edges?**
+    - Nearby interactions matter most, so we apply an **exponential decay** to pairwise **distances**, down weighting distant players and highlighting close ones.
+    - Thus, edge weights are computed as $w_{ij} = e^{-d_{ij}}$, where $d_{ij} = \lVert {p}_i - {p}_j\rVert_2$ and ${p}_i, {p}_j$ denote the 2D field coordinates of players $i$ and $j$.
+:::
+
+::: column
+
+![](resources/conversion/pitch_graph.png){fig-alt="Complete bipartite graph"}
+
+::: {.columns style="display: flex;"}
+::: {.column width="45%"}
+![](resources/conversion/no_weighted_graph.png){fig-alt="Complete bipartite graph" height=200px}
+<span id="my-caption">No weights</span>
+
+:::
+::: {.column width="45%"}
+![](resources/conversion/weighted_graph.png){fig-alt="Complete weighted bipartite graph"}
+<span id="my-caption">With weights</span>
+:::
+:::
+
+:::
+
+
+:::

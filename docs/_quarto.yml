@@ -1,8 +1,0 @@
-project:
-  type: website       
-  output-dir: ../docs      
-format:
-  revealjs:
-    theme: [default, custom.scss]   
-resources:
-  - custom.scss             

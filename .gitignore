@@ -180,5 +180,5 @@ checkpoints/
 
 .DS_Store
 *.tar.gz
-/.quarto/
-/_site/
+.quarto/
+_site/
