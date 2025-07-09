@@ -1,6 +1,6 @@
 ---
 output-file: index
-title: .|
+title: |
   <img src="../resources/logo_soccerai.svg" alt="Logo SoccerAI" style="width:300px; margin:0;">
 
 subtitle: Big Data Analytics And Text Mining
