@@ -46,7 +46,7 @@
     "href": "index.html#results",
     "title": "",
     "section": "Results",
-    "text": "Results\n\nEvaluation criterion → We judged each sequence as correctly or incorrectly labeled based only on the prediction for the final frame.\nNeck → a common finding is that T-GCN gives the most solid results as a neck; with this established, we then turned our attention to analyzing the backbones.\n\n\n\n\nMethod\nAcc. ↑\nF1 ↑\nAP ↑\n\n\n\n\nGCN\n74.48\n61.95\n72.36\n\n\nSAGE\n74.18\n59.53\n74.03\n\n\nGCNII\n73.29\n60.18\n73.96\n\n\nGATv2\n74.18\n58.37\n74.24\n\n\nGINE+\n75.96\n64.32\n75.36\n\n\nGPS\n—–\n—–\n—–\n\n\nDiffPool\n72.11\n52.04\n72.90"
+    "text": "Results\n\nEvaluation criterion → We judged each sequence as correctly or incorrectly labeled based only on the prediction for the final frame.\nNeck → a common finding is that T-GCN gives the most solid results as a neck; with this established, we then turned our attention to analyzing the backbones.\n\n\n\n\nMethod\nAcc. ↑\nF1 ↑\nAP ↑\n\n\n\n\nGCN\n74.48\n61.95\n72.36\n\n\nSAGE\n74.18\n59.53\n74.03\n\n\nGCNII\n73.29\n60.18\n73.96\n\n\nGATv2\n74.18\n58.37\n74.24\n\n\nGINE+\n75.96\n64.32\n75.36\n\n\nGPS\n69.73\n49.00\n69.74\n\n\nDiffPool\n72.11\n52.04\n72.90\n\n\n\n\nNote:\n\nGPS, despite being a Graph Transformer and having performed an extensive parameter search, did not yield the results we were expecting."
   },
   {
     "objectID": "index.html#explainability",

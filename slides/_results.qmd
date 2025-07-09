@@ -11,7 +11,9 @@
 | GCNII     | 73.29     | 60.18     | 73.96     | 
 | GATv2     | 74.18     | 58.37     | 74.24     | 
 | **GINE+** | **75.96** | **64.32** | **75.36** | 
-| GPS       | -----     | -----     | -----     |
+| GPS       | 69.73     | 49.00     | 69.74     |
 | DiffPool  | 72.11     | 52.04     | 72.90     |
 
 
+- **Note**:
+    - GPS, despite being a Graph Transformer and having performed an extensive parameter search, did not yield the results we were expecting.
