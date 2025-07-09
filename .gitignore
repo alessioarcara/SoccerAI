@@ -177,5 +177,8 @@ wandb
 *.pt
 checkpoints/
 *_files/
+
+.DS_Store
 *.tar.gz
-index.html
+/.quarto/
+/_site/

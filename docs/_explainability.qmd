@@ -17,7 +17,7 @@
 
 ::: {.columns style="display: flex;margin-top: 0;"}
 ::: {.column style="width: 45%; margin-top: 20px;"}
-![](resources/explainability/explainer.png){.lightbox .no-margin}
+![](resources/explainability/explainer_pitch.png){.lightbox .no-margin}
 :::
 ::: {.column width="45%"}
 ![](resources/explainability/boxplot.png){.lightbox .no-margin style="aspect-ratio: auto; height: 350px;"}
