@@ -11,7 +11,6 @@ __pycache__/
 .Python
 build/
 develop-eggs/
-dist/
 downloads/
 eggs/
 .eggs/
@@ -176,9 +175,7 @@ data/frames
 wandb
 *.pt
 checkpoints/
-*_files/
 
 .DS_Store
 *.tar.gz
 .quarto/
-_site/

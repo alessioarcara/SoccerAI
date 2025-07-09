@@ -33,7 +33,7 @@
 :::
 
 
-<!-- <script src="site_libs/revealjs/dist/reveal.js"></script>
+<script src="site_libs/revealjs/dist/reveal.js"></script>
 <script>
   Reveal.initialize();
   Reveal.on('slidechanged', (event) => {
@@ -43,4 +43,4 @@
       video.play();
     }
   });
-</script> -->
+</script>

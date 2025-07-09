@@ -29,9 +29,7 @@ format:
     highlight-style: github
     code-overflow: scroll
     code-line-numbers: false
-
+    
 resources:
-  - .nojekyll  
   - custom.scss
-  - resources/**         
-  - site_libs/**         
+  - resources/**                
