@@ -15,6 +15,10 @@ In this work, we benchmark several graph-neural-network (GNN) architectures to e
   <img src="./media/chain.gif"
        alt="Chain"
        style="width:75%;">
+  <br>
+  <figcaption style="margin-top:0.5rem; font-style:italic; color:#555;">
+    Figure&nbsp;1&nbsp;&ndash;&nbsp;An&nbsp;action&nbsp;culminating&nbsp;in&nbsp;a&nbsp;shot
+  </figcaption>
 </div>
 
 ### Dataset 
@@ -48,6 +52,10 @@ We fused event data with short bursts of tracking data, capturing not only *what
   <img src="./media/pitch_graph.png"
        alt="Graph"
        style="width:75%;">
+  <br>
+  <figcaption style="margin-top:0.5rem; font-style:italic; color:#555;">
+    Figure&nbsp;2&nbsp;&ndash;&nbsp;Player&nbsp;positions&nbsp;(left)&nbsp;mapped&nbsp;to&nbsp;a&nbsp;bipartite&nbsp;interaction&nbsp;graph&nbsp;(right)
+  </figcaption>
 </div>
 
 ### Model architecture:
@@ -58,6 +66,10 @@ The architecture is fully modular: you can use different backbones to capture sp
   <img src="./media/model_architecture.png"
        alt="Architecture"
         style="width:75%;">
+  <br>
+  <figcaption style="margin-top:0.5rem; font-style:italic; color:#555;">
+    Figure&nbsp;3&nbsp;&ndash;&nbsp;Model&nbsp;architecture
+  </figcaption>
 </div>
 
 Available backbones:
