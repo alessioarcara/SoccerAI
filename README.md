@@ -3,8 +3,12 @@
        alt="SoccerAI"
        style="width:75%; margin-bottom:1rem;"
        >
+  <br>
 
-[Alessio Arcara](https://github.com/alessioarcara), [Francesco Baiocchi](https://github.com/francescobaio), [Leonardo Petrilli](https://github.com/leonardopetrilli)
+  [Alessio Arcara](https://github.com/alessioarcara), [Francesco Baiocchi](https://github.com/francescobaio), [Leonardo Petrilli](https://github.com/leonardopetrilli)
+  <div>
+  <a href="https://api.wandb.ai/links/soccerai/ysbi1bjl"><img src="./media/wandb_badge.svg" alt="W&B Report" style="height:28px; margin-top:0.75rem;"></a>
+  </div>
 </div>
 
 ## Overview
