@@ -32,7 +32,7 @@
       vertical-align: middle;
     }
   </style>
-  <link rel="stylesheet" href="site_libs/revealjs/dist/theme/quarto-9726f03fe3d462bb7664f3976523fbda.css">
+  <link rel="stylesheet" href="site_libs/revealjs/dist/theme/quarto-28851dd47e8f33bd9951d2d85c5b6419.css">
   <link href="site_libs/revealjs/plugin/quarto-line-highlight/line-highlight.css" rel="stylesheet">
   <link href="site_libs/revealjs/plugin/reveal-menu/menu.css" rel="stylesheet">
   <link href="site_libs/revealjs/plugin/reveal-menu/quarto-menu.css" rel="stylesheet">
@@ -432,12 +432,22 @@
 <li><strong>Neck</strong> → a common finding is that <strong>T-GCN</strong> gives the most solid results as a neck; with this established, we then turned our attention to analyzing the backbones.</li>
 </ul>
 <table class="caption-top">
+<colgroup>
+<col style="width: 15%">
+<col style="width: 15%">
+<col style="width: 15%">
+<col style="width: 15%">
+<col style="width: 15%">
+<col style="width: 23%">
+</colgroup>
 <thead>
 <tr class="header">
 <th style="text-align: left;">Method</th>
-<th style="text-align: center;">Acc. ↑</th>
-<th style="text-align: center;">F1 ↑</th>
-<th style="text-align: center;">AP ↑</th>
+<th style="text-align: center;">Acc. ↑</th>
+<th style="text-align: center;">F1 pos ↑</th>
+<th style="text-align: center;">F1 neg ↑</th>
+<th style="text-align: center;">AP ↑</th>
+<th style="text-align: center;">Training time²</th>
 </tr>
 </thead>
 <tbody>
@@ -445,52 +455,64 @@
 <td style="text-align: left;">GCN</td>
 <td style="text-align: center;">74.48</td>
 <td style="text-align: center;">61.95</td>
+<td style="text-align: center;">80.80</td>
 <td style="text-align: center;">72.36</td>
+<td style="text-align: center;"> 5 m 13 s</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">SAGE</td>
 <td style="text-align: center;">74.18</td>
 <td style="text-align: center;">59.53</td>
+<td style="text-align: center;">81.05</td>
 <td style="text-align: center;">74.03</td>
+<td style="text-align: center;"> 6 m 18 s</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">GCNII</td>
 <td style="text-align: center;">73.29</td>
 <td style="text-align: center;">60.18</td>
+<td style="text-align: center;">79.91</td>
 <td style="text-align: center;">73.96</td>
+<td style="text-align: center;">13 m 30 s</td>
 </tr>
 <tr class="even">
 <td style="text-align: left;">GATv2</td>
 <td style="text-align: center;">74.18</td>
 <td style="text-align: center;">58.37</td>
+<td style="text-align: center;">81.29</td>
 <td style="text-align: center;">74.24</td>
+<td style="text-align: center;"> 8 m 50 s</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;"><strong>GINE+</strong></td>
 <td style="text-align: center;"><strong>75.96</strong></td>
 <td style="text-align: center;"><strong>64.32</strong></td>
+<td style="text-align: center;"><strong>81.88</strong></td>
 <td style="text-align: center;"><strong>75.36</strong></td>
+<td style="text-align: center;">18 m 41 s</td>
 </tr>
 <tr class="even">
-<td style="text-align: left;">GPS</td>
+<td style="text-align: left;">GPS¹</td>
 <td style="text-align: center;">69.73</td>
 <td style="text-align: center;">49.00</td>
+<td style="text-align: center;">78.48</td>
 <td style="text-align: center;">69.74</td>
+<td style="text-align: center;"> 6 m 57 s</td>
 </tr>
 <tr class="odd">
 <td style="text-align: left;">DiffPool</td>
 <td style="text-align: center;">72.11</td>
 <td style="text-align: center;">52.04</td>
+<td style="text-align: center;">80.33</td>
 <td style="text-align: center;">72.90</td>
+<td style="text-align: center;">25 m 19 s</td>
 </tr>
 </tbody>
 </table>
-<ul>
-<li><strong>Note</strong>:
-<ul>
-<li>GPS, despite being a Graph Transformer and having performed an extensive parameter search, did not yield the results we were expecting.</li>
-</ul></li>
-</ul>
+<div style="font-size:60%;">
+<p>¹ GPS, despite being a Graph Transformer and having performed an extensive parameter search, did not yield the results we were expecting.</p>
+<p>² The reported training times are not perfectly comparable, as some models were trained concurrently, potentially slowing them down due to shared computational resources.</p>
+</div>
 <!-- _explainability, final thoughts,   -->
 </section>
 <section id="explainability" class="slide level2">
@@ -520,7 +542,7 @@
   <div class="quarto-auto-generated-content" style="display: none;">
 <p><img src="resources/logo_unibo.png" class="slide-logo"></p>
 <div class="footer footer-default">
-<p>Big Data Analytics And Text Mining</p>
+<p><span style="font-size:1.5em;"> <strong>Supervised by:</strong> Prof.&nbsp;Gianluca Moro,<br> Dr.&nbsp;Giacomo Frisoni &amp; Dr.&nbsp;Lorenzo Molfetta </span></p>
 </div>
 </div></div>
 

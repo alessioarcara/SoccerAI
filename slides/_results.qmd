@@ -4,16 +4,23 @@
 - **Neck** → a common finding is that **T-GCN** gives the most solid results as a neck; with this established, we then turned our attention to analyzing the backbones.
 
 
-| Method    | Acc. ↑    |  F1 ↑     |  AP ↑     | 
-|:--------  |:---------:|:---------:|:---------:|
-| GCN       | 74.48     | 61.95     | 72.36     |
-| SAGE      | 74.18     | 59.53     | 74.03     |
-| GCNII     | 73.29     | 60.18     | 73.96     | 
-| GATv2     | 74.18     | 58.37     | 74.24     | 
-| **GINE+** | **75.96** | **64.32** | **75.36** | 
-| GPS       | 69.73     | 49.00     | 69.74     |
-| DiffPool  | 72.11     | 52.04     | 72.90     |
+| Method    |   Acc. ↑  |  F1 pos ↑ |  F1 neg ↑ |    AP ↑   | Training time² |
+| :-------- | :-------: | :-------: | :-------: | :-------: | :------------: |
+| GCN       |   74.48   |   61.95   |   80.80   |   72.36   |     5 m 13 s   |
+| SAGE      |   74.18   |   59.53   |   81.05   |   74.03   |     6 m 18 s   |
+| GCNII     |   73.29   |   60.18   |   79.91   |   73.96   |    13 m 30 s   |
+| GATv2     |   74.18   |   58.37   |   81.29   |   74.24   |     8 m 50 s   |
+| **GINE+** | **75.96** | **64.32** | **81.88** | **75.36** |    18 m 41 s   |
+| GPS¹      |   69.73   |   49.00   |   78.48   |   69.74   |     6 m 57 s   |
+| DiffPool  |   72.11   |   52.04   |   80.33   |   72.90   |    25 m 19 s   |
 
 
-- **Note**:
-    - GPS, despite being a Graph Transformer and having performed an extensive parameter search, did not yield the results we were expecting.
+::: {style="font-size:60%;"}
+
+¹ GPS, despite being a Graph Transformer and having performed an extensive parameter search, did not yield the results we were expecting.
+
+² The reported training times are not perfectly comparable, as some models were trained concurrently, potentially slowing them down due to shared computational resources.
+
+:::
+
+
