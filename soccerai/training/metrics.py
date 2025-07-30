@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Generic, List, Optional, Sequence, Tuple, TypeVar, Union
+from typing import Generic, List, Literal, Optional, Sequence, Tuple, TypeVar, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -48,9 +48,15 @@ class Metric(ABC):
 
 
 class BinaryConfusionMatrix(Metric):
-    def __init__(self, cfg: MetricsConfig, ignore_value: Optional[int] = None):
+    def __init__(
+        self,
+        cfg: MetricsConfig,
+        ignore_value: Optional[int] = None,
+        mode: Literal["pos", "both"] = "pos",
+    ):
         self.cfg = cfg
         self.ignore_value = ignore_value
+        self.mode = mode
         self.reset()
 
     def update(
@@ -67,6 +73,12 @@ class BinaryConfusionMatrix(Metric):
         for t, p in zip(true_labels_flat, preds_labels_flat):
             self.cm[t, p] += 1
 
+    def _get_fbeta(self, tp: float, fp: float, fn: float) -> float:
+        beta2 = self.cfg.fbeta**2
+        denom = (1 + beta2) * tp + beta2 * fn + fp
+        fbeta = ((1 + beta2) * tp / denom) if denom > 0 else 0.0
+        return fbeta
+
     def compute(self) -> List[Tuple[str, float]]:
         tn, fp = self.cm[0, 0].item(), self.cm[0, 1].item()
         fn, tp = self.cm[1, 0].item(), self.cm[1, 1].item()
@@ -78,11 +90,14 @@ class BinaryConfusionMatrix(Metric):
         accuracy = (tp + tn) / total if total > 0 else 0.0
         results.append(("accuracy", accuracy))
 
-        # Fbeta-score
-        beta2 = self.cfg.fbeta**2
-        denom = (1 + beta2) * tp + beta2 * fn + fp
-        fbeta = ((1 + beta2) * tp / denom) if denom > 0 else 0.0
-        results.append((f"f{self.cfg.fbeta}_score", fbeta))
+        # Pos F-beta
+        fbeta_pos = self._get_fbeta(tp=tp, fp=fp, fn=fn)
+        results.append((f"f{self.cfg.fbeta}_pos_score", fbeta_pos))
+
+        if self.mode == "both":
+            # Neg F-beta
+            fbeta_neg = self._get_fbeta(tp=tn, fp=fn, fn=fp)
+            results.append((f"f{self.cfg.fbeta}_neg_score", fbeta_neg))
 
         return results
 
@@ -106,20 +121,6 @@ class BinaryConfusionMatrix(Metric):
         ax.tick_params(axis="both", which="major", labelsize=12)
         plt.tight_layout()
         return [("confusion_matrix", fig)]
-
-    def print(self) -> None:
-        cm_np = self.cm.cpu().numpy()
-        tn, fp = cm_np[0, 0], cm_np[0, 1]
-        fn, tp = cm_np[1, 0], cm_np[1, 1]
-
-        print("\n" + "Confusion Matrix".center(35))
-        print("\n" + " " * 14 + "Predicted")
-        print(" " * 15 + "0     1")
-        print(" " * 11 + "┌─────┬─────┐")
-        print("  True   0 │ {:>3} │ {:>3} │".format(tn, fp))
-        print("  Label    ├─────┼─────┤")
-        print("         1 │ {:>3} │ {:>3} │".format(fn, tp))
-        print(" " * 11 + "└─────┴─────┘\n")
 
 
 class BinaryPrecisionRecallCurve(Metric):

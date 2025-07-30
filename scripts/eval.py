@@ -56,7 +56,7 @@ def evaluate(
 ):
     model.eval()
 
-    cm = BinaryConfusionMatrix(MetricsConfig(thr=threshold, fbeta=fbeta))
+    cm = BinaryConfusionMatrix(MetricsConfig(thr=threshold, fbeta=fbeta), mode="both")
     ap = BinaryPrecisionRecallCurve()
 
     cm.reset()
