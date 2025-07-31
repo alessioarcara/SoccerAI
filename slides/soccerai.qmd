@@ -3,17 +3,12 @@ output-file: index
 title: |
   <img src="resources/logo_soccerai.svg" alt="Logo SoccerAI" style="width:300px; margin:0;">
 pagetitle: "SoccerAI"
-subtitle: Big Data Analytics And Text Mining
-footer: |
-  <span style="font-size:1.5em;">
-    <strong>Supervised by:</strong> Prof. Gianluca Moro,<br>
-    Dr. Giacomo Frisoni &amp; Dr. Lorenzo Molfetta
-  </span>
+subtitle: <span style="font-size:0.85em;">Supervised by Prof. Gianluca Moro, <br> Dr. Giacomo Frisoni and Dr. Lorenzo Molfetta</span>
+footer: Big Data Analytics And Text Mining
 ---
 
 
 {{< include _problem.qmd >}}
-
 
 <!-- graph converter  -->
 {{< include _conversion.qmd >}}
