@@ -143,3 +143,19 @@ def test_overlapping_positive_chains_are_disambiguated():
     assert chain_frames[0] == [0, 1]  # shared frames stay with the first shot
     assert chain_frames[1] == [3]  # chain 1 keeps only the frames after the first shot
     assert 2 not in chain_frames  # negative chain containing a shot is dropped
+
+
+def test_processed_file_names_depend_on_config():
+    from soccerai.data.converters import create_graph_converter
+
+    a = make_dataset_stub(make_data_cfg())
+    b = make_dataset_stub(make_data_cfg(include_ball_features=False))
+    for ds in (a, b):
+        ds.converter = create_graph_converter("bipartite")
+    assert a.processed_file_names != b.processed_file_names
+    assert a.processed_file_names == make_dataset_stub(
+        make_data_cfg()
+    ).__class__.processed_file_names.fget(a)
+    assert len(a.processed_file_names) == 3 and a.processed_file_names[2].endswith(
+        ".json"
+    )

@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 from typing import List, Sequence, Union
@@ -45,7 +46,9 @@ def home_attacks_right_expr() -> pl.Expr:
 
 
 class WorldCup2022Dataset(InMemoryDataset):
-    FEATURE_NAMES_FILE = "feature_names.json"
+    # Bump when the preprocessing code changes in a way that must invalidate
+    # previously processed files.
+    PROCESSING_VERSION = 2
     # rosters were scraped in spring 2025, the tournament was played in Nov 2022
     AGE_SCRAPE_TO_TOURNAMENT_YEARS = 2.5
 
@@ -67,7 +70,7 @@ class WorldCup2022Dataset(InMemoryDataset):
         data_path_idx = 0 if self.split == "train" else 1
         self.load(self.processed_paths[data_path_idx])
 
-        fp = Path(self.processed_dir) / self.FEATURE_NAMES_FILE
+        fp = Path(self.processed_paths[2])
         self.feature_names: Sequence[str] = json.loads(fp.read_text(encoding="utf-8"))
 
         self.transform = (
@@ -86,8 +89,28 @@ class WorldCup2022Dataset(InMemoryDataset):
         return ["dataset.parquet"]
 
     @property
+    def config_tag(self) -> str:
+        """
+        Short hash of everything that determines the processed files, so that
+        a change of data configuration (or of the preprocessing code) can never
+        silently reuse stale caches.
+        """
+        payload = json.dumps(
+            {
+                "data": self.cfg.model_dump(),
+                "converter": type(self.converter).__name__,
+                "random_state": self.random_state,
+                "version": self.PROCESSING_VERSION,
+            },
+            sort_keys=True,
+            default=str,
+        )
+        return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:10]
+
+    @property
     def processed_file_names(self) -> List[str]:
-        return ["train_data.pt", "val_data.pt"]
+        tag = self.config_tag
+        return [f"train_{tag}.pt", f"val_{tag}.pt", f"feature_names_{tag}.json"]
 
     @property
     def num_global_features(self) -> int:
@@ -541,5 +564,5 @@ class WorldCup2022Dataset(InMemoryDataset):
         self.save(train_data_list, self.processed_paths[0])
         self.save(val_data_list, self.processed_paths[1])
 
-        fp = Path(self.processed_dir) / self.FEATURE_NAMES_FILE
+        fp = Path(self.processed_paths[2])
         fp.write_text(json.dumps(feature_names, ensure_ascii=False, indent=4))

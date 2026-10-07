@@ -176,3 +176,5 @@ data/frames
 wandb
 *.pt
 checkpoints/
+# processed datasets are derived from the raw parquet and the data config
+soccerai/data/resources/processed/
