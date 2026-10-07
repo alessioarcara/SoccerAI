@@ -263,10 +263,13 @@ def extract_chain(batch: Discrete_Signal, chain_idx: int) -> List[Data]:
         x = snapshot.x[node_mask]
         jersey_numbers = snapshot.jersey_numbers[node_mask]
 
-        start_edge_idx = 22 * 11 * chain_idx
-        end_edge_idx = 22 * 11 * (chain_idx + 1)
-        edge_index = snapshot.edge_index[:, start_edge_idx:end_edge_idx]
-        edge_attr = snapshot.edge_attr[start_edge_idx:end_edge_idx]
+        # nodes of graph `chain_idx` are contiguous: map their ids back to 0..N-1
+        node_offset = int(node_mask.nonzero().min())
+        edge_mask = node_mask[snapshot.edge_index[0]]
+        edge_index = snapshot.edge_index[:, edge_mask] - node_offset
+        edge_attr = (
+            snapshot.edge_attr[edge_mask] if snapshot.edge_attr is not None else None
+        )
 
         u = snapshot.u[chain_idx].unsqueeze(0)
         y = snapshot.y[chain_idx]
