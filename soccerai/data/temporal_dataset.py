@@ -49,10 +49,13 @@ class TemporalChainsDataset(Dataset):
         tmp_transform = dataset.transform
         dataset.transform = None
 
-        buckets = defaultdict(list)
-        for data in dataset:
-            chain_id = int(data.chain_id.item())
-            buckets[chain_id].append(data)
+        try:
+            buckets = defaultdict(list)
+            for data in dataset:
+                chain_id = int(data.chain_id.item())
+                buckets[chain_id].append(data)
+        finally:
+            dataset.transform = tmp_transform
 
         chains = []
         for chain_id, frames in buckets.items():

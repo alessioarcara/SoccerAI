@@ -158,6 +158,29 @@ class BallLocationTransformer(BaseTransformer):
         return np.column_stack((ball_dist_normed, dz, ball_direction_sim, dvx, dvy))
 
 
+class ClippedScaler(BaseTransformer):
+    """
+    Clip every column to [-max_abs, max_abs] and divide by max_abs.
+
+    Velocities are scaled this way instead of with a fitted power transform:
+    the mapping is odd (f(-v) = -f(v)), so mirroring the pitch during
+    augmentation (vx -> -vx) keeps the features exactly on-distribution.
+    Column names are preserved.
+    """
+
+    def __init__(self, max_abs: float = 1.0):
+        self.max_abs = max_abs
+
+    def get_feature_names_out(self, input_features=None) -> np.ndarray:
+        return np.asarray(self.feature_names_in_, dtype=object)
+
+    def transform(self, X) -> np.ndarray:
+        data = np.asarray(
+            X.to_numpy() if isinstance(X, pl.DataFrame) else X, dtype=float
+        )
+        return np.clip(data, -self.max_abs, self.max_abs) / self.max_abs
+
+
 class NonPossessionShootingStatsMask(BaseTransformer):
     """
     Zero the shooting statistics of players that are not in possession.

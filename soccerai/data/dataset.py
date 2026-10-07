@@ -11,7 +11,7 @@ from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.experimental import enable_iterative_imputer  # noqa: F401
 from sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, PowerTransformer, QuantileTransformer
+from sklearn.preprocessing import OneHotEncoder, QuantileTransformer
 from torch_geometric.data import InMemoryDataset
 from torch_geometric.transforms import Compose
 
@@ -19,6 +19,7 @@ from soccerai.data.config import SHOOTING_STATS, X_GOAL_LEFT, X_GOAL_RIGHT, Y_GO
 from soccerai.data.converters import GraphConverter
 from soccerai.data.transformers import (
     BallLocationTransformer,
+    ClippedScaler,
     GoalLocationTransformer,
     NonPossessionShootingStatsMask,
     PlayerLocationTransformer,
@@ -46,6 +47,9 @@ def home_attacks_right_expr() -> pl.Expr:
 
 
 class WorldCup2022Dataset(InMemoryDataset):
+    # velocities are clipped at these speeds (m/s) and scaled to [-1, 1]
+    MAX_PLAYER_SPEED = 12.0
+    MAX_BALL_RELATIVE_SPEED = 35.0
     # Bump when the preprocessing code changes in a way that must invalidate
     # previously processed files.
     PROCESSING_VERSION = 2
@@ -448,7 +452,7 @@ class WorldCup2022Dataset(InMemoryDataset):
                 (
                     "speed_norm",
                     ColumnTransformer(
-                        [("pow", PowerTransformer(), ["vx", "vy"])],
+                        [("clip", ClippedScaler(self.MAX_PLAYER_SPEED), ["vx", "vy"])],
                         remainder="passthrough",
                         verbose_feature_names_out=False,
                     ),
@@ -480,7 +484,13 @@ class WorldCup2022Dataset(InMemoryDataset):
                     (
                         "diff_speed_norm",
                         ColumnTransformer(
-                            [("pow", PowerTransformer(), ["dvx", "dvy"])],
+                            [
+                                (
+                                    "clip",
+                                    ClippedScaler(self.MAX_BALL_RELATIVE_SPEED),
+                                    ["dvx", "dvy"],
+                                )
+                            ],
                             remainder="passthrough",
                             verbose_feature_names_out=False,
                         ),
