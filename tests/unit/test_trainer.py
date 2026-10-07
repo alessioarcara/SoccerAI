@@ -109,3 +109,34 @@ def test_auxiliary_loss_is_added_to_the_training_loss():
     trainer.cfg.trainer.aux_loss_weight = 0.5
     loss, _ = trainer._compute_signal_loss_and_last_pred(batch)
     assert loss.item() == pytest.approx(base_loss.item() + 0.5 * 2.0, abs=1e-5)
+
+
+def test_scheduler_peaks_at_the_configured_max_lr():
+    trainer, _ = _make_trainer(n_epochs=5, val_batch_size=3)
+    trainer.cfg.trainer.max_lr = None
+    assert trainer.scheduler.get_last_lr()[0] <= trainer.cfg.trainer.lr
+    lrs = []
+    for _ in range(5):  # one batch per epoch
+        trainer.optim.step()
+        trainer.scheduler.step()
+        lrs.append(trainer.scheduler.get_last_lr()[0])
+    assert max(lrs) <= trainer.cfg.trainer.lr * 1.0001
+
+
+def test_pos_weight_balances_the_loss():
+    from soccerai.training.trainer import compute_pos_weight
+
+    assert compute_pos_weight([1, 0, 0, 0]) == 3.0
+
+    torch.manual_seed(0)
+    trainer_a, model_a = _make_trainer(n_epochs=1, val_batch_size=3)
+    torch.manual_seed(0)
+    trainer_b, model_b = _make_trainer(n_epochs=1, val_batch_size=3)
+    model_b.load_state_dict(model_a.state_dict())
+    trainer_b.pos_weight = torch.tensor(3.0)
+    trainer_b.criterion = torch.nn.BCEWithLogitsLoss(pos_weight=trainer_b.pos_weight)
+
+    batch = next(iter(trainer_a.train_loader))  # chain 0 positive, chain 1 negative
+    loss_a, _ = trainer_a._compute_signal_loss_and_last_pred(batch)
+    loss_b, _ = trainer_b._compute_signal_loss_and_last_pred(batch)
+    assert loss_b.item() > loss_a.item()

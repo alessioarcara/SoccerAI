@@ -127,6 +127,11 @@ class ModelSavingCallbackConfig(ModelMonitorCallbackConfig):
 class TrainerConfig(StrictModel):
     bs: int
     lr: float
+    # peak learning rate of the one-cycle schedule (None = lr)
+    max_lr: Optional[float] = None
+    # weight of the positive class in the BCE loss: a number, "auto" for
+    # #negatives / #positives of the training chains, or None
+    pos_weight: Optional[Union[float, Literal["auto"]]] = None
     wd: float
     n_epochs: int
     eval_rate: int

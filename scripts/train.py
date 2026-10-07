@@ -20,7 +20,7 @@ from soccerai.training.metrics import (
     ChainCollector,
     FrameCollector,
 )
-from soccerai.training.trainer import TemporalTrainer, Trainer
+from soccerai.training.trainer import TemporalTrainer, Trainer, compute_pos_weight
 from soccerai.training.trainer_config import build_config
 from soccerai.training.utils import build_dummy_inputs, fix_random
 
@@ -65,6 +65,12 @@ def main(args):
     )
 
     callbacks = build_callbacks(cfg)
+
+    pos_weight = cfg.trainer.pos_weight
+    if pos_weight == "auto":
+        pos_weight = compute_pos_weight(train_ds._data.y.view(-1).numpy())
+        logger.info("Positive class weight (auto): {:.3f}", pos_weight)
+
     if cfg.model.use_temporal:
         train_ds = TemporalChainsDataset.from_worldcup_dataset(
             train_ds, cfg.data.max_chain_len
@@ -99,6 +105,7 @@ def main(args):
                 ChainCollector(0, cfg, train_ds.feature_names),
             ],
             callbacks=callbacks,
+            pos_weight=pos_weight,
         )
 
     else:
@@ -131,6 +138,7 @@ def main(args):
                 FrameCollector(0, cfg, train_ds.feature_names),
             ],
             callbacks=callbacks,
+            pos_weight=pos_weight,
         )
 
     print(

@@ -1,22 +1,9 @@
 model:
-  backbone: 
+  backbone:
     type: "gine"
-    n_layers: 5
-    dout: 64
-    norm: "batch"
-    drop: 0.1
+    n_layers: 3
     train_eps: True
-    plus: True 
+    plus: True
 
   neck:
-    mode: "graph"
-    rnn_type: "lstm"
-    glob_dout: 64
-    rnn_din: 384
-    rnn_dout: 384
-    readout: "sum"
-
-  head:
-    n_layers: 3
-    drop: 0.2
-    din: 384
+    rnn_din: 224             # 3 layers x 64 (jumping knowledge) + glob_dout

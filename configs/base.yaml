@@ -2,37 +2,42 @@ project_name: "soccerai"
 run_name: "gcn"
 seed: 42
 
-model: 
-  use_temporal: True 
+# Defaults are sized for ~2k training chains: small widths, normalisation in
+# every block, dropout, decoupled weight decay and an explicit one-cycle
+# schedule. Per-model files override what they need.
+model:
+  use_temporal: True
   use_hierarchical: False
 
   backbone:
     n_layers: 2
-    dout: 256
-    drop: 0.0
-    norm: "none"
+    dout: 64
+    drop: 0.1
+    norm: "graph"
 
   neck:
-    rnn_type: 'gru'
+    mode: "graph"            # recurrent cell over the fused graph vector
+    rnn_type: "gru"
     readout: "mean"
-    rnn_din: 512
-    rnn_dout: 512 
-    glob_dout: 256 
-    mode: "node"
+    rnn_din: 96              # backbone.dout + glob_dout (graph mode)
+    rnn_dout: 128
+    glob_dout: 32
     raw_features_proj: False
-    proj_dout: 128
+    proj_dout: 32
 
   head:
     n_layers: 2
-    din: 512
-    drop: 0.5
+    din: 128                 # rnn_dout (graph mode) or rnn_dout + glob_dout (node mode)
+    drop: 0.3
 
 trainer:
-  bs: 256 
-  n_epochs: 100
-  lr: 1e-4
-  wd: 1e-4
-  gamma: 0.1
+  bs: 64
+  n_epochs: 60
+  lr: 1e-3
+  max_lr: null             # peak of the one-cycle schedule (null = lr)
+  wd: 1e-2
+  gamma: 0.1               # per-frame loss discount towards the end of the chain
+  pos_weight: "auto"       # balance the BCE with #neg / #pos of the training chains
   eval_rate: 1
 
   early_stopping_callback:
@@ -43,33 +48,33 @@ trainer:
   model_saving_callback:
     history_key: "val_loss"
     minimize: True
-  
+
 data:
-  include_goal_features: True 
-  include_ball_features: True 
-  use_macro_roles: False 
-  use_augmentations: True 
+  include_goal_features: True
+  include_ball_features: True
+  use_macro_roles: False
+  use_augmentations: True
   use_regression_imputing: False
-  use_pca_on_roster_cols: True 
+  use_pca_on_roster_cols: True
   mask_non_possession_shooting_stats: False
-  connection_mode: "bipartite"
-  edge_length_scale: 10.0
-  normalize_attack_direction: True
-  max_chain_len: 12
-  use_roster_features: False
+  use_roster_features: False   # per-player constants let the model identify players
   use_match_clock: False
-  val_ratio: 0.25
+  connection_mode: "bipartite"
+  edge_length_scale: 10.0      # metres; edge weight = exp(-distance / scale)
+  normalize_attack_direction: True
+  max_chain_len: 12            # last frames of every chain
+  val_ratio: 0.25              # 48 group-stage games / 16 knock-out games
   split_mode: "chronological"
   drop_games_without_negatives: True
-  goal_window_for_positives: 25.0
+  goal_window_for_positives: 25.0   # same end-of-chain criterion as the negatives
 
 collector:
-  n_frames: 12        
+  n_frames: 12
 
 pitch_grid:
   nrows: 6
   ncols: 4
-  figheight: 12 
+  figheight: 12
 
 metrics:
   thr: 0.5

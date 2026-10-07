@@ -22,6 +22,14 @@ from soccerai.training.trainer_config import Config
 BatchEvalResult = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
 
+def compute_pos_weight(labels: np.ndarray) -> float:
+    """#negatives / #positives, the BCE weight that balances the classes."""
+    labels = np.asarray(labels).reshape(-1)
+    n_pos = float((labels == 1).sum())
+    n_neg = float((labels == 0).sum())
+    return n_neg / max(n_pos, 1.0)
+
+
 class BaseTrainer(ABC):
     def __init__(
         self,
@@ -33,6 +41,7 @@ class BaseTrainer(ABC):
         val_loader: Optional[TorchDataLoader] = None,
         metrics: Optional[List[Metric]] = None,
         callbacks: Optional[List[Callback]] = None,
+        pos_weight: Optional[float] = None,
     ) -> None:
         self.cfg = cfg
         self.device = device
@@ -42,15 +51,21 @@ class BaseTrainer(ABC):
         self.feature_names = feature_names or []
         self.metrics = metrics or []
         self.callbacks = callbacks or []
-        self.criterion = nn.BCEWithLogitsLoss()
+        self.pos_weight = (
+            None
+            if pos_weight is None
+            else torch.tensor(float(pos_weight), device=self.device)
+        )
+        self.criterion = nn.BCEWithLogitsLoss(pos_weight=self.pos_weight)
         self.optim = AdamW(
             self.model.parameters(),
             lr=self.cfg.trainer.lr,
             weight_decay=self.cfg.trainer.wd,
         )
+        # warm-up to `max_lr` over the first 10% of the steps, then anneal
         self.scheduler = OneCycleLR(
             self.optim,
-            max_lr=cfg.trainer.lr * 10,
+            max_lr=cfg.trainer.max_lr or cfg.trainer.lr,
             total_steps=cfg.trainer.n_epochs * len(self.train_loader),
             pct_start=0.1,
         )
@@ -296,7 +311,7 @@ class TemporalTrainer(BaseTrainer):
             )
 
             loss_per_timestep[t] = F.binary_cross_entropy_with_logits(
-                out, snapshot.y, reduction="none"
+                out, snapshot.y, reduction="none", pos_weight=self.pos_weight
             ).squeeze(1)
             pred_per_timestep[t] = out.squeeze(-1)
             aux_loss = aux_loss + self._aux_loss()
