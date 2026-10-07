@@ -53,6 +53,8 @@ data:
   use_pca_on_roster_cols: True 
   mask_non_possession_shooting_stats: False
   connection_mode: "bipartite"
+  edge_length_scale: 10.0
+  normalize_attack_direction: True
   val_ratio: 0.2
 
 collector:

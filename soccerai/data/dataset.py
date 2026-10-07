@@ -1,7 +1,7 @@
 import hashlib
 import json
 from pathlib import Path
-from typing import List, Sequence, Union
+from typing import Callable, List, Sequence, Union
 
 import polars as pl
 from loguru import logger
@@ -78,15 +78,18 @@ class WorldCup2022Dataset(InMemoryDataset):
         self.feature_names: Sequence[str] = json.loads(fp.read_text(encoding="utf-8"))
 
         self.transform = (
-            Compose(
-                [
-                    RandomHorizontalFlip(self.feature_names, 0.5),
-                    RandomVerticalFlip(self.feature_names, 0.5),
-                ]
-            )
+            Compose(self._build_augmentations())
             if split == "train" and self.cfg.use_augmentations
             else None
         )
+
+    def _build_augmentations(self) -> List[Callable]:
+        augmentations: List[Callable] = [RandomVerticalFlip(self.feature_names, 0.5)]
+        # mirroring the pitch along its length would reverse the attacking
+        # direction, which is fixed once the frames are normalised
+        if not self.cfg.normalize_attack_direction:
+            augmentations.append(RandomHorizontalFlip(self.feature_names, 0.5))
+        return augmentations
 
     @property
     def raw_file_names(self) -> List[str]:
@@ -287,18 +290,33 @@ class WorldCup2022Dataset(InMemoryDataset):
             .drop("possession_team_tmp")
         ).drop_nulls(["is_possession_team"])
 
-        # Each player attacks the goal on the right iff their team does so in
-        # the current period (teams swap ends after every period).
-        is_goal_right = (pl.col("team") == "home") == home_attacks_right_expr()
+        # The goal that matters for a shot is the one attacked by the team in
+        # possession: every node gets that goal (defenders included). A team
+        # attacks to the right iff it is the home team and the home team
+        # attacks to the right in the current period, or vice versa.
+        frame_key = ["gameEventId", "possessionEventId"]
+        attacks_right = (pl.col("team") == "home") == home_attacks_right_expr()
+        possession_attacks_right = (
+            pl.when(pl.col("is_possession_team") == 1)
+            .then(attacks_right)
+            .max()
+            .over(frame_key)
+            .alias("possession_attacks_right")
+        )
+        df = df.with_columns(possession_attacks_right)
+
+        if self.cfg.normalize_attack_direction:
+            df = self._normalize_attack_direction(df)
+
         df = df.with_columns(
             [
-                pl.when(is_goal_right)
+                pl.when(pl.col("possession_attacks_right"))
                 .then(X_GOAL_RIGHT)
                 .otherwise(X_GOAL_LEFT)
                 .alias("x_goal"),
                 pl.lit(Y_GOAL).alias("y_goal"),
             ]
-        )
+        ).drop("possession_attacks_right")
 
         df = df.drop(
             [
@@ -315,6 +333,28 @@ class WorldCup2022Dataset(InMemoryDataset):
         )
 
         return df
+
+    @staticmethod
+    def _normalize_attack_direction(df: pl.DataFrame) -> pl.DataFrame:
+        """
+        Mirror the frames in which the possession team attacks to the left so
+        that the attack always goes towards x = pitch length: positions,
+        headings and velocities of players and ball are flipped together.
+        """
+        flip = ~pl.col("possession_attacks_right")
+        mirrored = [
+            pl.when(flip).then(X_GOAL_RIGHT - pl.col(c)).otherwise(pl.col(c)).alias(c)
+            for c in ["x", "x_ball"]
+            if c in df.columns
+        ]
+        negated = [
+            pl.when(flip).then(-pl.col(c)).otherwise(pl.col(c)).alias(c)
+            for c in ["cos", "vx", "cos_ball", "vx_ball"]
+            if c in df.columns
+        ]
+        return df.with_columns(mirrored + negated).with_columns(
+            pl.lit(True).alias("possession_attacks_right")
+        )
 
     @staticmethod
     def _disambiguate_chains(df: pl.DataFrame) -> pl.DataFrame:

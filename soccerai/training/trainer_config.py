@@ -149,6 +149,8 @@ class DataConfig(StrictModel):
     connection_mode: str
     # length scale (metres) of the proximity edge weights exp(-d / scale)
     edge_length_scale: float = 10.0
+    # mirror frames so that the possession team always attacks towards x = 105
+    normalize_attack_direction: bool = True
 
 
 class CollectorConfig(StrictModel):

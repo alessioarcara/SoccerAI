@@ -1,3 +1,4 @@
+import numpy as np
 import polars as pl
 import pytest
 from factories import make_raw_df
@@ -38,13 +39,9 @@ def test_goal_side_follows_game_period(period, start_left, start_left_et, home_g
             )
         ]
     )
-    home_rows = df.filter(pl.col("is_possession_team") == 1)
-    away_rows = df.filter(pl.col("is_possession_team") == 0)
-    assert home_rows.height == 11 and away_rows.height == 11
-    assert set(home_rows["x_goal"].to_list()) == {home_goal}
-    assert set(away_rows["x_goal"].to_list()) == {
-        X_GOAL_RIGHT + X_GOAL_LEFT - home_goal
-    }
+    # every node refers to the goal attacked by the possession (home) team
+    assert df.height == 22
+    assert set(df["x_goal"].to_list()) == {home_goal}
     assert set(df["y_goal"].to_list()) == {34.0}
 
 
@@ -159,3 +156,38 @@ def test_processed_file_names_depend_on_config():
     assert len(a.processed_file_names) == 3 and a.processed_file_names[2].endswith(
         ".json"
     )
+
+
+def test_attack_direction_normalisation_mirrors_frames_attacking_left():
+    spec = dict(game_id=1, chain_id=0, label=1, n_frames=1, period=2, possession="home")
+    raw = make_raw_df([spec])
+    plain = make_dataset_stub(make_data_cfg())._prepare_dataframe(raw).sort("jerseyNum")
+    normed = (
+        make_dataset_stub(make_data_cfg(normalize_attack_direction=True))
+        ._prepare_dataframe(raw)
+        .sort("jerseyNum")
+    )
+
+    # home starts left and plays period 2 -> attacks left -> frame mirrored
+    assert set(plain["x_goal"].to_list()) == {X_GOAL_LEFT}
+    assert set(normed["x_goal"].to_list()) == {X_GOAL_RIGHT}
+    for col in ["x", "x_ball"]:
+        np.testing.assert_allclose(
+            normed[col].to_numpy(), 105.0 - plain[col].to_numpy()
+        )
+    for col in ["cos", "vx", "cos_ball", "vx_ball"]:
+        np.testing.assert_allclose(normed[col].to_numpy(), -plain[col].to_numpy())
+    for col in ["y", "sin", "vy", "y_ball", "sin_ball", "vy_ball"]:
+        np.testing.assert_allclose(normed[col].to_numpy(), plain[col].to_numpy())
+
+
+def test_attack_direction_normalisation_keeps_frames_attacking_right():
+    spec = dict(game_id=1, chain_id=0, label=0, n_frames=1, period=2, possession="away")
+    raw = make_raw_df([spec])
+    plain = make_dataset_stub(make_data_cfg())._prepare_dataframe(raw)
+    normed = make_dataset_stub(
+        make_data_cfg(normalize_attack_direction=True)
+    )._prepare_dataframe(raw)
+    assert set(normed["x_goal"].to_list()) == {X_GOAL_RIGHT}
+    np.testing.assert_allclose(normed["x"].to_numpy(), plain["x"].to_numpy())
+    np.testing.assert_allclose(normed["cos"].to_numpy(), plain["cos"].to_numpy())
