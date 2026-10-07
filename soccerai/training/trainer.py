@@ -101,6 +101,9 @@ class BaseTrainer(ABC):
             for epoch in tqdm(
                 range(1, self.cfg.trainer.n_epochs + 1), desc="Epoch", colour="green"
             ):
+                # `eval()` switches the model to eval mode at the end of every
+                # epoch: dropout / batch-norm must be re-enabled for training.
+                self.model.train()
                 train_iterable = self._get_data_iterable("train")
                 assert train_iterable is not None
 
