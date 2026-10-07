@@ -4,8 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric.nn as pyg_nn
-import torch_geometric_temporal.nn as pygt_nn
-from torch_geometric.typing import Adj, OptTensor
+from torch_geometric.typing import OptTensor
 
 from soccerai.models.typings import ReadoutType, RNNType
 from soccerai.training.trainer_config import NeckConfig
@@ -14,11 +13,6 @@ READOUT_AGGREGATIONS: Dict[ReadoutType, Type[pyg_nn.Aggregation]] = {
     "sum": pyg_nn.SumAggregation,
     "mean": pyg_nn.MeanAggregation,
     "max": pyg_nn.MaxAggregation,
-}
-
-GRNN_CELLS: Dict[RNNType, Type[nn.Module]] = {
-    "gru": pygt_nn.recurrent.GConvGRU,
-    "lstm": pygt_nn.recurrent.GConvLSTM,
 }
 
 RNN_CELLS: Dict[RNNType, Type[nn.Module]] = {"gru": nn.GRUCell, "lstm": nn.LSTMCell}
@@ -50,17 +44,38 @@ class GraphGlobalFusion(nn.Module):
         return torch.cat([graph_emb, glob_emb], dim=-1)
 
 
+class RecurrentCell(nn.Module):
+    """GRU/LSTM cell with a uniform `(x, h, c) -> (h, c)` interface."""
+
+    def __init__(self, rnn_type: RNNType, input_size: int, hidden_size: int):
+        super().__init__()
+        self.cell = RNN_CELLS[rnn_type](input_size=input_size, hidden_size=hidden_size)
+
+    def forward(
+        self, x: torch.Tensor, prev_h: OptTensor, prev_c: OptTensor
+    ) -> Tuple[torch.Tensor, OptTensor]:
+        if isinstance(self.cell, nn.LSTMCell):
+            state = None if prev_h is None or prev_c is None else (prev_h, prev_c)
+            h, c = self.cell(x, state)
+            return h, c
+        return self.cell(x, prev_h), None
+
+
 class TemporalFusion(nn.Module):
     """
     Apply temporal and fusion operations on graph and global features.
 
     Modes:
     - "node":
-        1) Apply temporal over node embeddings.
-        2) Fuse graph and global features.
+        1) Recurrent cell over every node embedding (shared weights, state per
+           node): nodes keep their position across the frames of a chain.
+        2) Fuse the readout of the node *states* with the global features.
     - "graph":
         1) Fuse graph and global features.
-        2) Apply temporal over the fused vectors.
+        2) Recurrent cell over the fused vectors.
+
+    In both modes the vector handed to the head depends on the recurrent
+    state, i.e. on the previous frames of the chain.
     """
 
     def __init__(
@@ -80,18 +95,17 @@ class TemporalFusion(nn.Module):
                 self.raw_features_proj = nn.Sequential(
                     pyg_nn.Linear(node_dim, cfg.proj_dout), nn.ReLU()
                 )
-                grnn_din = backbone_dout + cfg.proj_dout
-
+                rnn_din = backbone_dout + cfg.proj_dout
             else:
-                grnn_din = backbone_dout + node_dim
-            self.grnn = GRNN_CELLS[cfg.rnn_type](
-                in_channels=grnn_din, out_channels=backbone_dout, K=1
-            )
+                rnn_din = backbone_dout + node_dim
+            self.norm = nn.LayerNorm(rnn_din)
+            self.rnn = RecurrentCell(cfg.rnn_type, rnn_din, cfg.rnn_dout)
 
         elif self.mode == "graph":
-            self.rnn = RNN_CELLS[cfg.rnn_type](
-                input_size=cfg.rnn_din, hidden_size=cfg.rnn_dout
-            )
+            # the sum readout of 22 nodes and the global projection live on
+            # very different scales: normalise the fused vector before the RNN
+            self.norm = nn.LayerNorm(cfg.rnn_din)
+            self.rnn = RecurrentCell(cfg.rnn_type, cfg.rnn_din, cfg.rnn_dout)
 
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
@@ -101,50 +115,18 @@ class TemporalFusion(nn.Module):
         z: torch.Tensor,
         u: torch.Tensor,
         x: torch.Tensor,
-        edge_index: Adj,
-        edge_weight: OptTensor = None,
         batch: OptTensor = None,
         batch_size: Optional[int] = None,
         prev_h: OptTensor = None,
         prev_c: OptTensor = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        x_proj = self.raw_features_proj(x)
-
-        fused = self.fusion(z, u, batch, batch_size)
-
+    ) -> Tuple[torch.Tensor, torch.Tensor, OptTensor]:
         if self.mode == "node":
-            grnn_input = torch.cat([z, x_proj], dim=-1)
-
-            if isinstance(self.grnn, pygt_nn.GConvLSTM):
-                h, c = self.grnn(
-                    grnn_input,
-                    edge_index,
-                    edge_weight,
-                    prev_h,
-                    prev_c,
-                )
-
-            elif isinstance(self.grnn, pygt_nn.GConvGRU):
-                h = self.grnn(
-                    grnn_input,
-                    edge_index,
-                    edge_weight,
-                    prev_h,
-                )
-                c = None
-
+            z_nodes = torch.cat(z, dim=-1) if isinstance(z, list) else z
+            rnn_input = self.norm(torch.cat([z_nodes, self.raw_features_proj(x)], -1))
+            h, c = self.rnn(rnn_input, prev_h, prev_c)
+            fused = self.fusion(h, u, batch, batch_size)
             return fused, h, c
 
-        else:  # graph
-            if isinstance(self.rnn, nn.LSTMCell):
-                state: Optional[Tuple[OptTensor, OptTensor]] = (prev_h, prev_c)
-                if prev_h is None or prev_c is None:
-                    state = None
-
-                h, c = self.rnn(fused, state)
-
-            elif isinstance(self.rnn, nn.GRUCell):
-                h = self.rnn(fused, prev_h)
-                c = None
-
-            return h, h, c
+        fused = self.norm(self.fusion(z, u, batch, batch_size))
+        h, c = self.rnn(fused, prev_h, prev_c)
+        return h, h, c

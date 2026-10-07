@@ -10,7 +10,6 @@ model:
     n_layers: 2
     pooling_ratio: 0.25
     dhid_multiplier: 1
-    residual_sum_mode: "none" 
     
   neck:
     mode: "graph"

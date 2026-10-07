@@ -3,7 +3,6 @@ model:
     type: "graphsage"
     n_layers: 2
     drop: 0.1
-    residual_sum_mode: "none"
     l2_norm: True
     aggr_type: "max"
 

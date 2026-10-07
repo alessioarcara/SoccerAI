@@ -8,7 +8,6 @@ from soccerai.models.typings import (
     AggregationType,
     NormalizationType,
     ReadoutType,
-    ResidualSumMode,
     RNNType,
     TemporalMode,
 )
@@ -30,7 +29,6 @@ class BackboneCommon(StrictModel):
     dout: int
     drop: float
     norm: NormalizationType
-    residual_sum_mode: ResidualSumMode
 
 
 class GCNConfig(BackboneCommon):

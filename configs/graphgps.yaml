@@ -7,18 +7,16 @@ model:
     drop: 0.1
     attn_drop: 0.5
     norm: "none"
-    residual_sum_mode: "every"
 
   neck:
     mode: "node"
     rnn_type: "gru"
-    rnn_din: 512
-    rnn_dout: 96 
-    glob_dout: 32 
+    rnn_dout: 96
+    glob_dout: 32
 
-  head: 
+  head:
     n_layers: 2
-    din: 96 
+    din: 128  # rnn_dout + glob_dout
     drop: 0.5
     
 trainer:

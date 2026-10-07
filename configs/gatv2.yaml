@@ -5,7 +5,6 @@ model:
     drop: 0.2
     norm: "none"
     n_layers: 2
-    residual_sum_mode: "none"
     num_heads: 8
     use_edge_attr: True
     edge_dropout: 0.5

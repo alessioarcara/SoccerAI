@@ -58,18 +58,8 @@ class TemporalGNN(nn.Module):
         prev_h: OptTensor = None,
         prev_c: OptTensor = None,
     ):
-        z = self.backbone(
-            x,
-            edge_index,
-            edge_weight,
-            edge_attr,
-            batch,
-            batch_size,
-            prev_h,
-        )
-        fused_emb, h, c = self.neck(
-            z, u, x, edge_index, edge_weight, batch, batch_size, prev_h, prev_c
-        )
+        z = self.backbone(x, edge_index, edge_weight, edge_attr, batch, batch_size)
+        fused_emb, h, c = self.neck(z, u, x, batch, batch_size, prev_h, prev_c)
         return self.head(fused_emb), h, c
 
 
@@ -93,7 +83,7 @@ def build_model(cfg: Config, train_ds: WorldCup2022Dataset) -> nn.Module:
         return TemporalGNN(
             backbone,
             TemporalFusion(
-                cfg.model.backbone.dout,
+                backbone.out_dim,
                 train_ds.num_node_features,
                 train_ds.num_global_features,
                 cfg.model.neck,
