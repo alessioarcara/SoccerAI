@@ -26,6 +26,24 @@ from soccerai.training.trainer_config import DataConfig
 from soccerai.training.transforms import RandomHorizontalFlip, RandomVerticalFlip
 
 
+def home_attacks_right_expr() -> pl.Expr:
+    """
+    Polars counterpart of `soccerai.data.utils.home_attacks_right`: whether the
+    home team attacks towards x = pitch length in the row's game period.
+    """
+    start_left_extra_time = pl.col("homeTeamStartLeftExtraTime").fill_null(
+        pl.col("homeTeamStartLeft")
+    )
+    start_left = (
+        pl.when(pl.col("period").is_in([3, 4]))
+        .then(start_left_extra_time)
+        .otherwise(pl.col("homeTeamStartLeft"))
+        .cast(pl.Boolean)
+    )
+    first_period_of_pair = pl.col("period").is_in([1, 3])
+    return start_left == first_period_of_pair
+
+
 class WorldCup2022Dataset(InMemoryDataset):
     FEATURE_NAMES_FILE = "feature_names.json"
 
@@ -100,6 +118,16 @@ class WorldCup2022Dataset(InMemoryDataset):
         return train_df, val_df
 
     def _prepare_dataframe(self, df: pl.DataFrame) -> pl.DataFrame:
+        if "period" not in df.columns:
+            raise ValueError(
+                "The dataset has no `period` column: run "
+                "`scripts/patch_dataset_period.py` (or rebuild it) first"
+            )
+        if "homeTeamStartLeftExtraTime" not in df.columns:
+            df = df.with_columns(
+                pl.lit(None, dtype=pl.Boolean).alias("homeTeamStartLeftExtraTime")
+            )
+
         cols_to_drop = [
             "gameEventType",
             "index",
@@ -212,15 +240,9 @@ class WorldCup2022Dataset(InMemoryDataset):
             .drop("possession_team_tmp")
         ).drop_nulls(["is_possession_team"])
 
-        is_home_team = df["team"] == "home"
-        is_second_half = df["frameTime"] > df["startPeriod2"]
-
-        is_goal_right = (
-            (is_home_team & df["homeTeamStartLeft"] & ~is_second_half)
-            | (is_home_team & ~df["homeTeamStartLeft"] & is_second_half)
-            | (~is_home_team & ~df["homeTeamStartLeft"] & ~is_second_half)
-            | (~is_home_team & df["homeTeamStartLeft"] & is_second_half)
-        )
+        # Each player attacks the goal on the right iff their team does so in
+        # the current period (teams swap ends after every period).
+        is_goal_right = (pl.col("team") == "home") == home_attacks_right_expr()
         df = df.with_columns(
             [
                 pl.when(is_goal_right)
@@ -231,7 +253,19 @@ class WorldCup2022Dataset(InMemoryDataset):
             ]
         )
 
-        df = df.drop(["team", "homeTeamStartLeft", "startPeriod2"])
+        df = df.drop(
+            [
+                c
+                for c in [
+                    "team",
+                    "homeTeamStartLeft",
+                    "homeTeamStartLeftExtraTime",
+                    "startPeriod2",
+                    "period",
+                ]
+                if c in df.columns
+            ]
+        )
 
         return df
 

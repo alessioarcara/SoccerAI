@@ -9,6 +9,7 @@ from tqdm.notebook import tqdm
 
 from soccerai.data import config
 from soccerai.data.data import _flatten_chains
+from soccerai.data.utils import home_attacks_right
 from soccerai.data.visualize import shot_frames_navigator
 
 
@@ -139,83 +140,75 @@ def _is_within_range(
     inner_distance: float,
     use_player_pos: bool,
 ) -> bool:
+    """
+    Whether the last action of a chain happens between `inner_distance` and
+    `outer_distance` metres from the goal line attacked by `team_name`.
+    """
     last_action_event_df = event_df.filter(pl.col("index") == last_action_idx)
     game_id = last_action_event_df.select("gameId").item()
-    try:
-        metadata_event = metadata_df.filter(pl.col("gameId").cast(int) == game_id).row(
-            0, named=True
+    period = int(last_action_event_df.select("period").item())
+
+    metadata_rows = metadata_df.filter(pl.col("gameId").cast(int) == game_id)
+    if metadata_rows.height == 0:
+        logger.warning("No metadata for game {}: chain discarded", game_id)
+        return False
+    metadata_event = metadata_rows.row(0, named=True)
+    home_team_name = metadata_event["homeTeamName"]
+    away_team_name = metadata_event["awayTeamName"]
+
+    joined_df = last_action_event_df.join(
+        players_df, on=["gameEventId", "possessionEventId"]
+    )
+
+    if use_player_pos:
+        candidates = (
+            joined_df.with_columns(
+                pl.when(pl.col("team") == "home")
+                .then(pl.lit(home_team_name))
+                .when(pl.col("team") == "away")
+                .then(pl.lit(away_team_name))
+                .otherwise(None)
+                .alias("team_name_mapped")
+            )
+            .join(
+                rosters_df,
+                left_on=["team_name_mapped", "jerseyNum"],
+                right_on=["playerTeam", "shirtNumber"],
+                how="left",
+            )
+            .filter(pl.col("playerName") == pl.col("playerName_right"))
         )
-        home_team_name = metadata_event["homeTeamName"]
-        away_team_name = metadata_event["awayTeamName"]
-        home_team_start_left = metadata_event["homeTeamStartLeft"]
-        second_half_start = metadata_event["startPeriod2"]
+    else:
+        candidates = joined_df.filter(pl.col("team").is_null())
 
-        joined_df = last_action_event_df.join(
-            players_df, on=["gameEventId", "possessionEventId"]
+    if candidates.height == 0:
+        logger.debug(
+            "No {} found for event {}: chain discarded",
+            "ball carrier" if use_player_pos else "ball",
+            last_action_idx,
         )
+        return False
 
-        if use_player_pos:
-            player_with_ball = (
-                joined_df.with_columns(
-                    pl.when(pl.col("team") == "home")
-                    .then(pl.lit(home_team_name))
-                    .when(pl.col("team") == "away")
-                    .then(pl.lit(away_team_name))
-                    .otherwise(None)
-                    .alias("team_name_mapped")
-                )
-                .join(
-                    rosters_df,
-                    left_on=["team_name_mapped", "jerseyNum"],
-                    right_on=["playerTeam", "shirtNumber"],
-                    how="left",
-                )
-                .filter(pl.col("playerName") == pl.col("playerName_right"))
-            ).row(0, named=True)
-            frame_time = player_with_ball["frameTime"]
-            x_position = player_with_ball["x"]
-        else:
-            ball = joined_df.filter(pl.col("team").is_null()).row(0, named=True)
-            frame_time = ball["frameTime"]
-            x_position = ball["x"]
-
-        minutes, seconds = map(int, frame_time.split(":"))
-        current_time_seconds = minutes * 60 + seconds
-        is_second_half = current_time_seconds >= second_half_start
-
-    except Exception:
+    x_position = candidates.row(0, named=True)["x"]
+    if x_position is None:
         return False
 
     is_within_left_range = inner_distance <= x_position <= outer_distance
     is_within_right_range = (
         (105 - outer_distance) <= x_position <= (105 - inner_distance)
     )
+
     is_home_team = team_name == home_team_name
+    attacks_right = (
+        home_attacks_right(
+            period,
+            metadata_event["homeTeamStartLeft"],
+            metadata_event.get("homeTeamStartLeftExtraTime"),
+        )
+        == is_home_team
+    )
 
-    if is_home_team:
-        if home_team_start_left:
-            if not is_second_half:
-                result = is_within_right_range
-            else:
-                result = is_within_left_range
-        else:
-            if not is_second_half:
-                result = is_within_left_range
-            else:
-                result = is_within_right_range
-    else:
-        if home_team_start_left:
-            if not is_second_half:
-                result = is_within_left_range
-            else:
-                result = is_within_right_range
-        else:
-            if not is_second_half:
-                result = is_within_right_range
-            else:
-                result = is_within_left_range
-
-    return result
+    return is_within_right_range if attacks_right else is_within_left_range
 
 
 def _neg_labeling(

@@ -11,6 +11,28 @@ def offset_x(x: float) -> float:
     return (x or 0.0) + 52.5
 
 
+def home_attacks_right(
+    period: int,
+    home_team_start_left: bool,
+    home_team_start_left_extra_time: Optional[bool] = None,
+) -> bool:
+    """
+    Whether the home team attacks towards x = pitch length in the given period.
+
+    PFF metadata gives the side the home team *starts* on (`homeTeamStartLeft`,
+    and `homeTeamStartLeftExtraTime` for the extra-time periods 3 and 4).
+    Teams swap ends between the two periods of each pair, so the home team
+    attacks to the right in periods 1/3 when it starts on the left, and in
+    periods 2/4 when it starts on the right.
+    """
+    if period in (3, 4) and home_team_start_left_extra_time is not None:
+        start_left = home_team_start_left_extra_time
+    else:
+        start_left = home_team_start_left
+    first_period_of_pair = period in (1, 3)
+    return bool(start_left) == first_period_of_pair
+
+
 def offset_y(y: float) -> float:
     return (y or 0.0) + 34.0
 

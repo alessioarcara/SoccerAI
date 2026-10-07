@@ -30,6 +30,7 @@ def extract_event(event: Dict[str, Any]) -> Dict[str, Any]:
         "playerName": event["gameEvents"]["playerName"],
         "videoUrl": event["gameEvents"]["videoUrl"],
         "frameTime": event["possessionEvents"]["formattedGameClock"],
+        "period": event["gameEvents"]["period"],
     }
 
 
@@ -88,6 +89,9 @@ def extract_metadata(game_metadata: List[Dict[str, Any]]) -> Dict[str, Any]:
         "homeTeamName": game_metadata[0]["homeTeam"]["name"],
         "homeTeamColor": game_metadata[0]["homeTeamKit"]["primaryColor"],
         "homeTeamStartLeft": game_metadata[0]["homeTeamStartLeft"],
+        "homeTeamStartLeftExtraTime": game_metadata[0].get(
+            "homeTeamStartLeftExtraTime"
+        ),
         "startPeriod2": game_metadata[0]["startPeriod2"],
     }
 
@@ -139,6 +143,60 @@ def load_and_process_soccer_events(
         )
 
     return event_df, players_df
+
+
+def load_event_periods(event_dir_path: str) -> pl.DataFrame:
+    """
+    Lightweight loader returning the game period (1-4) of every game event,
+    without parsing player positions.
+    """
+    rows = []
+    for event_file in sorted(os.listdir(event_dir_path)):
+        if not event_file.endswith(".json"):
+            continue
+        with open(os.path.join(event_dir_path, event_file), "r") as f:
+            data = json.load(f)
+        for e in data:
+            rows.append(
+                {
+                    "gameId": e["gameId"],
+                    "gameEventId": e["gameEventId"],
+                    "period": e["gameEvents"]["period"],
+                }
+            )
+
+    return pl.DataFrame(rows).unique(["gameId", "gameEventId"], keep="first")
+
+
+def add_period_columns(
+    df: pl.DataFrame, event_dir_path: str, metadata_dir_path: str
+) -> pl.DataFrame:
+    """
+    Attach `period` (from the raw events) and `homeTeamStartLeftExtraTime`
+    (from the raw metadata) to an existing dataset, preserving row order.
+    """
+    periods = load_event_periods(event_dir_path).with_columns(
+        pl.col("gameId").cast(pl.Int64), pl.col("gameEventId").cast(pl.Int64)
+    )
+    metadata = (
+        load_and_process_metadata(metadata_dir_path)
+        .select(["gameId", "homeTeamStartLeftExtraTime"])
+        .with_columns(pl.col("gameId").cast(pl.Int64))
+    )
+
+    df = df.drop(
+        [c for c in ("period", "homeTeamStartLeftExtraTime") if c in df.columns]
+    )
+    out = df.join(periods, on=["gameId", "gameEventId"], how="left").join(
+        metadata, on="gameId", how="left"
+    )
+
+    if out.height != df.height:
+        raise ValueError("Joining periods changed the number of rows")
+    if out["period"].null_count() > 0:
+        raise ValueError("Some events have no period in the raw event data")
+
+    return out
 
 
 def load_and_process_metadata(
@@ -267,6 +325,7 @@ def create_dataset(
                         "homeTeamName",
                         "awayTeamName",
                         "homeTeamStartLeft",
+                        "homeTeamStartLeftExtraTime",
                         "startPeriod2",
                     ]
                 ),
