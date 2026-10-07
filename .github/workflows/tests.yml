@@ -1,0 +1,30 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        # the lock file pins CUDA 12.8 wheels; they import fine on CPU-only runners
+        run: uv sync --extra dev
+
+      - name: Unit tests (synthetic data)
+        run: uv run pytest tests/unit -q
+
+      - name: Integration tests (committed parquet)
+        run: uv run pytest tests/test_graph_creation.py -q
