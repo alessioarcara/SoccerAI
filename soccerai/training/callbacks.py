@@ -169,6 +169,7 @@ class ModelSavingCallback(ModelMonitorCallback):
 
         if improved:
             self.best_model = copy.deepcopy(trainer.model.state_dict())
+            self.best_metrics = dict(trainer.history)
 
     def on_train_end(self, trainer):
         if not hasattr(self, "best_model"):
@@ -185,6 +186,7 @@ class ModelSavingCallback(ModelMonitorCallback):
             trainer.feature_names,
             self.history_key,
             self.best,
+            metrics=self.best_metrics,
         )
         logger.info(f"Saved model checkpoint to {checkpoint_path}")
 

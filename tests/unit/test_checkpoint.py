@@ -14,11 +14,20 @@ def test_checkpoint_round_trip_rebuilds_the_model(tmp_path):
     cfg = load_cfg(tmp_path, "gcn")
     model = build_model(cfg, DatasetStub())
     path = tmp_path / "abc123_val_loss_0.5000.pth"
-    save_checkpoint(path, model.state_dict(), cfg, ["f1", "f2"], "val_loss", 0.5)
+    save_checkpoint(
+        path,
+        model.state_dict(),
+        cfg,
+        ["f1", "f2"],
+        "val_loss",
+        0.5,
+        metrics={"val_loss": 0.5, "val_auroc": 0.8},
+    )
 
     payload = load_checkpoint(path)
     assert payload["feature_names"] == ["f1", "f2"]
     assert payload["best_value"] == 0.5
+    assert payload["metrics"] == {"val_loss": 0.5, "val_auroc": 0.8}
     rebuilt = build_model(checkpoint_config(payload), DatasetStub())
     rebuilt.load_state_dict(payload["state_dict"])
     for a, b in zip(model.state_dict().values(), rebuilt.state_dict().values()):

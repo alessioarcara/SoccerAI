@@ -15,6 +15,7 @@ def save_checkpoint(
     feature_names: Sequence[str],
     history_key: str,
     best_value: float,
+    metrics: Optional[Mapping[str, float]] = None,
 ) -> None:
     """
     Save a self-contained checkpoint: weights plus everything needed to
@@ -29,6 +30,8 @@ def save_checkpoint(
             "feature_names": list(feature_names),
             "history_key": history_key,
             "best_value": float(best_value),
+            # every validation metric at the epoch the checkpoint comes from
+            "metrics": {k: float(v) for k, v in (metrics or {}).items()},
         },
         path,
     )
