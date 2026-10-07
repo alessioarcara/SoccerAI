@@ -109,41 +109,52 @@ class BipartiteGraphConverter(GraphConverter):
 
     In this way, each player's embedding can reflect both direct proximity to
     opponents and the local defensive/offensive support structure.
+
+    Weights are `exp(-d / length_scale)` with `d` the distance in metres, so
+    that an opponent at `length_scale` metres weighs 1/e of a marking one;
+    they are left unnormalised (GCN applies its own symmetric normalisation,
+    the other layers consume them as edge attributes).
     """
+
+    def __init__(
+        self,
+        length_scale: float = 10.0,
+        pitch_length: float = 105.0,
+        pitch_width: float = 68.0,
+    ):
+        self.length_scale = length_scale
+        self.pitch_length = pitch_length
+        self.pitch_width = pitch_width
 
     def _create_edges(
         self, x_df: pl.DataFrame
     ) -> Tuple[torch.Tensor, OptTensor, OptTensor]:
-        positions = x_df.select(["x", "y"]).to_numpy()
+        # node coordinates are already scaled to [0, 1]: back to metres, so
+        # that the proximity weight has a physical length scale
+        positions = x_df.select(["x", "y"]).to_numpy() * np.array(
+            [self.pitch_length, self.pitch_width]
+        )
         teams = x_df["is_possession_team_1"].to_numpy()
 
-        src, dst, weights = [], [], []
+        distances = np.linalg.norm(
+            positions[:, None, :] - positions[None, :, :], axis=-1
+        )
+        opponents = teams[:, None] != teams[None, :]
+        src, dst = np.nonzero(opponents)
+        weights = np.exp(-distances[src, dst] / self.length_scale)
 
-        for i in range(self.NUM_PLAYERS):
-            a_values = []
-            valid_j = []
-            for j in range(self.NUM_PLAYERS):
-                if i != j and teams[i] != teams[j]:
-                    players_distance = np.linalg.norm(positions[i] - positions[j])
-                    a_values.append(np.exp(-players_distance))
-                    valid_j.append(j)
-            if a_values:
-                denominator = np.sum(a_values)
-                for j, a in zip(valid_j, a_values):
-                    src.append(i)
-                    dst.append(j)
-                    weights.append(a / denominator)
-
-        edge_index = torch.tensor([src, dst], dtype=torch.long)
+        edge_index = torch.tensor(np.stack([src, dst]), dtype=torch.long)
         edge_weight = edge_attr = torch.tensor(weights, dtype=torch.float32)
         return edge_index, edge_weight, edge_attr
 
 
-def create_graph_converter(connection_mode: str) -> GraphConverter:
+def create_graph_converter(
+    connection_mode: str, edge_length_scale: float = 10.0
+) -> GraphConverter:
     match connection_mode:
         case "fully_connected":
             return FullyConnectedGraphConverter()
         case "bipartite":
-            return BipartiteGraphConverter()
+            return BipartiteGraphConverter(length_scale=edge_length_scale)
         case _:
             raise ValueError("Invalid connection mode")

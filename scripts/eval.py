@@ -140,7 +140,9 @@ def main(args):
     cfg = Config(**run.config)
     fix_random(cfg.seed)
 
-    converter = create_graph_converter(cfg.data.connection_mode)
+    converter = create_graph_converter(
+        cfg.data.connection_mode, cfg.data.edge_length_scale
+    )
     ds = WorldCup2022Dataset(
         split="val",
         root="soccerai/data/resources",

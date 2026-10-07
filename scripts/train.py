@@ -36,7 +36,9 @@ def main(args):
     fix_random(cfg.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    converter = create_graph_converter(cfg.data.connection_mode)
+    converter = create_graph_converter(
+        cfg.data.connection_mode, cfg.data.edge_length_scale
+    )
     ds_kwargs = dict(
         root="soccerai/data/resources",
         converter=converter,

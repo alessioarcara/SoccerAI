@@ -147,6 +147,8 @@ class DataConfig(StrictModel):
     use_pca_on_roster_cols: bool
     mask_non_possession_shooting_stats: bool
     connection_mode: str
+    # length scale (metres) of the proximity edge weights exp(-d / scale)
+    edge_length_scale: float = 10.0
 
 
 class CollectorConfig(StrictModel):
