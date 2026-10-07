@@ -10,6 +10,7 @@ from loguru import logger
 from torch_geometric.explain import Explainer, GNNExplainer
 
 import wandb
+from soccerai.training.checkpoint import save_checkpoint
 from soccerai.training.metrics import Collector
 from soccerai.training.trainer_config import Config
 from soccerai.training.utils import (
@@ -170,10 +171,25 @@ class ModelSavingCallback(ModelMonitorCallback):
             self.best_model = copy.deepcopy(trainer.model.state_dict())
 
     def on_train_end(self, trainer):
-        checkpoint_name = f"{wandb.run.id}_{self.history_key}_{self.best:0.4f}.pth"
+        if not hasattr(self, "best_model"):
+            logger.warning("No improvement was ever recorded: nothing to save")
+            return
+
+        run_id = wandb.run.id if wandb.run is not None else "local"
+        checkpoint_name = f"{run_id}_{self.history_key}_{self.best:0.4f}.pth"
         checkpoint_path = self.out_dir / checkpoint_name
-        torch.save(self.best_model, checkpoint_path)
+        save_checkpoint(
+            checkpoint_path,
+            self.best_model,
+            trainer.cfg,
+            trainer.feature_names,
+            self.history_key,
+            self.best,
+        )
         logger.info(f"Saved model checkpoint to {checkpoint_path}")
+
+        if wandb.run is None:
+            return
 
         artifact = wandb.Artifact(name=self.model_name, type="model")
         artifact.add_file(str(checkpoint_path), name=checkpoint_name)

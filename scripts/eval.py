@@ -1,7 +1,7 @@
 import argparse
 import os
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -9,12 +9,15 @@ from loguru import logger
 from torch.utils.data.dataloader import DataLoader as TorchDataLoader
 from tqdm import tqdm
 
-import wandb
-import wandb.errors
 from soccerai.data.converters import create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.data.temporal_dataset import TemporalChainsDataset
 from soccerai.models.models import build_model
+from soccerai.training.checkpoint import (
+    checkpoint_config,
+    find_best_checkpoint,
+    load_checkpoint,
+)
 from soccerai.training.metrics import BinaryConfusionMatrix, BinaryPrecisionRecallCurve
 from soccerai.training.trainer_config import Config, MetricsConfig
 from soccerai.training.utils import fix_random
@@ -22,29 +25,13 @@ from soccerai.training.utils import fix_random
 NUM_WORKERS = (os.cpu_count() or 1) - 1
 
 
-def find_best_checkpoint(model_dir: Path) -> Optional[Tuple[str, Path]]:
-    """Return the `(wandb_run_id, checkpoint_path)` with the lowest metric.
+def load_config_from_wandb(run_id: str) -> Config:
+    """Fallback for checkpoints that predate the self-contained format."""
+    import wandb
 
-    The checkpoint filenames are expected to follow
-    `{run_id}_{metric_key}_{metric_name}_{metric_value}.pth`.
-    """
-    ckpts = list(model_dir.glob("*.pth"))
-    if not ckpts:
-        return None
-
-    best: Optional[Tuple[str, Path, float]] = None
-    for path in ckpts:
-        parts = path.stem.split("_")
-        run_id = parts[0]
-        metric_value = float(parts[3])
-        if best is None or metric_value < best[2]:
-            best = (run_id, path, metric_value)
-
-    if best is None:
-        return None
-
-    wandb_id, ckpt_path, _ = best
-    return wandb_id, ckpt_path
+    logger.info("Checkpoint has no config: fetching run {} from W&B", run_id)
+    run = wandb.Api().run(f"soccerai/soccerai/{run_id}")
+    return Config(**{k: v for k, v in run.config.items() if not k.startswith("_")})
 
 
 def evaluate(
@@ -128,16 +115,12 @@ def main(args):
         raise SystemExit(1)
 
     best_run_id, ckpt_path = best
+    logger.info("Evaluating checkpoint {}", ckpt_path)
 
-    # load W&B config
-    api = wandb.Api()
-    try:
-        run = api.run(f"soccerai/soccerai/{best_run_id}")
-    except wandb.errors.CommError:
-        logger.exception("Failed to fetch run {} from W&B", best_run_id)
-        raise SystemExit(1)
-
-    cfg = Config(**run.config)
+    payload = load_checkpoint(ckpt_path)
+    cfg = checkpoint_config(payload)
+    if cfg is None:
+        cfg = load_config_from_wandb(best_run_id)
     fix_random(cfg.seed)
 
     converter = create_graph_converter(
@@ -149,7 +132,6 @@ def main(args):
         converter=converter,
         cfg=cfg.data,
         random_state=cfg.seed,
-        force_reload=True,
     )
 
     model = build_model(cfg, ds)
@@ -166,7 +148,7 @@ def main(args):
         persistent_workers=True,
         prefetch_factor=4,
     )
-    model.load_state_dict(torch.load(ckpt_path))
+    model.load_state_dict(payload["state_dict"])
     model.to(device)
 
     evaluate(model, loader, device, args.threshold, args.fbeta)
