@@ -119,7 +119,7 @@ def evaluate(name: str, y_true: np.ndarray, scores: np.ndarray) -> List:
 
 
 def main(args: argparse.Namespace) -> None:
-    cfg = build_config(CONFIG_DIR)
+    cfg = build_config(Path(args.config_dir))
     fix_random(cfg.seed)
     converter = create_graph_converter(
         cfg.data.connection_mode, cfg.data.edge_length_scale
@@ -199,4 +199,5 @@ def main(args: argparse.Namespace) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--importance", action="store_true")
+    parser.add_argument("--config-dir", default=str(CONFIG_DIR))
     main(parser.parse_args())

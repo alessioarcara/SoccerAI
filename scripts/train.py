@@ -32,7 +32,7 @@ NUM_WORKERS = (os.cpu_count() or 1) - 1
 
 
 def main(args):
-    cfg = build_config(CONFIG_DIR)
+    cfg = build_config(Path(args.config_dir))
     fix_random(cfg.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -162,6 +162,11 @@ if __name__ == "__main__":
         "--reload",
         action="store_true",
         help="If set, forces the dataset to be re-created",
+    )
+    parser.add_argument(
+        "--config-dir",
+        default=str(CONFIG_DIR),
+        help="Directory holding base.yaml and the per-model yaml files",
     )
     args = parser.parse_args()
     main(args)
