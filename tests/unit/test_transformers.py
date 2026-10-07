@@ -29,6 +29,7 @@ def make_data_cfg(**overrides) -> DataConfig:
         normalize_attack_direction=False,
         use_roster_features=True,
         use_match_clock=True,
+        goal_window_for_positives=None,
     )
     defaults.update(overrides)
     return DataConfig(**defaults)

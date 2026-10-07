@@ -58,7 +58,10 @@ data:
   max_chain_len: 12
   use_roster_features: False
   use_match_clock: False
-  val_ratio: 0.2
+  val_ratio: 0.25
+  split_mode: "chronological"
+  drop_games_without_negatives: True
+  goal_window_for_positives: 25.0
 
 collector:
   n_frames: 12        

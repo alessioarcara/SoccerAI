@@ -139,6 +139,13 @@ class TrainerConfig(StrictModel):
 
 class DataConfig(StrictModel):
     val_ratio: float
+    # "chronological": last games (knock-out stage) validate; "random": seeded
+    split_mode: Literal["chronological", "random"] = "chronological"
+    # games whose chains are all positive would only distort the class prior
+    drop_games_without_negatives: bool = True
+    # keep positive chains only if their last action is within this distance
+    # (metres) of the attacked goal line, like the negatives (None = keep all)
+    goal_window_for_positives: Optional[float] = 25.0
     include_goal_features: bool
     include_ball_features: bool
     use_macro_roles: bool

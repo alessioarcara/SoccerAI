@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 from typing import Callable, List, Sequence, Union
 
+import numpy as np
 import polars as pl
 from loguru import logger
 from sklearn.compose import ColumnTransformer
@@ -128,28 +129,92 @@ class WorldCup2022Dataset(InMemoryDataset):
         except (IndexError, AttributeError):
             return 0
 
-    def _split_by_worldcup_phase(
-        self, df: pl.DataFrame, val_ratio: float
+    def _split_games(
+        self, df: pl.DataFrame, all_game_ids: Sequence[int]
     ) -> tuple[pl.DataFrame, pl.DataFrame]:
         """
-        Split the DataFrame into training and validation sets.
+        Split the frames into training and validation sets by game, so that
+        no chain (and no frame) of a game can appear in both.
 
-        The split accounts the two phases of a FIFA World Cup:
-            * 48 group-stage games -> training set
-            * 16 knock-out games -> validation set
+        - "chronological": the last `val_ratio` of the games (ids grow with
+          time, so with 0.25 the 48 group-stage games train and the 16
+          knock-out games validate), decided on `all_game_ids` before any
+          game is dropped.
+        - "random": a seeded random subset of the games present in `df`.
         """
-        game_ids_df = df.select(["gameId"]).unique().sort("gameId")
-        n_games = game_ids_df.height
+        present = sorted(df.select("gameId").unique()["gameId"].to_list())
+        n_val = max(1, round(self.cfg.val_ratio * len(all_game_ids)))
 
-        n_train_games = int((1.0 - val_ratio) * n_games)
+        if self.cfg.split_mode == "chronological":
+            val_games = set(sorted(all_game_ids)[len(all_game_ids) - n_val :])
+        elif self.cfg.split_mode == "random":
+            rng = np.random.default_rng(self.random_state)
+            val_games = set(rng.permutation(present)[:n_val].tolist())
+        else:
+            raise ValueError(f"Unknown split mode: {self.cfg.split_mode}")
 
-        train_game_ids = game_ids_df.slice(0, n_train_games)
-        val_game_ids = game_ids_df.slice(n_train_games, n_games)
-
-        train_df = df.join(train_game_ids, on="gameId", how="semi")
-        val_df = df.join(val_game_ids, on="gameId", how="semi")
-
+        train_df = df.filter(~pl.col("gameId").is_in(list(val_games)))
+        val_df = df.filter(pl.col("gameId").is_in(list(val_games)))
         return train_df, val_df
+
+    @staticmethod
+    def _drop_games_without_negatives(df: pl.DataFrame) -> pl.DataFrame:
+        """
+        Games whose chains are all positive would only shift the class prior
+        of their split (this happened to the extra-time matches, for which
+        the negative-chain selection used to fail).
+        """
+        has_negatives = (pl.col("label") == 0).any().over("gameId")
+        dropped = df.filter(~has_negatives).select("gameId").unique()["gameId"]
+        if dropped.len() > 0:
+            logger.warning(
+                "Dropping {} game(s) without negative chains: {}",
+                dropped.len(),
+                sorted(dropped.to_list()),
+            )
+        return df.filter(has_negatives)
+
+    def _filter_positive_chains(self, df: pl.DataFrame) -> pl.DataFrame:
+        """
+        Apply to the positive chains the same selection used for the
+        negatives: the ball carrier of the last frame (the action before the
+        shot) must be within `goal_window_for_positives` metres of the
+        attacked goal line. Without it "last action far from goal" is a
+        shortcut for the positive class.
+        """
+        window = self.cfg.goal_window_for_positives
+        if window is None:
+            return df
+
+        last_carrier = (
+            df.filter((pl.col("label") == 1) & (pl.col("is_ball_carrier") == 1))
+            .sort("event_index")
+            .group_by("chain_id")
+            .last()
+        )
+        kept = last_carrier.filter((pl.col("x_goal") - pl.col("x")).abs() <= window)[
+            "chain_id"
+        ]
+        dropped = last_carrier.height - kept.len()
+        logger.info(
+            "Positive chains ending within {} m of the goal line: {} kept, {} dropped",
+            window,
+            kept.len(),
+            dropped,
+        )
+        return df.filter((pl.col("label") == 0) | pl.col("chain_id").is_in(kept))
+
+    @staticmethod
+    def _log_split(name: str, df: pl.DataFrame) -> None:
+        chains = df.group_by("chain_id").agg(pl.col("label").first())
+        logger.info(
+            "{} split: {} games, {} frames, {} chains ({:.1%} positive)",
+            name,
+            df.select("gameId").n_unique(),
+            df.select(["gameEventId", "possessionEventId"]).n_unique(),
+            chains.height,
+            chains["label"].mean() if chains.height else float("nan"),
+        )
 
     def _prepare_dataframe(self, df: pl.DataFrame) -> pl.DataFrame:
         if "period" not in df.columns:
@@ -332,6 +397,8 @@ class WorldCup2022Dataset(InMemoryDataset):
                 pl.lit(Y_GOAL).alias("y_goal"),
             ]
         ).drop("possession_attacks_right")
+
+        df = self._filter_positive_chains(df)
 
         df = df.drop(
             [
@@ -609,15 +676,16 @@ class WorldCup2022Dataset(InMemoryDataset):
         return prep
 
     def process(self):
-        df = self._prepare_dataframe(pl.read_parquet(self.raw_paths[0]))
+        raw_df = pl.read_parquet(self.raw_paths[0])
+        all_game_ids = sorted(raw_df.select("gameId").unique()["gameId"].to_list())
 
-        train_df, val_df = self._split_by_worldcup_phase(df, self.cfg.val_ratio)
+        df = self._prepare_dataframe(raw_df)
+        if self.cfg.drop_games_without_negatives:
+            df = self._drop_games_without_negatives(df)
 
-        logger.info(
-            "DataFrame split → train: {} rows, val: {} rows",
-            train_df.height,
-            val_df.height,
-        )
+        train_df, val_df = self._split_games(df, all_game_ids)
+        self._log_split("train", train_df)
+        self._log_split("val", val_df)
 
         preprocessor = self._create_preprocessor(train_df)
 
