@@ -66,8 +66,12 @@ def main(args):
 
     callbacks = build_callbacks(cfg)
     if cfg.model.use_temporal:
-        train_ds = TemporalChainsDataset.from_worldcup_dataset(train_ds)
-        val_ds = TemporalChainsDataset.from_worldcup_dataset(val_ds)
+        train_ds = TemporalChainsDataset.from_worldcup_dataset(
+            train_ds, cfg.data.max_chain_len
+        )
+        val_ds = TemporalChainsDataset.from_worldcup_dataset(
+            val_ds, cfg.data.max_chain_len
+        )
 
         train_loader = TorchDataLoader(
             train_ds,

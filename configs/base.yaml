@@ -55,6 +55,7 @@ data:
   connection_mode: "bipartite"
   edge_length_scale: 10.0
   normalize_attack_direction: True
+  max_chain_len: 12
   val_ratio: 0.2
 
 collector:

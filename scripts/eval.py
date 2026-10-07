@@ -154,7 +154,7 @@ def main(args):
 
     model = build_model(cfg, ds)
 
-    chain_ds = TemporalChainsDataset.from_worldcup_dataset(ds)
+    chain_ds = TemporalChainsDataset.from_worldcup_dataset(ds, cfg.data.max_chain_len)
 
     loader = TorchDataLoader(
         chain_ds,

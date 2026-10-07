@@ -151,6 +151,8 @@ class DataConfig(StrictModel):
     edge_length_scale: float = 10.0
     # mirror frames so that the possession team always attacks towards x = 105
     normalize_attack_direction: bool = True
+    # keep only the last frames of every chain (None = whole chain)
+    max_chain_len: Optional[int] = 12
 
 
 class CollectorConfig(StrictModel):

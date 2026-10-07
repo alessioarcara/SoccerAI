@@ -45,7 +45,17 @@ class TemporalChainsDataset(Dataset):
         return temporal_chain
 
     @staticmethod
-    def from_worldcup_dataset(dataset: WorldCup2022Dataset) -> TemporalChainsDataset:
+    def from_worldcup_dataset(
+        dataset: WorldCup2022Dataset, max_chain_len: Optional[int] = None
+    ) -> TemporalChainsDataset:
+        """
+        Group the frames of `dataset` by chain, in chronological order.
+
+        With `max_chain_len` only the last frames of each chain are kept: the
+        label is decided by how a chain ends, early frames of long chains are
+        mostly padding for the rest of the batch, and the chain length itself
+        differs between classes (positive chains lose their shot frame).
+        """
         tmp_transform = dataset.transform
         dataset.transform = None
 
@@ -60,6 +70,8 @@ class TemporalChainsDataset(Dataset):
         chains = []
         for chain_id, frames in buckets.items():
             ordered = sorted(frames, key=lambda f: float(f.frame_time.item()))
+            if max_chain_len is not None:
+                ordered = ordered[-max_chain_len:]
 
             edge_indices = [f.edge_index.numpy() for f in ordered]
             node_features = [f.x.numpy() for f in ordered]
