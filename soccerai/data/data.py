@@ -10,7 +10,6 @@ from soccerai.data.config import (
     ACCEPTED_POS_CHAINS_PATH,
     PLAYER_STATS_PATH,
 )
-from soccerai.data.enrichers import PlayerVelocityEnricher
 from soccerai.data.utils import (
     offset_x,
     offset_y,
@@ -238,6 +237,10 @@ def create_dataset(
     )
 
     if not skip_velocity:
+        # imported lazily: the enrichers pull in the scraping stack (selenium,
+        # bs4), which is not needed to merely read or patch a dataset
+        from soccerai.data.enrichers import PlayerVelocityEnricher
+
         logger.info("Adding player velocities from {}", tracking_data_path)
         enricher = PlayerVelocityEnricher(tracking_data_path)
         players_df = enricher.add_velocity_per_player(players_df)

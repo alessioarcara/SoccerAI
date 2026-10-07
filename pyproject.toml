@@ -10,26 +10,38 @@ authors = [
 ]
 
 dependencies = [
-  "torch_geometric",
-  "torch_geometric_temporal",
-  "torchmetrics",
+  # Pinned to the stack the reference runs were produced with; the PyG
+  # extensions required by torch_geometric_temporal only exist as prebuilt
+  # wheels for a given torch minor version (see [tool.uv] below).
+  "torch==2.7.1",
+  "torch_geometric==2.6.1",
+  "torch_geometric_temporal==0.56.0",
+  "torch_scatter==2.1.2",
+  "torch_sparse==0.6.18",
+  "torchmetrics>=1.7,<2",
+  "numpy>=2,<3",
+  "scikit-learn>=1.6,<2",
+  "polars>=1.24,<2",
+  "pydantic>=2.10,<3",
+  "pyyaml",
+  "matplotlib",
+  "seaborn",
   "tabulate",
-  "scikit-learn",
-  "polars",
   "mplsoccer",
   "Levenshtein",
   "rapidfuzz",
   "loguru",
   "selenium",
+  "beautifulsoup4",
+  "requests",
   "tqdm",
   "IPython",
   "ipywidgets",
-  "wandb",
   "wandb[media]",
 ]
 name = "soccerai"
 version = "0.6.0"
-requires-python = ">= 3.11"
+requires-python = ">=3.11,<3.13"
 readme = "README.md"
 
 [project.optional-dependencies]
@@ -55,3 +67,17 @@ include-package-data = true
 
 [tool.setuptools.package-data]
 "soccerai.data" = ["resources/*"]
+
+[tool.uv]
+# prebuilt torch_scatter / torch_sparse wheels for torch 2.7 + CUDA 12.8
+# (never build them from source: that requires torch + a CUDA toolchain)
+find-links = ["https://data.pyg.org/whl/torch-2.7.0+cu128.html"]
+no-build-package = ["torch-scatter", "torch-sparse"]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
