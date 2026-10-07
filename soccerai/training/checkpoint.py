@@ -53,11 +53,17 @@ def checkpoint_config(payload: Mapping[str, Any]) -> Optional[Config]:
     return None if cfg is None else Config(**cfg)
 
 
-def find_best_checkpoint(model_dir: Path) -> Optional[Tuple[str, Path]]:
+def find_best_checkpoint(
+    model_dir: Path, include_legacy: bool = False
+) -> Optional[Tuple[str, Path]]:
     """
     Return `(wandb_run_id, path)` of the checkpoint with the lowest monitored
     value among `<run_id>_<key>_<value>.pth` files under `model_dir`
     (searched recursively).
+
+    Bare state dicts written before the self-contained format are skipped
+    unless `include_legacy` is set: they belong to earlier architectures and
+    their monitored values are not comparable.
     """
     best: Optional[Tuple[str, Path, float]] = None
     for path in model_dir.rglob("*.pth"):
@@ -65,6 +71,8 @@ def find_best_checkpoint(model_dir: Path) -> Optional[Tuple[str, Path]]:
         try:
             value = float(rest.rsplit("_", 1)[-1])
         except ValueError:
+            continue
+        if not include_legacy and load_checkpoint(path).get("config") is None:
             continue
         if best is None or value < best[2]:
             best = (run_id, path, value)

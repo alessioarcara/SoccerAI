@@ -41,15 +41,18 @@ def test_bare_state_dicts_are_still_loadable(tmp_path):
     assert payload["config"] is None and "w" in payload["state_dict"]
 
 
-def test_find_best_checkpoint_searches_recursively(tmp_path):
+def test_find_best_checkpoint_searches_recursively_and_skips_legacy_files(tmp_path):
+    cfg = load_cfg(tmp_path, "gcn")
+    state = build_model(cfg, DatasetStub()).state_dict()
     (tmp_path / "sub").mkdir()
-    for name in [
-        "aaa_val_loss_0.6006.pth",
-        "sub/bbb_val_loss_0.5332.pth",
-        "ccc_val_loss_0.5506.pth",
-        "notes.txt",
-    ]:
-        (tmp_path / name).write_bytes(b"")
+    for name, value in [("aaa", 0.6006), ("sub/bbb", 0.5332), ("ccc", 0.5506)]:
+        path = tmp_path / f"{name}_val_loss_{value:.4f}.pth"
+        save_checkpoint(path, state, cfg, [], "val_loss", value)
+    torch.save({"w": torch.zeros(1)}, tmp_path / "old_val_loss_0.1000.pth")  # legacy
+    (tmp_path / "notes.txt").write_bytes(b"")
+
     run_id, path = find_best_checkpoint(tmp_path)
     assert run_id == "bbb" and path.name == "bbb_val_loss_0.5332.pth"
+    run_id, _ = find_best_checkpoint(tmp_path, include_legacy=True)
+    assert run_id == "old"
     assert find_best_checkpoint(tmp_path / "empty") is None
