@@ -46,6 +46,8 @@ def home_attacks_right_expr() -> pl.Expr:
 
 class WorldCup2022Dataset(InMemoryDataset):
     FEATURE_NAMES_FILE = "feature_names.json"
+    # rosters were scraped in spring 2025, the tournament was played in Nov 2022
+    AGE_SCRAPE_TO_TOURNAMENT_YEARS = 2.5
 
     def __init__(
         self,
@@ -139,7 +141,6 @@ class WorldCup2022Dataset(InMemoryDataset):
             "videoUrl",
             "homeTeamName",
             "awayTeamName",
-            "Age Info",
             "Full Name",
             "Height",
             "birth_date",
@@ -147,6 +148,21 @@ class WorldCup2022Dataset(InMemoryDataset):
             "playerId",
         ]
         df = df.drop(cols_to_drop)
+
+        # `age` is only available for the players found on Transfermarkt; the
+        # FBref "Age Info" string ("(Age: 27-172d)") covers most of the others.
+        # Both are ages at scraping time, so they are shifted back to the
+        # tournament date before bucketing. Unknown ages get their own bucket
+        # instead of silently falling into the oldest one.
+        age_from_info = (
+            pl.col("Age Info").str.extract(r"Age:\s*(\d+)", 1).cast(pl.Float64)
+        )
+        df = df.with_columns(
+            (
+                pl.col("age").fill_null(age_from_info)
+                - self.AGE_SCRAPE_TO_TOURNAMENT_YEARS
+            ).alias("age")
+        ).drop("Age Info")
 
         df = (
             df.with_columns(
@@ -196,7 +212,9 @@ class WorldCup2022Dataset(InMemoryDataset):
                 (pl.col("Weight").str.replace("kg", "").cast(pl.Float64)),
                 (pl.col("height_cm").cast(pl.Float64)),
                 (
-                    pl.when(pl.col("age") < 20)
+                    pl.when(pl.col("age").is_null())
+                    .then(pl.lit("unknown"))
+                    .when(pl.col("age") < 20)
                     .then(pl.lit("Under 20"))
                     .when(pl.col("age") < 29)
                     .then(pl.lit("20-28"))

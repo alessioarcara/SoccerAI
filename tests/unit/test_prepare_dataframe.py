@@ -74,3 +74,26 @@ def test_prepare_dataframe_drops_ball_rows_and_shot_frames():
     assert df.height == 2 * 22
     assert "x_ball" in df.columns and "team" not in df.columns
     assert df.filter(pl.col("is_ball_carrier") == 1).height == 2
+
+
+def test_age_buckets_handle_missing_ages():
+    raw = make_raw_df([dict(game_id=1, chain_id=0, label=1, n_frames=1)])
+    # player with no age anywhere -> "unknown"; player 0 (null age) takes it from Age Info
+    raw = raw.with_columns(
+        pl.when((pl.col("jerseyNum") == "4") & (pl.col("team") == "home"))
+        .then(pl.lit(None, dtype=pl.String))
+        .otherwise(pl.col("Age Info"))
+        .alias("Age Info"),
+        pl.when((pl.col("jerseyNum") == "4") & (pl.col("team") == "home"))
+        .then(pl.lit(None, dtype=pl.Float64))
+        .otherwise(pl.col("age"))
+        .alias("age"),
+    )
+    ds = make_dataset_stub(make_data_cfg())
+    df = ds._prepare_dataframe(raw)
+    home = df.filter(pl.col("is_possession_team") == 1).sort("jerseyNum")
+    ages = dict(zip(home["jerseyNum"].to_list(), home["age"].to_list()))
+    assert ages["4"] == "unknown"
+    assert ages["1"] == "20-28"  # Age Info 25 - 2.5 years
+    assert ages["11"] == "20-28"  # age 30 - 2.5 = 27.5
+    assert "35+" not in ages.values()
