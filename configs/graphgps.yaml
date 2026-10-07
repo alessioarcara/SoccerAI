@@ -21,6 +21,6 @@ model:
     din: 96 
     drop: 0.5
     
-training:
+trainer:
   lr: 1e-5
   bs: 128

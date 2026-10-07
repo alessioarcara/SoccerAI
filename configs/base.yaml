@@ -4,7 +4,6 @@ seed: 42
 
 model: 
   use_temporal: True 
-  use_cell_state: True
   use_hierarchical: False
 
   backbone:

@@ -1,5 +1,4 @@
 model:
-  use_cell_state: True
   use_hierarchical: True
 
   backbone:

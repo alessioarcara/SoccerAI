@@ -16,9 +16,16 @@ from soccerai.models.typings import (
 PathLike = str | Path
 
 
-class BackboneCommon(BaseModel):
+class StrictModel(BaseModel):
+    """
+    Base for every config section: unknown keys are an error, so that a typo
+    (e.g. `training:` instead of `trainer:`) cannot be silently ignored.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
+
+class BackboneCommon(StrictModel):
     n_layers: int
     dout: int
     drop: float
@@ -81,7 +88,7 @@ BackboneConfig = Annotated[
 ]
 
 
-class NeckConfig(BaseModel):
+class NeckConfig(StrictModel):
     rnn_type: RNNType
     readout: ReadoutType
     glob_dout: int
@@ -92,13 +99,13 @@ class NeckConfig(BaseModel):
     proj_dout: int
 
 
-class HeadConfig(BaseModel):
+class HeadConfig(StrictModel):
     n_layers: int
     din: int
     drop: float
 
 
-class ModelConfig(BaseModel):
+class ModelConfig(StrictModel):
     use_temporal: bool
     use_hierarchical: bool
     backbone: BackboneConfig
@@ -106,7 +113,7 @@ class ModelConfig(BaseModel):
     head: HeadConfig
 
 
-class ModelMonitorCallbackConfig(BaseModel):
+class ModelMonitorCallbackConfig(StrictModel):
     history_key: str
     minimize: bool
 
@@ -119,7 +126,7 @@ class ModelSavingCallbackConfig(ModelMonitorCallbackConfig):
     pass
 
 
-class TrainerConfig(BaseModel):
+class TrainerConfig(StrictModel):
     bs: int
     lr: float
     wd: float
@@ -130,7 +137,7 @@ class TrainerConfig(BaseModel):
     model_saving_callback: Optional[ModelSavingCallbackConfig] = None
 
 
-class DataConfig(BaseModel):
+class DataConfig(StrictModel):
     val_ratio: float
     include_goal_features: bool
     include_ball_features: bool
@@ -142,22 +149,22 @@ class DataConfig(BaseModel):
     connection_mode: str
 
 
-class CollectorConfig(BaseModel):
+class CollectorConfig(StrictModel):
     n_frames: int
 
 
-class PitchGridConfig(BaseModel):
+class PitchGridConfig(StrictModel):
     nrows: int
     ncols: int
     figheight: int
 
 
-class MetricsConfig(BaseModel):
+class MetricsConfig(StrictModel):
     thr: float
     fbeta: float
 
 
-class Config(BaseModel):
+class Config(StrictModel):
     project_name: str
     run_name: str
     seed: int
