@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
 
 import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -72,6 +73,13 @@ class BaseTrainer(ABC):
     def _get_data_iterable(self, split: str) -> Optional[TorchDataLoader]:
         return self.train_loader if split == "train" else self.val_loader
 
+    @staticmethod
+    def _num_examples(item: Any) -> int:
+        """Number of training examples (graphs or chains) in a batch."""
+        if isinstance(item, Discrete_Signal):
+            return int(np.asarray(item.masks).shape[1])
+        return int(item.num_graphs)
+
     def _on_training_end(self) -> None:
         """
         Hook called at the end of training.
@@ -115,7 +123,7 @@ class BaseTrainer(ABC):
                     colour="blue",
                 ):
                     loss = self._train_step(item)
-                    wandb.log(
+                    self._wandb_log(
                         {
                             "train/step_loss": loss.item(),
                             "train/lr": self.scheduler.get_last_lr()[0],
@@ -150,6 +158,7 @@ class BaseTrainer(ABC):
         num_items = len(iterable)
 
         total_loss = 0.0
+        total_examples = 0
         for m in self.metrics:
             m.reset()
 
@@ -161,12 +170,16 @@ class BaseTrainer(ABC):
             colour="red",
         ):
             loss, preds_probs, true_labels = self._eval_step(item)
-            total_loss += loss.item()
+            # the loss is a mean over the examples of the batch: weight it by
+            # the batch size so that a smaller last batch does not count more
+            n_examples = self._num_examples(item)
+            total_loss += loss.item() * n_examples
+            total_examples += n_examples
 
             for m in self.metrics:
                 m.update(preds_probs, true_labels, item)
 
-        mean_loss = total_loss / num_items
+        mean_loss = total_loss / max(total_examples, 1)
 
         if split == "val":
             self.history["val_loss"] = mean_loss
@@ -187,7 +200,13 @@ class BaseTrainer(ABC):
                         visual, fps=1, format="mp4"
                     )
 
-        wandb.log(log_dict)
+        self._wandb_log(log_dict)
+
+    @staticmethod
+    def _wandb_log(payload: Dict[str, Any]) -> None:
+        """Log to W&B only when a run is active (eval can run standalone)."""
+        if wandb.run is not None:
+            wandb.log(payload)
 
 
 class Trainer(BaseTrainer):

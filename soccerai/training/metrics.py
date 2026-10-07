@@ -1,5 +1,15 @@
 from abc import ABC, abstractmethod
-from typing import Generic, List, Literal, Optional, Sequence, Tuple, TypeVar, Union
+from typing import (
+    Any,
+    Generic,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Tuple,
+    TypeVar,
+    Union,
+)
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,6 +19,7 @@ from matplotlib.collections import LineCollection
 from torch_geometric.data import Batch, Data
 from torch_geometric_temporal.signal import Discrete_Signal
 from torchmetrics.functional.classification import (
+    binary_auroc,
     binary_average_precision,
     binary_precision_recall_curve,
 )
@@ -22,6 +33,32 @@ from soccerai.training.utils import (
 )
 
 T = TypeVar("T")
+
+
+def chain_level_predictions(
+    preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Any
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Reduce per-frame predictions of a temporal batch to one prediction per
+    chain, taken at the last valid (non padded) frame.
+
+    The training loss concentrates on the end of each chain and the label is
+    a property of the whole chain, so scoring every frame (including the
+    first ones, which are indistinguishable between classes) would measure
+    a different task. Non temporal batches are returned unchanged.
+    """
+    if not isinstance(batch, Discrete_Signal) or preds_probs.dim() != 2:
+        return preds_probs, true_labels
+
+    masks = torch.as_tensor(np.asarray(batch.masks), dtype=torch.bool)  # (T, B)
+    last_valid = masks.sum(dim=0) - 1  # (B,)
+    chain_idx = torch.arange(masks.shape[1])
+
+    preds_last = preds_probs[
+        last_valid.to(preds_probs.device), chain_idx.to(preds_probs.device)
+    ]
+    labels_last = true_labels[0]  # chain label, always valid at t = 0
+    return preds_last, labels_last
 
 
 class Metric(ABC):
@@ -62,16 +99,20 @@ class BinaryConfusionMatrix(Metric):
     def update(
         self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
     ) -> None:
-        preds_labels_flat = (preds_probs >= self.cfg.thr).view(-1).long()
-        true_labels_flat = true_labels.view(-1).long()
+        preds_probs, true_labels = chain_level_predictions(
+            preds_probs, true_labels, batch
+        )
+        preds_labels_flat = (preds_probs >= self.cfg.thr).view(-1).long().cpu()
+        true_labels_flat = true_labels.view(-1).long().cpu()
 
         if self.ignore_value is not None:
             mask = true_labels_flat != self.ignore_value
             preds_labels_flat = preds_labels_flat[mask]
             true_labels_flat = true_labels_flat[mask]
 
-        for t, p in zip(true_labels_flat, preds_labels_flat):
-            self.cm[t, p] += 1
+        self.cm += torch.bincount(
+            true_labels_flat * 2 + preds_labels_flat, minlength=4
+        ).view(2, 2)
 
     def _get_fbeta(self, tp: float, fp: float, fn: float) -> float:
         beta2 = self.cfg.fbeta**2
@@ -131,6 +172,9 @@ class BinaryPrecisionRecallCurve(Metric):
     def update(
         self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
     ) -> None:
+        preds_probs, true_labels = chain_level_predictions(
+            preds_probs, true_labels, batch
+        )
         preds_flat = preds_probs.detach().view(-1).cpu()
         labels_flat = true_labels.detach().view(-1).cpu()
 
@@ -147,7 +191,8 @@ class BinaryPrecisionRecallCurve(Metric):
         all_true_labels_flat = torch.cat(self.all_true_labels).long()
 
         ap = binary_average_precision(all_preds_probs_flat, all_true_labels_flat)
-        return [("average_precision", ap.item())]
+        auroc = binary_auroc(all_preds_probs_flat, all_true_labels_flat)
+        return [("average_precision", ap.item()), ("auroc", auroc.item())]
 
     def reset(self):
         self.all_preds_probs = []
@@ -258,7 +303,7 @@ class ChainCollector(Collector[Tuple[np.ndarray, List[Data]]]):
         for i, t in enumerate(last_t):
             conf = probs_np[t - 1, i]
 
-            if (conf > self.cfg.metrics.thr) & (labels_np[0, i] == self.target_label):
+            if (conf >= self.cfg.metrics.thr) & (labels_np[0, i] == self.target_label):
                 chain_predictions = probs_np[:t, i]
                 chain = extract_chain(batch[:t], i)
                 self.storage.add(

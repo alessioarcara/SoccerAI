@@ -3,6 +3,7 @@ from pathlib import Path
 
 os.environ.setdefault("WANDB_MODE", "disabled")
 
+import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402
 from test_temporal_collate import N_FEAT, make_chain  # noqa: E402
 from torch.utils.data import DataLoader  # noqa: E402
@@ -83,3 +84,16 @@ def test_model_is_in_train_mode_during_every_epoch():
     assert model.modes[:3] == [True] * 3
     assert model.modes[10:13] == [True] * 3  # second epoch is trained in train mode
     assert not any(model.modes[13:])  # evaluation runs in eval mode
+
+
+def test_val_loss_does_not_depend_on_batching():
+    torch.manual_seed(0)
+    trainer_a, model_a = _make_trainer(n_epochs=1, val_batch_size=3)
+    torch.manual_seed(0)
+    trainer_b, model_b = _make_trainer(n_epochs=1, val_batch_size=1)
+    model_b.load_state_dict(model_a.state_dict())
+
+    trainer_a.eval("val")
+    trainer_b.eval("val")
+    assert abs(trainer_a.history["val_loss"] - trainer_b.history["val_loss"]) < 1e-5
+    assert trainer_a.history["val_auroc"] == trainer_b.history["val_auroc"]
