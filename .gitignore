@@ -178,3 +178,6 @@ wandb
 checkpoints/
 # processed datasets are derived from the raw parquet and the data config
 soccerai/data/resources/processed/
+
+# outputs of scripts/run_experiments.py
+experiments/
