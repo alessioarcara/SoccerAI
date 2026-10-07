@@ -130,6 +130,8 @@ class WorldCup2022Dataset(InMemoryDataset):
                 pl.lit(None, dtype=pl.Boolean).alias("homeTeamStartLeftExtraTime")
             )
 
+        df = self._disambiguate_chains(df)
+
         cols_to_drop = [
             "gameEventType",
             "index",
@@ -286,6 +288,29 @@ class WorldCup2022Dataset(InMemoryDataset):
         )
 
         return df
+
+    @staticmethod
+    def _disambiguate_chains(df: pl.DataFrame) -> pl.DataFrame:
+        """
+        Make every frame belong to exactly one chain and every negative chain
+        shot-free.
+
+        Two positive chains overlap when a possession contains two shots (the
+        second chain extends back past the first shot); the shared frames are
+        kept in the chain whose shot comes first. Negative chains that contain
+        a shot (possible when the shot's own chain was too short to be kept)
+        are dropped as label noise.
+        """
+        frame_key = ["gameEventId", "possessionEventId"]
+
+        chain_end = pl.col("index").max().over("chain_id")
+        df = df.with_columns(chain_end.alias("_chain_end"))
+        df = df.filter(
+            pl.col("_chain_end") == pl.col("_chain_end").min().over(frame_key)
+        ).drop("_chain_end")
+
+        chain_has_shot = (pl.col("possessionEventType") == "SH").any().over("chain_id")
+        return df.filter(~((pl.col("label") == 0) & chain_has_shot))
 
     def _create_preprocessor(
         self, df: pl.DataFrame

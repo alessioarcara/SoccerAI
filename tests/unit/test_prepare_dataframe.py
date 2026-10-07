@@ -97,3 +97,49 @@ def test_age_buckets_handle_missing_ages():
     assert ages["1"] == "20-28"  # Age Info 25 - 2.5 years
     assert ages["11"] == "20-28"  # age 30 - 2.5 = 27.5
     assert "35+" not in ages.values()
+
+
+def test_overlapping_positive_chains_are_disambiguated():
+    base = make_raw_df(
+        [
+            dict(
+                game_id=1,
+                chain_id=0,
+                label=1,
+                n_frames=3,
+                event_types=["PA", "PA", "SH"],
+            ),
+            dict(game_id=1, chain_id=1, label=1, n_frames=2, event_types=["PA", "SH"]),
+            dict(
+                game_id=1,
+                chain_id=2,
+                label=0,
+                n_frames=3,
+                event_types=["PA", "SH", "PA"],
+            ),
+        ]
+    )
+    # chain 1 (second shot of the possession) also contains the frames of chain 0
+    overlap = base.filter(pl.col("chain_id") == 0).with_columns(
+        pl.lit(1, dtype=pl.Int64).alias("chain_id")
+    )
+    raw = pl.concat([base, overlap])
+
+    ds = make_dataset_stub(make_data_cfg())
+    df = ds._prepare_dataframe(raw)
+
+    frames = (
+        df.group_by(["chain_id", "gameEventId"]).len().sort(["chain_id", "gameEventId"])
+    )
+    assert frames["len"].unique().to_list() == [22]  # no duplicated frames
+    chain_frames = {
+        cid: sorted(grp["gameEventId"].to_list())
+        for cid, grp in frames.group_by("chain_id", maintain_order=True)
+    }
+    chain_frames = {
+        int(k[0]) if isinstance(k, tuple) else int(k): v
+        for k, v in chain_frames.items()
+    }
+    assert chain_frames[0] == [0, 1]  # shared frames stay with the first shot
+    assert chain_frames[1] == [3]  # chain 1 keeps only the frames after the first shot
+    assert 2 not in chain_frames  # negative chain containing a shot is dropped
