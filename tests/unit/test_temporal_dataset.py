@@ -24,7 +24,7 @@ def make_frame(chain_id: int, order: float, label: float) -> Data:
         u=torch.tensor([[order, 0.0]]),
         y=torch.tensor([[label]]),
         chain_id=torch.tensor(chain_id),
-        frame_time=torch.tensor(order),
+        event_index=torch.tensor(int(order)),
         jersey_numbers=torch.arange(N_NODES),
     )
 

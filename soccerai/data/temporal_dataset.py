@@ -69,7 +69,7 @@ class TemporalChainsDataset(Dataset):
 
         chains = []
         for chain_id, frames in buckets.items():
-            ordered = sorted(frames, key=lambda f: float(f.frame_time.item()))
+            ordered = sorted(frames, key=lambda f: int(f.event_index.item()))
             if max_chain_len is not None:
                 ordered = ordered[-max_chain_len:]
 

@@ -27,6 +27,8 @@ def make_data_cfg(**overrides) -> DataConfig:
         mask_non_possession_shooting_stats=False,
         connection_mode="bipartite",
         normalize_attack_direction=False,
+        use_roster_features=True,
+        use_match_clock=True,
     )
     defaults.update(overrides)
     return DataConfig(**defaults)

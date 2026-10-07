@@ -153,6 +153,11 @@ class DataConfig(StrictModel):
     normalize_attack_direction: bool = True
     # keep only the last frames of every chain (None = whole chain)
     max_chain_len: Optional[int] = 12
+    # per-player scraped statistics (weight, market value, shooting record,
+    # age); constant per player, they let the model identify players
+    use_roster_features: bool = False
+    # match clock (seconds) as a global feature
+    use_match_clock: bool = False
 
 
 class CollectorConfig(StrictModel):

@@ -43,6 +43,7 @@ class GraphConverter(ABC):
                 *[
                     "gameEventId",
                     "possessionEventId",
+                    "event_index",
                     "label",
                     "chain_id",
                     "gameId",
@@ -54,7 +55,7 @@ class GraphConverter(ABC):
             global_df = event_df.select(global_feature_cols).head(1)
 
             chain_id = int(event_df["chain_id"][0])
-            frame_time = float(event_df["frameTime"][0])
+            event_index = int(event_df["event_index"][0])
             label = float(event_df["label"][0])
 
             edge_idx, edge_weight, edge_attr = self._create_edges(node_df)
@@ -73,7 +74,7 @@ class GraphConverter(ABC):
                     u=u,
                     y=y,
                     chain_id=chain_id,
-                    frame_time=frame_time,
+                    event_index=event_index,
                     jersey_numbers=jersey_numbers,
                 )
             )

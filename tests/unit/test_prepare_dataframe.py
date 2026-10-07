@@ -191,3 +191,40 @@ def test_attack_direction_normalisation_keeps_frames_attacking_right():
     assert set(normed["x_goal"].to_list()) == {X_GOAL_RIGHT}
     np.testing.assert_allclose(normed["x"].to_numpy(), plain["x"].to_numpy())
     np.testing.assert_allclose(normed["cos"].to_numpy(), plain["cos"].to_numpy())
+
+
+def _feature_names(cfg):
+    raw = make_raw_df([dict(game_id=1, chain_id=0, label=1, n_frames=2)])
+    ds = make_dataset_stub(cfg)
+    df = ds._prepare_dataframe(raw)
+    out = ds._create_preprocessor(df).fit_transform(df)
+    return df, out.columns
+
+
+def test_roster_and_clock_features_are_optional():
+    from soccerai.data.config import SHOOTING_STATS
+
+    _, with_all = _feature_names(make_data_cfg())
+    df, without = _feature_names(
+        make_data_cfg(use_roster_features=False, use_match_clock=False)
+    )
+
+    for col in ["Weight", "Market Value", "goals", "age_20-28", "frameTime"]:
+        assert col in with_all and col not in without
+    assert not any(c in without for c in SHOOTING_STATS)
+    assert "playerRole_GK" in without and "ball_dist" in without and "dz" in without
+    assert set(df["height_cm"].to_list()) == {180.0}
+    assert "event_index" in without  # identifier kept for ordering
+
+
+def test_event_index_orders_frames_of_a_chain():
+    raw = make_raw_df([dict(game_id=1, chain_id=0, label=1, n_frames=3)])
+    ds = make_dataset_stub(make_data_cfg())
+    df = ds._prepare_dataframe(raw)
+    assert "index" not in df.columns
+    per_frame = (
+        df.group_by("gameEventId")
+        .agg(pl.col("event_index").first())
+        .sort("gameEventId")
+    )
+    assert per_frame["event_index"].to_list() == [0, 1, 2]

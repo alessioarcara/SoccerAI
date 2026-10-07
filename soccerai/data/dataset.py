@@ -47,6 +47,8 @@ def home_attacks_right_expr() -> pl.Expr:
 
 
 class WorldCup2022Dataset(InMemoryDataset):
+    # player height used for the ball `dz` feature when roster data is unused
+    NOMINAL_HEIGHT_CM = 180.0
     # velocities are clipped at these speeds (m/s) and scaled to [-1, 1]
     MAX_PLAYER_SPEED = 12.0
     MAX_BALL_RELATIVE_SPEED = 35.0
@@ -161,10 +163,12 @@ class WorldCup2022Dataset(InMemoryDataset):
             )
 
         df = self._disambiguate_chains(df)
+        # the raw event index orders the frames of a chain (the game clock
+        # has a 1 s resolution and is often tied within a chain)
+        df = df.rename({"index": "event_index"})
 
         cols_to_drop = [
             "gameEventType",
-            "index",
             "startTime",
             "endTime",
             "index_right",
@@ -257,6 +261,17 @@ class WorldCup2022Dataset(InMemoryDataset):
                 ),
             ]
         ).drop(["playerName", "playerName_right"])
+
+        if not self.cfg.use_match_clock:
+            df = df.drop("frameTime")
+
+        if not self.cfg.use_roster_features:
+            # per-player constants (weight, market value, shooting record, age)
+            # identify the player: without them the model has to rely on what
+            # happens on the pitch. The height only feeds the ball `dz`
+            # feature, so a nominal height is kept.
+            df = df.drop(["Weight", "Market Value", "age", *SHOOTING_STATS])
+            df = df.with_columns(pl.lit(self.NOMINAL_HEIGHT_CM).alias("height_cm"))
 
         if self.cfg.use_macro_roles:
             df = df.with_columns(
@@ -384,17 +399,22 @@ class WorldCup2022Dataset(InMemoryDataset):
     ) -> Union[ColumnTransformer, Pipeline]:
         # Column groups --------------------------------------------------- #
         cat_cols = [
-            "possessionEventType",
-            "playerRole",
-            "is_possession_team",
-            "is_ball_carrier",
-            "age",
+            c
+            for c in [
+                "possessionEventType",
+                "playerRole",
+                "is_possession_team",
+                "is_ball_carrier",
+                "age",
+            ]
+            if c in df.columns
         ]
         # Identifier columns are passed through untouched; the converter uses
         # them to group rows into graphs and then drops them.
         id_cols = [
             "gameEventId",
             "possessionEventId",
+            "event_index",
             "label",
             "gameId",
             "chain_id",
@@ -453,7 +473,8 @@ class WorldCup2022Dataset(InMemoryDataset):
             ),
         ]
 
-        if self.cfg.use_pca_on_roster_cols:
+        use_shooting_stats = self.cfg.use_roster_features
+        if self.cfg.use_pca_on_roster_cols and use_shooting_stats:
             numeric_steps.append(
                 (
                     "shooting_stats_pca",
@@ -555,7 +576,7 @@ class WorldCup2022Dataset(InMemoryDataset):
             verbose_feature_names_out=False,  # No prefixes
         )
 
-        if self.cfg.mask_non_possession_shooting_stats:
+        if self.cfg.mask_non_possession_shooting_stats and use_shooting_stats:
             if self.cfg.use_pca_on_roster_cols:
 
                 def cols_to_mask(df: pl.DataFrame) -> List[str]:
