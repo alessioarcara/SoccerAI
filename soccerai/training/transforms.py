@@ -1,4 +1,4 @@
-from typing import Callable, List, Optional, Sequence, Union
+from typing import Any, Callable, List, Optional, Sequence, Union
 
 import numpy as np
 import torch
@@ -16,15 +16,15 @@ def get_feature_idx(name: str, feature_names: Sequence[str]) -> Optional[int]:
         return None
 
 
-def make_complement(idx: int) -> Callable[[Array], None]:
-    def complement_to_one(x: Array, idx=idx) -> None:
+def make_complement(idx: int) -> Callable[[Any], None]:
+    def complement_to_one(x: Any, idx=idx) -> None:
         x[:, idx] = 1.0 - x[:, idx]
 
     return complement_to_one
 
 
-def make_signflip(idx: int) -> Callable[[Array], None]:
-    def sign_flip(x: Array, idx=idx) -> None:
+def make_signflip(idx: int) -> Callable[[Any], None]:
+    def sign_flip(x: Any, idx=idx) -> None:
         x[:, idx] = -x[:, idx]
 
     return sign_flip
@@ -42,7 +42,7 @@ class BaseRandomFlip(BaseTransform):
 
     def __init__(self, p: float):
         self.p = p
-        self._ops: List[Callable[[Array], None]] = []
+        self._ops: List[Callable[[Any], None]] = []
 
     def _maybe(self) -> bool:
         return torch.rand(1).item() < self.p

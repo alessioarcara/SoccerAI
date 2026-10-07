@@ -1,9 +1,15 @@
+from pathlib import Path
+
 import polars as pl
+import pytest
 
 from soccerai.data.data import load_and_process_soccer_events
 from soccerai.data.enrichers.player_velocity import PlayerVelocityEnricher
 
+RAW_DATA = Path("/home/soccerdata/FIFA_WorldCup_2022")
 
+
+@pytest.mark.skipif(not RAW_DATA.exists(), reason="raw PFF data not available")
 def test_add_velocity_two_players():
     _, players_df = load_and_process_soccer_events(
         "/home/soccerdata/FIFA_WorldCup_2022/Event Data"

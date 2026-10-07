@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, cast
 
 import torch
 import torch.nn as nn
@@ -83,7 +83,7 @@ def build_model(cfg: Config, train_ds: WorldCup2022Dataset) -> nn.Module:
         return TemporalGNN(
             backbone,
             TemporalFusion(
-                backbone.out_dim,
+                cast(int, backbone.out_dim),
                 train_ds.num_node_features,
                 train_ds.num_global_features,
                 cfg.model.neck,

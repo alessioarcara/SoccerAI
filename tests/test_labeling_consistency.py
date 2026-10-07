@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import polars as pl
 import pytest
 
@@ -11,6 +13,9 @@ from soccerai.data.data import (
 EVENT_DATA_PATH = "/home/soccerdata/FIFA_WorldCup_2022/Event Data"
 
 
+@pytest.mark.skipif(
+    not Path(EVENT_DATA_PATH).exists(), reason="raw PFF data not available"
+)
 @pytest.mark.parametrize(
     "chains_path,expect_shot",
     [(ACCEPTED_POS_CHAINS_PATH, True), (ACCEPTED_NEG_CHAINS_PATH, False)],
