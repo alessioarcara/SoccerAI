@@ -44,7 +44,9 @@ class GNNPlusLayer(nn.Module):
     ) -> torch.Tensor:
         x_proj = self.proj(x)
 
-        x = F.relu(
+        # conv -> norm -> dropout -> activation, with a skip from the input,
+        # followed by a residual feed-forward block (GNN+ layer)
+        h = F.relu(
             self.drop(
                 self.norm(
                     self.conv_layer(x, **conv_kwargs),
@@ -53,5 +55,6 @@ class GNNPlusLayer(nn.Module):
                 )
             )
         )
+        h = x_proj + h
 
-        return x + self.mlp(x_proj + x)
+        return h + self.mlp(h)

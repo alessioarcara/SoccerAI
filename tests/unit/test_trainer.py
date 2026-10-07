@@ -3,6 +3,7 @@ from pathlib import Path
 
 os.environ.setdefault("WANDB_MODE", "disabled")
 
+import pytest  # noqa: E402
 import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402
 from test_temporal_collate import N_FEAT, make_chain  # noqa: E402
@@ -97,3 +98,14 @@ def test_val_loss_does_not_depend_on_batching():
     trainer_b.eval("val")
     assert abs(trainer_a.history["val_loss"] - trainer_b.history["val_loss"]) < 1e-5
     assert trainer_a.history["val_auroc"] == trainer_b.history["val_auroc"]
+
+
+def test_auxiliary_loss_is_added_to_the_training_loss():
+    trainer, model = _make_trainer(n_epochs=1, val_batch_size=3)
+    batch = next(iter(trainer.train_loader))
+    base_loss, _ = trainer._compute_signal_loss_and_last_pred(batch)
+
+    model.aux_loss = torch.tensor(2.0)
+    trainer.cfg.trainer.aux_loss_weight = 0.5
+    loss, _ = trainer._compute_signal_loss_and_last_pred(batch)
+    assert loss.item() == pytest.approx(base_loss.item() + 0.5 * 2.0, abs=1e-5)

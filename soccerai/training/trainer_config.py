@@ -131,6 +131,8 @@ class TrainerConfig(StrictModel):
     n_epochs: int
     eval_rate: int
     gamma: float
+    # weight of the auxiliary loss exposed by some models (DiffPool)
+    aux_loss_weight: float = 1.0
     early_stopping_callback: Optional[EarlyStoppingCallbackConfig] = None
     model_saving_callback: Optional[ModelSavingCallbackConfig] = None
 

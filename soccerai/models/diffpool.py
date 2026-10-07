@@ -116,12 +116,16 @@ class HierarchicalGNN(nn.Module):
         s = self.gnn1_pool(x, adj, mask)
         x = self.gnn1_embed(x, adj, mask)
 
-        x, adj, _, _ = pyg_nn.dense_diff_pool(x, adj, s, mask)
+        x, adj, link_loss1, ent_loss1 = pyg_nn.dense_diff_pool(x, adj, s, mask)
 
         s = self.gnn2_pool(x, adj)
         x = self.gnn2_embed(x, adj)
 
-        x, adj, _, _ = pyg_nn.dense_diff_pool(x, adj, s)
+        x, adj, link_loss2, ent_loss2 = pyg_nn.dense_diff_pool(x, adj, s)
+
+        # link-prediction and assignment-entropy regularisers of DiffPool;
+        # the trainer adds them to the classification loss
+        self.aux_loss = link_loss1 + ent_loss1 + link_loss2 + ent_loss2
 
         x = self.gnn3_embed(x, adj)
 

@@ -46,6 +46,41 @@ NORMALIZATIONS: Dict[NormalizationType, Type[nn.Module]] = {
     "graph": pyg_nn.GraphNorm,
 }
 
+# names understood by `torch_geometric.nn.GPSConv(norm=...)`
+GPS_NORMALIZATIONS: Dict[NormalizationType, Optional[str]] = {
+    "none": None,
+    "batch": "batch_norm",
+    "layer": "layer_norm",
+    "instance": "instance_norm",
+    "graph": "graph_norm",
+}
+
+
+def apply_layer(
+    conv: nn.Module,
+    norm: nn.Module,
+    drop: nn.Module,
+    h: torch.Tensor,
+    batch: OptTensor,
+    batch_size: Optional[int],
+    **conv_kwargs,
+) -> torch.Tensor:
+    """
+    One message-passing block: conv -> norm -> ReLU -> dropout.
+
+    A `GNNPlusLayer` already contains its own normalisation, activation,
+    dropout and residual connections, so it is applied as is.
+    """
+    if isinstance(conv, GNNPlusLayer):
+        return conv(h, batch=batch, batch_size=batch_size, **conv_kwargs)
+
+    return drop(
+        F.relu(
+            norm(conv(h, **conv_kwargs), batch=batch, batch_size=batch_size),
+            inplace=True,
+        )
+    )
+
 
 @BackboneRegistry.register("gcn")
 class GCNBackbone(nn.Module):
@@ -68,7 +103,8 @@ class GCNBackbone(nn.Module):
                 return conv
 
         def norm_fn(_):
-            return NORMALIZATIONS[cfg.norm](cfg.dout)
+            # a GNN+ layer normalises internally: do not normalise twice
+            return Identity() if cfg.plus else NORMALIZATIONS[cfg.norm](cfg.dout)
 
         self.convs, self.norms = build_layers(
             n_layers=cfg.n_layers,
@@ -89,16 +125,16 @@ class GCNBackbone(nn.Module):
     ):
         h = x
 
-        for layer_idx, (conv, norm) in enumerate(zip(self.convs, self.norms)):
-            h = self.drop(
-                F.relu(
-                    norm(
-                        conv(h, edge_index=edge_index, edge_weight=edge_weight),
-                        batch=batch,
-                        batch_size=batch_size,
-                    ),
-                    inplace=True,
-                )
+        for conv, norm in zip(self.convs, self.norms):
+            h = apply_layer(
+                conv,
+                norm,
+                self.drop,
+                h,
+                batch,
+                batch_size,
+                edge_index=edge_index,
+                edge_weight=edge_weight,
             )
 
         return h
@@ -263,19 +299,18 @@ class GATv2Backbone(nn.Module):
         h = x
         n_layers = len(self.convs)
 
+        # drop edges once per forward pass (dropping again at every layer
+        # would compound the rate: p=0.5 keeps 25% of the edges at layer 2)
+        edge_index, edge_mask = dropout_edge(
+            edge_index, p=self.edge_dropout, training=self.training
+        )
+        edge_attr = (
+            edge_attr[edge_mask]
+            if (self.use_edge_attr and edge_attr is not None)
+            else None
+        )
+
         for layer_idx, conv in enumerate(self.convs):
-            edge_index, edge_mask = dropout_edge(
-                edge_index,
-                p=self.edge_dropout,
-                training=self.training,
-            )
-
-            edge_attr = (
-                edge_attr[edge_mask]
-                if (self.use_edge_attr and edge_attr is not None)
-                else None
-            )
-
             h = conv(h, edge_index, edge_attr=edge_attr)
             # Skip dropout, norm, and activation on last layer:
             # Final GAT layer averages heads (concat=False); further normalization would compress attention differences.
@@ -311,7 +346,8 @@ class GINEBackbone(nn.Module):
                 return conv
 
         def norm_fn(_):
-            return NORMALIZATIONS[cfg.norm](cfg.dout)
+            # a GNN+ layer normalises internally: do not normalise twice
+            return Identity() if cfg.plus else NORMALIZATIONS[cfg.norm](cfg.dout)
 
         self.convs, self.norms = build_layers(
             n_layers=cfg.n_layers,
@@ -340,15 +376,15 @@ class GINEBackbone(nn.Module):
                 edge_attr = edge_attr.unsqueeze(-1)
 
         for conv, norm in zip(self.convs, self.norms):
-            h = self.drop(
-                F.relu(
-                    norm(
-                        conv(h, edge_index=edge_index, edge_attr=edge_attr),
-                        batch=batch,
-                        batch_size=batch_size,
-                    ),
-                    inplace=True,
-                )
+            h = apply_layer(
+                conv,
+                norm,
+                self.drop,
+                h,
+                batch,
+                batch_size,
+                edge_index=edge_index,
+                edge_attr=edge_attr,
             )
             outs.append(h)
 
@@ -370,6 +406,7 @@ class GraphGPSBackbone(nn.Module):
                 pyg_nn.GINEConv(build_mlp(cfg.dout, cfg.dout)),
                 heads=cfg.heads,
                 dropout=cfg.drop,
+                norm=GPS_NORMALIZATIONS[cfg.norm],
                 attn_kwargs={"dropout": cfg.attn_drop},
             )
 
@@ -400,7 +437,7 @@ class GraphGPSBackbone(nn.Module):
                 edge_attr = edge_attr.unsqueeze(-1)
             edge_attr = self.edge_proj(edge_attr)
 
-        for layer_idx, conv in enumerate(self.convs):
+        for conv in self.convs:
             h = conv(
                 h,
                 edge_index=edge_index,

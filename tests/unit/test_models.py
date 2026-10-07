@@ -74,3 +74,31 @@ def test_temporal_context_reaches_the_head(tmp_path, mode):
     perturbed = run_chain(model, snapshots, x_override=snapshots[0].x + 1.0)
     # the prediction at the last frame must depend on the first frame
     assert not torch.allclose(reference, perturbed)
+
+
+def test_gnn_plus_layers_normalise_once(tmp_path):
+    from soccerai.models.layers import GNNPlusLayer, Identity
+
+    cfg = load_cfg(tmp_path, "gine")  # plus: True, norm: batch
+    model = build_model(cfg, DatasetStub())
+    assert all(isinstance(c, GNNPlusLayer) for c in model.backbone.convs)
+    assert all(isinstance(n, Identity) for n in model.backbone.norms)
+
+
+@pytest.mark.parametrize(
+    "norm,expected", [("none", "NoneType"), ("layer", "LayerNorm")]
+)
+def test_graphgps_uses_the_configured_norm(tmp_path, norm, expected):
+    cfg = load_cfg(tmp_path, "graphgps")
+    cfg.model.backbone.norm = norm
+    model = build_model(cfg, DatasetStub())
+    assert type(model.backbone.convs[0].norm1).__name__ == expected
+
+
+def test_diffpool_exposes_auxiliary_losses(tmp_path):
+    cfg = load_cfg(tmp_path, "diffpool")
+    model = build_model(cfg, DatasetStub())
+    batch = TemporalChainsDataset.collate([make_chain(2, 1.0, 0)])
+    run_chain(model, list(batch))
+    assert model.aux_loss.ndim == 0 and model.aux_loss.requires_grad
+    assert float(model.aux_loss) >= 0.0

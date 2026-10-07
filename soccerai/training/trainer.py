@@ -73,6 +73,16 @@ class BaseTrainer(ABC):
     def _get_data_iterable(self, split: str) -> Optional[TorchDataLoader]:
         return self.train_loader if split == "train" else self.val_loader
 
+    def _aux_loss(self) -> torch.Tensor | float:
+        """
+        Auxiliary loss exposed by the model after its forward pass (e.g. the
+        DiffPool link/entropy regularisers), scaled by the configured weight.
+        """
+        aux = getattr(self.model, "aux_loss", None)
+        if aux is None:
+            return 0.0
+        return self.cfg.trainer.aux_loss_weight * aux
+
     @staticmethod
     def _num_examples(item: Any) -> int:
         """Number of training examples (graphs or chains) in a batch."""
@@ -221,7 +231,7 @@ class Trainer(BaseTrainer):
             batch=batch.batch,
             batch_size=batch.num_graphs,
         )
-        loss: torch.Tensor = self.criterion(out, batch.y)
+        loss: torch.Tensor = self.criterion(out, batch.y) + self._aux_loss()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         self.optim.step()
@@ -238,7 +248,7 @@ class Trainer(BaseTrainer):
             batch=batch.batch,
             batch_size=batch.num_graphs,
         )
-        loss = self.criterion(out, batch.y)
+        loss = self.criterion(out, batch.y) + self._aux_loss()
         preds_probs = torch.sigmoid(out)
         true_labels = batch.y.cpu().long()
         return loss, preds_probs, true_labels
@@ -269,6 +279,7 @@ class TemporalTrainer(BaseTrainer):
 
         h = None
         c = None
+        aux_loss: torch.Tensor | float = 0.0
         for t, snapshot in enumerate(signal):
             snapshot.to(self.device, non_blocking=True)
 
@@ -288,8 +299,9 @@ class TemporalTrainer(BaseTrainer):
                 out, snapshot.y, reduction="none"
             ).squeeze(1)
             pred_per_timestep[t] = out.squeeze(-1)
+            aux_loss = aux_loss + self._aux_loss()
 
-        loss = (loss_per_timestep * weights).sum(dim=0).mean()
+        loss = (loss_per_timestep * weights).sum(dim=0).mean() + aux_loss / T_max
 
         return loss, pred_per_timestep
 
