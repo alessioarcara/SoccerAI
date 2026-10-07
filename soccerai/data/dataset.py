@@ -246,35 +246,40 @@ class WorldCup2022Dataset(InMemoryDataset):
             "is_ball_carrier",
             "age",
         ]
-        pos_cols = ["x", "y"]
-        goal_cols = ["x_goal", "y_goal"]
-        angle_cols = ["cos", "sin"]
-        velocity_cols = ["vx", "vy"]
-        exclude_cols: set[str] = {
-            *cat_cols,
-            *pos_cols,
-            *goal_cols,
-            *angle_cols,
-            *velocity_cols,
+        # Identifier columns are passed through untouched; the converter uses
+        # them to group rows into graphs and then drops them.
+        id_cols = [
             "gameEventId",
             "possessionEventId",
             "label",
             "gameId",
             "chain_id",
             "jerseyNum",
+        ]
+        pos_cols = ["x", "y"]
+        goal_cols = ["x_goal", "y_goal"]
+        angle_cols = ["cos", "sin"]
+        velocity_cols = ["vx", "vy"]
+        ball_cols = [
+            "x_ball",
+            "y_ball",
+            "z_ball",
+            "cos_ball",
+            "sin_ball",
+            "vx_ball",
+            "vy_ball",
+        ]
+        exclude_cols: set[str] = {
+            *cat_cols,
+            *id_cols,
+            *pos_cols,
+            *goal_cols,
+            *angle_cols,
+            *velocity_cols,
         }
         if self.cfg.include_ball_features:
-            ball_cols = [
-                "x_ball",
-                "y_ball",
-                "z_ball",
-                "height_cm",
-                "cos_ball",
-                "sin_ball",
-                "vx_ball",
-                "vy_ball",
-            ]
-            exclude_cols.update(ball_cols)
+            # the player height is consumed by the ball pipeline (`dz`)
+            exclude_cols.update(ball_cols + ["height_cm"])
         num_cols = [c for c in df.columns if c not in exclude_cols]
 
         # Pipelines ------------------------------------------------------- #
@@ -355,11 +360,8 @@ class WorldCup2022Dataset(InMemoryDataset):
         transformers = [
             ("num", num_pipe, num_cols),
             ("cat", cat_pipe, cat_cols),
-            (
-                "player_loc",
-                player_pipe,
-                pos_cols + angle_cols + velocity_cols + goal_cols,
-            ),
+            ("player_loc", player_pipe, pos_cols + angle_cols + velocity_cols),
+            ("ids", "passthrough", id_cols),
         ]
 
         if self.cfg.include_goal_features:
@@ -390,13 +392,16 @@ class WorldCup2022Dataset(InMemoryDataset):
                 (
                     "ball_pipe",
                     ball_loc_pipe,
-                    pos_cols + angle_cols + velocity_cols + ball_cols,
+                    pos_cols + ["height_cm"] + angle_cols + velocity_cols + ball_cols,
                 )
             )
 
+        # Every column that reaches the model must be produced by one of the
+        # transformers above: unlisted columns (e.g. raw goal coordinates when
+        # goal features are disabled) are dropped instead of leaking through.
         prep = ColumnTransformer(
             transformers,
-            remainder="passthrough",
+            remainder="drop",
             verbose_feature_names_out=False,  # No prefixes
         )
 
