@@ -67,7 +67,7 @@ def evaluate(
         ap_results = ap.compute()
 
         print("Evaluation results:")
-        for name, value in cm_results + ap_results:
+        for name, value in {**cm_results, **ap_results}.items():
             print(f"{name}: {value:.4f}")
 
         cm_np = cm.cm.cpu().numpy()

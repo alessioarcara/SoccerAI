@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 import torch
+from eztrain import Image, Video
 from matplotlib.collections import LineCollection
 from torch_geometric.data import Batch, Data
 from torch_geometric_temporal.signal import Discrete_Signal
@@ -54,6 +55,11 @@ def chain_level_predictions(
 
 
 class Metric(ABC):
+    """
+    A metric for `eztrain.MetricCollection`: `compute` returns named scalars,
+    `plot` named media, both logged under the evaluated split.
+    """
+
     # True for metrics that need the per-frame outputs of a temporal batch;
     # the others receive one prediction per chain (see `TemporalTrainer`)
     frame_level: bool = False
@@ -65,19 +71,16 @@ class Metric(ABC):
         pass
 
     @abstractmethod
-    def compute(self) -> list[tuple[str, float]]:
+    def compute(self) -> dict[str, float]:
         pass
 
     @abstractmethod
     def reset(self) -> None:
         pass
 
-    @abstractmethod
-    def plot(self) -> list[tuple[str, plt.Figure | np.ndarray]]:
-        """
-        Returns a tuple containing the plot title and either the image data as a static figure or the video frames as a numpy array.
-        """
-        pass
+    def plot(self) -> dict[str, Image | Video]:
+        """Named figures (`Image`) and frame sequences (`Video`) to log."""
+        return {}
 
 
 class BinaryConfusionMatrix(Metric):
@@ -115,32 +118,32 @@ class BinaryConfusionMatrix(Metric):
         fbeta = ((1 + beta2) * tp / denom) if denom > 0 else 0.0
         return fbeta
 
-    def compute(self) -> list[tuple[str, float]]:
+    def compute(self) -> dict[str, float]:
         tn, fp = self.cm[0, 0].item(), self.cm[0, 1].item()
         fn, tp = self.cm[1, 0].item(), self.cm[1, 1].item()
 
         total = tn + fp + fn + tp
-        results: list[tuple[str, float]] = []
+        results: dict[str, float] = {}
 
         # Accuracy
         accuracy = (tp + tn) / total if total > 0 else 0.0
-        results.append(("accuracy", accuracy))
+        results["accuracy"] = accuracy
 
         # Pos F-beta
         fbeta_pos = self._get_fbeta(tp=tp, fp=fp, fn=fn)
-        results.append((f"f{self.fbeta}_pos_score", fbeta_pos))
+        results[f"f{self.fbeta}_pos_score"] = fbeta_pos
 
         if self.mode == "both":
             # Neg F-beta
             fbeta_neg = self._get_fbeta(tp=tn, fp=fn, fn=fp)
-            results.append((f"f{self.fbeta}_neg_score", fbeta_neg))
+            results[f"f{self.fbeta}_neg_score"] = fbeta_neg
 
         return results
 
     def reset(self) -> None:
         self.cm = torch.zeros((2, 2), dtype=torch.int64)
 
-    def plot(self) -> list[tuple[str, plt.Figure | np.ndarray]]:
+    def plot(self) -> dict[str, Image | Video]:
         cm_np = self.cm.cpu().numpy()
         fig, ax = plt.subplots(figsize=(8, 6))
         sns.heatmap(
@@ -156,7 +159,7 @@ class BinaryConfusionMatrix(Metric):
         ax.set_ylabel("True Label", fontsize=16)
         ax.tick_params(axis="both", which="major", labelsize=12)
         plt.tight_layout()
-        return [("confusion_matrix", fig)]
+        return {"confusion_matrix": Image(fig)}
 
 
 class BinaryPrecisionRecallCurve(Metric):
@@ -178,19 +181,19 @@ class BinaryPrecisionRecallCurve(Metric):
         self.all_preds_probs.append(preds_flat)
         self.all_true_labels.append(labels_flat)
 
-    def compute(self) -> list[tuple[str, float]]:
+    def compute(self) -> dict[str, float]:
         all_preds_probs_flat = torch.cat(self.all_preds_probs)
         all_true_labels_flat = torch.cat(self.all_true_labels).long()
 
         ap = binary_average_precision(all_preds_probs_flat, all_true_labels_flat)
         auroc = binary_auroc(all_preds_probs_flat, all_true_labels_flat)
-        return [("average_precision", ap.item()), ("auroc", auroc.item())]
+        return {"average_precision": ap.item(), "auroc": auroc.item()}
 
     def reset(self):
         self.all_preds_probs = []
         self.all_true_labels = []
 
-    def plot(self) -> list[tuple[str, plt.Figure | np.ndarray]]:
+    def plot(self) -> dict[str, Image | Video]:
         all_preds_probs_flat = torch.cat(self.all_preds_probs)
         all_true_labels_flat = torch.cat(self.all_true_labels).long()
         p, r, thresholds = binary_precision_recall_curve(
@@ -219,7 +222,7 @@ class BinaryPrecisionRecallCurve(Metric):
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
         plt.tight_layout()
-        return [("Precision-Recall Curve", fig)]
+        return {"precision_recall_curve": Image(fig)}
 
 
 class Collector(Metric, Generic[T]):
@@ -262,8 +265,8 @@ class Collector(Metric, Generic[T]):
     def __len__(self) -> int:
         return len(self.storage._items)
 
-    def compute(self) -> list[tuple[str, float]]:
-        return []
+    def compute(self) -> dict[str, float]:
+        return {}
 
     def reset(self) -> None:
         self.storage.clear()
@@ -288,15 +291,15 @@ class FrameCollector(Collector[Data]):
         for i in indices:
             self.storage.add((float(probs_np[i]), batch[i]))
 
-    def plot(self) -> list[tuple[str, plt.Figure | np.ndarray]]:
+    def plot(self) -> dict[str, Image | Video]:
         entries = self.storage.get_all_entries()
 
         if not entries:
-            return []
+            return {}
 
         fig = plot_pitch_frames_grid(entries, self.feature_names, self.pitch_grid)
 
-        return [(f"{self.positive_type}_frames", fig)]
+        return {f"{self.positive_type}_frames": Image(fig)}
 
     def _fetch_frames(self):
         return self.storage.get_all_entries()
@@ -329,10 +332,10 @@ class ChainCollector(Collector[tuple[np.ndarray, list[Data]]]):
                     )
                 )
 
-    def plot(self) -> list[tuple[str, plt.Figure | np.ndarray]]:
+    def plot(self) -> dict[str, Image | Video]:
         chain_predictions = [entry[1][0] for entry in self.storage.get_all_entries()]
         if not chain_predictions:
-            return []
+            return {}
 
         max_len = max(map(len, chain_predictions))
         padded_chain_predictions = np.asarray(
@@ -378,11 +381,11 @@ class ChainCollector(Collector[tuple[np.ndarray, list[Data]]]):
             snapshots, scores_np.tolist(), self.feature_names
         )
 
-        return [
-            (f"{self.positive_type}_chains_predictions", fig),
-            (f"{self.positive_type}_chains_last_frames", pitch_grid_fig),
-            (f"{self.positive_type}_chains_frames", chain_frames_np),
-        ]
+        return {
+            f"{self.positive_type}_chains_predictions": Image(fig),
+            f"{self.positive_type}_chains_last_frames": Image(pitch_grid_fig),
+            f"{self.positive_type}_chains_frames": Video(chain_frames_np, fps=1),
+        }
 
     def _fetch_frames(self):
         # Last data of each collected chain

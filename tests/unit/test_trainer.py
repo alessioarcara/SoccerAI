@@ -6,6 +6,7 @@ os.environ.setdefault("WANDB_MODE", "disabled")
 import pytest  # noqa: E402
 import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402
+from eztrain import MetricCollection  # noqa: E402
 from test_temporal_collate import N_FEAT, make_chain  # noqa: E402
 from torch.optim import AdamW  # noqa: E402
 from torch.optim.lr_scheduler import OneCycleLR  # noqa: E402
@@ -71,14 +72,14 @@ def _make_trainer(n_epochs: int, val_batch_size: int, model=None):
         model=model,
         optimizer=optimizer,
         scheduler=scheduler,
-        n_epochs=n_epochs,
+        max_iterations=n_epochs,
+        eval_freq=1,
         train_loader=train_loader,
         val_loader=val_loader,
         device="cpu",
-        metrics=[
-            BinaryConfusionMatrix(ignore_value=-1),
-            BinaryPrecisionRecallCurve(-1),
-        ],
+        metrics=MetricCollection(
+            [BinaryConfusionMatrix(ignore_value=-1), BinaryPrecisionRecallCurve(-1)]
+        ),
         callbacks=[],
     )
     return trainer, model
@@ -86,7 +87,7 @@ def _make_trainer(n_epochs: int, val_batch_size: int, model=None):
 
 def test_model_is_in_train_mode_during_every_epoch():
     trainer, model = _make_trainer(n_epochs=2, val_batch_size=3)
-    trainer.train()
+    trainer.fit()
 
     # per epoch: 3 training forwards (T_max=3), then eval on train (3) and val (4)
     assert len(model.modes) == 2 * (3 + 3 + 4)
@@ -102,10 +103,10 @@ def test_val_loss_does_not_depend_on_batching():
     trainer_b, model_b = _make_trainer(n_epochs=1, val_batch_size=1)
     model_b.load_state_dict(model_a.state_dict())
 
-    trainer_a.eval("val")
-    trainer_b.eval("val")
-    assert abs(trainer_a.history["val_loss"] - trainer_b.history["val_loss"]) < 1e-5
-    assert trainer_a.history["val_auroc"] == trainer_b.history["val_auroc"]
+    logs_a = trainer_a.evaluate()
+    logs_b = trainer_b.evaluate()
+    assert abs(logs_a["val/loss"] - logs_b["val/loss"]) < 1e-5
+    assert logs_a["val/auroc"] == logs_b["val/auroc"]
 
 
 def test_auxiliary_loss_is_added_to_the_training_loss():

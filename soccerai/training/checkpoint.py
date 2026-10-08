@@ -1,8 +1,17 @@
+from __future__ import annotations
+
+import re
+import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import torch
+from eztrain import RunType, run_id_base
+from loguru import logger
+
+if TYPE_CHECKING:
+    from soccerai.training.trainer import BaseTrainer
 
 # 2: `config` is the merged EzConfy YAML of the run (1: pydantic Config dump)
 CHECKPOINT_FORMAT = 2
@@ -52,9 +61,9 @@ def find_best_checkpoint(
     model_dir: Path, include_legacy: bool = False
 ) -> tuple[str, Path] | None:
     """
-    Return `(wandb_run_id, path)` of the checkpoint with the lowest monitored
-    value among `<run_id>_<key>_<value>.pth` files under `model_dir`
-    (searched recursively).
+    Return `(run_id, path)` of the checkpoint with the lowest monitored value
+    among the `best_<key>_<value>.pth` files under `model_dir` (searched
+    recursively; the run id is the name of the folder holding the file).
 
     Checkpoints of older formats (bare state dicts, pydantic configs) are
     skipped unless `include_legacy` is set: their configuration cannot be
@@ -62,15 +71,118 @@ def find_best_checkpoint(
     """
     candidates: list[tuple[float, str, Path]] = []
     for path in model_dir.rglob("*.pth"):
-        run_id, _, rest = path.stem.partition("_")
         try:
-            value = float(rest.rsplit("_", 1)[-1])
+            value = float(path.stem.rsplit("_", 1)[-1])
         except ValueError:
             continue
-        candidates.append((value, run_id, path))
+        candidates.append((value, path.parent.name, path))
 
     # best value first, so that usually a single file has to be loaded
     for _, run_id, path in sorted(candidates, key=lambda c: c[0]):
         if include_legacy or load_checkpoint(path).get("format") == CHECKPOINT_FORMAT:
             return run_id, path
     return None
+
+
+class TorchCheckpointer:
+    """
+    EzTrain `Checkpointer` (scheduled by `eztrain.CheckpointCallback`) for
+    `<root>/<run name>/<run id>/`:
+
+    - `last.pth`: model, optimizer, scheduler, iteration and history after
+      every save, to CONTINUE a run (`resume_from` with the same run name) or
+      FORK it (weights only, under a new name);
+    - `best_<monitor>_<value>.pth`: a self-contained checkpoint (see
+      `save_checkpoint`) of the best `monitor` value so far, the one
+      `scripts/eval.py` picks. The previous best file is replaced.
+    """
+
+    def __init__(
+        self,
+        *,
+        monitor: str = "val/loss",
+        mode: Literal["min", "max"] = "min",
+        root: str | Path = "checkpoints",
+        log_artifact: bool = True,
+    ) -> None:
+        self.monitor = monitor
+        self.mode = mode
+        self.root = Path(root)
+        self.log_artifact = log_artifact
+        self.run_dir: Path | None = None
+        self.best: float | None = None
+        self.best_path: Path | None = None
+
+    def setup(self, trainer: BaseTrainer) -> None:
+        run = trainer.run
+        self.run_dir = self.root / run.name / run.run_id
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        if run.restore_dir is None:
+            return
+
+        last = self.root / run_id_base(run.restore_dir) / run.restore_dir / "last.pth"
+        state = torch.load(last, map_location="cpu", weights_only=False)
+        trainer.model.load_state_dict(state["model"])
+        if run.run_type is RunType.CONTINUE:
+            trainer.optim.load_state_dict(state["optimizer"])
+            trainer.scheduler.load_state_dict(state["scheduler"])
+            trainer.start_iteration = int(state["iteration"])
+            trainer.history.update(state["history"])
+        logger.info("Restored {} ({})", last, run.run_type.name)
+
+    def save(
+        self, trainer: BaseTrainer, iteration: int, metrics: Mapping[str, Any]
+    ) -> None:
+        assert self.run_dir is not None, "setup() was not called"
+        scalars = {k: float(v) for k, v in metrics.items() if _is_number(v)}
+        torch.save(
+            {
+                "model": trainer.model.state_dict(),
+                "optimizer": trainer.optim.state_dict(),
+                "scheduler": trainer.scheduler.state_dict(),
+                "iteration": iteration,
+                "history": scalars,
+            },
+            self.run_dir / "last.pth",
+        )
+
+        value = scalars.get(self.monitor)
+        if value is None or not self._improves(value):
+            return
+        self.best = value
+        if self.best_path is not None:
+            self.best_path.unlink(missing_ok=True)
+        key = re.sub(r"[^\w.-]", "-", self.monitor)
+        self.best_path = self.run_dir / f"best_{key}_{value:.4f}.pth"
+        save_checkpoint(
+            self.best_path,
+            trainer.model.state_dict(),
+            trainer.config or {},
+            trainer.feature_names,
+            self.monitor,
+            value,
+            metrics=scalars,
+        )
+        logger.info("Saved best checkpoint {}", self.best_path)
+
+    def close(self) -> None:
+        wandb = sys.modules.get("wandb")
+        if (
+            not self.log_artifact
+            or self.best_path is None
+            or wandb is None
+            or wandb.run is None
+        ):
+            return
+        artifact = wandb.Artifact(name=self.best_path.parent.parent.name, type="model")
+        artifact.add_file(str(self.best_path), name=self.best_path.name)
+        wandb.run.log_artifact(artifact)
+
+    def _improves(self, value: float) -> bool:
+        if self.best is None:
+            return True
+        return value < self.best if self.mode == "min" else value > self.best
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)

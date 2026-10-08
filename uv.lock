@@ -524,6 +524,24 @@ wheels = [
 ]
 
 [[package]]
+name = "eztrain"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "loguru" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/34/90/e74c7beded1227665dd2ec562426e6021710e34f94d82246e922b608c4a3/eztrain-0.1.2.tar.gz", hash = "sha256:5d5f995b45b8f06781c190a9e2118b86ba7711bb5b9e30ceb16891459e970c44", size = 130378, upload-time = "2026-09-06T13:33:03.778Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/89/64/495d9ed405431f8d2bb51f9f67460747dcfc27a4bef57717d3f168f959ec/eztrain-0.1.2-py3-none-any.whl", hash = "sha256:8af9f0337bec183ed287bf2c5a9c8dd34f01519fe6450442aa1babd99aef9c2c", size = 14839, upload-time = "2026-09-06T13:33:02.56Z" },
+]
+
+[package.optional-dependencies]
+wandb = [
+    { name = "wandb" },
+]
+
+[[package]]
 name = "fastjsonschema"
 version = "2.22.2"
 source = { registry = "https://pypi.org/simple" }
@@ -2457,6 +2475,7 @@ source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "ezconfy" },
+    { name = "eztrain", extra = ["wandb"] },
     { name = "ipython" },
     { name = "ipywidgets" },
     { name = "levenshtein" },
@@ -2501,6 +2520,7 @@ dev = [
 requires-dist = [
     { name = "beautifulsoup4" },
     { name = "ezconfy", specifier = "==0.2.0" },
+    { name = "eztrain", extras = ["wandb"], specifier = "==0.1.2" },
     { name = "ipython" },
     { name = "ipywidgets" },
     { name = "levenshtein" },

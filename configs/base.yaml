@@ -21,6 +21,7 @@ eval_rate: 1
 threshold: 0.5            # decision threshold of the confusion-matrix metrics
 fbeta: 1.0
 collector_frames: 12      # most confident chains plotted per class (0 = none)
+resume_from: null         # run id to CONTINUE (same run_name) or FORK (new run_name)
 
 # ---------------------------------------------------------------- data ---- #
 data_config:
@@ -157,59 +158,73 @@ scheduler:
     pct_start: 0.1
 
 metrics:
-  - _target_type_: soccerai.training.metrics:BinaryConfusionMatrix
-    _init_args_:
-      threshold: ${threshold}
-      fbeta: ${fbeta}
-      ignore_value: -1
-  - _target_type_: soccerai.training.metrics:BinaryPrecisionRecallCurve
-    _init_args_:
-      ignore_value: -1
-  - _id_: tp_chains
-    _target_type_: soccerai.training.metrics:ChainCollector
-    _init_args_:
-      target_label: 1
-      feature_names: ${train_ds.feature_names}
-      n_frames: ${collector_frames}
-      threshold: ${threshold}
-  - _id_: fp_chains
-    _target_type_: soccerai.training.metrics:ChainCollector
-    _init_args_:
-      target_label: 0
-      feature_names: ${train_ds.feature_names}
-      n_frames: ${collector_frames}
-      threshold: ${threshold}
+  _target_type_: eztrain.metrics:MetricCollection
+  _init_args_:
+    metrics:
+      - _target_type_: soccerai.training.metrics:BinaryConfusionMatrix
+        _init_args_:
+          threshold: ${threshold}
+          fbeta: ${fbeta}
+          ignore_value: -1
+      - _target_type_: soccerai.training.metrics:BinaryPrecisionRecallCurve
+        _init_args_:
+          ignore_value: -1
+      - _id_: tp_chains
+        _target_type_: soccerai.training.metrics:ChainCollector
+        _init_args_:
+          target_label: 1
+          feature_names: ${train_ds.feature_names}
+          n_frames: ${collector_frames}
+          threshold: ${threshold}
+      - _id_: fp_chains
+        _target_type_: soccerai.training.metrics:ChainCollector
+        _init_args_:
+          target_label: 0
+          feature_names: ${train_ds.feature_names}
+          n_frames: ${collector_frames}
+          threshold: ${threshold}
 
+# EzTrain callbacks: monitored keys are `<split>/<metric>` from the history
 callbacks:
   - _id_: early_stopping
-    _target_type_: soccerai.training.callbacks:EarlyStoppingCallback
+    _target_type_: eztrain.callbacks:EarlyStopping
     _init_args_:
-      history_key: val_loss
-      minimize: true
+      monitor: val/loss
+      mode: min
       patience: 10
   - _id_: checkpoint
-    _target_type_: soccerai.training.callbacks:ModelSavingCallback
+    _target_type_: eztrain.callbacks:CheckpointCallback
     _init_args_:
-      history_key: val_loss
-      minimize: true
-      model_name: ${run_name}
+      save_freq: 1
+      checkpointer:
+        _target_type_: soccerai.training.checkpoint:TorchCheckpointer
+        _init_args_:
+          monitor: val/loss
+          mode: min
+          root: checkpoints
+
+logger:
+  _target_type_: eztrain.loggers:WandbLogger
+  _init_args_:
+    project: ${project_name}
 
 trainer:
   _target_type_: soccerai.training.trainer:TemporalTrainer
   _init_args_:
     model: ${model}
-    train_loader: ${train_loader}
-    val_loader: ${val_loader}
     optimizer: ${optim}
     scheduler: ${scheduler}
-    n_epochs: ${n_epochs}
-    eval_rate: ${eval_rate}
+    train_loader: ${train_loader}
+    val_loader: ${val_loader}
     metrics: ${metrics}
+    max_iterations: ${n_epochs}
+    eval_freq: ${eval_rate}
     callbacks: ${callbacks}
+    logger: ${logger}
+    run_name: ${run_name}
+    resume_from: ${resume_from}
     pos_weight: ${pos_weight}
     gamma: 0.1               # per-frame loss discount towards the start of the chain
     aux_loss_weight: 1.0     # auxiliary loss exposed by some models (DiffPool)
     feature_names: ${train_ds.feature_names}
     device: ${device}
-    project_name: ${project_name}
-    run_name: ${run_name}

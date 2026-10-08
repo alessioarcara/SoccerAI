@@ -15,6 +15,8 @@ def main(args: argparse.Namespace) -> None:
     overrides: dict[str, Any] = {}
     if args.reload:
         overrides["train_ds"] = {"_init_args_": {"force_reload": True}}
+    if args.resume_from:
+        overrides["resume_from"] = args.resume_from
     cfg, raw = build_config(args.configs, overrides or None, args.schema)
 
     logger.success(
@@ -37,7 +39,9 @@ def main(args: argparse.Namespace) -> None:
             ),
         )
     )
-    trainer.train(raw)
+    # the merged YAML is logged to the tracker and stored in the checkpoints
+    trainer.config = raw
+    trainer.fit()
 
 
 if __name__ == "__main__":
@@ -49,6 +53,11 @@ if __name__ == "__main__":
         help="YAML files merged in order (later files win)",
     )
     parser.add_argument("--schema", default=str(SCHEMA_PATH))
+    parser.add_argument(
+        "--resume-from",
+        help="Run id (<run_name>_<timestamp>) to continue, or to fork when "
+        "run_name differs",
+    )
     parser.add_argument(
         "--reload",
         action="store_true",

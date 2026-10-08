@@ -5,11 +5,11 @@ os.environ.setdefault("WANDB_MODE", "disabled")
 import pytest  # noqa: E402
 import torch  # noqa: E402
 from ezconfy.core.exceptions import InstantiationError  # noqa: E402
+from eztrain import CheckpointCallback  # noqa: E402
 from stubs import MODELS, build_stub_config  # noqa: E402
 
 from soccerai.config import _peek_seed  # noqa: E402
 from soccerai.data.temporal_dataset import TemporalChainsDataset  # noqa: E402
-from soccerai.training.callbacks import ModelSavingCallback  # noqa: E402
 from soccerai.training.checkpoint import (  # noqa: E402
     find_best_checkpoint,
     load_checkpoint,
@@ -40,18 +40,23 @@ def test_every_model_config_builds_and_trains_one_epoch(tmp_path, model):
     optim_params = {id(p) for g in cfg.optim.param_groups for p in g["params"]}
     assert trainer_params == optim_params
 
-    cfg.trainer.train(raw)
+    cfg.trainer.config = raw
+    cfg.trainer.fit()
 
     best = find_best_checkpoint(tmp_path / model)
     assert best is not None
-    payload = load_checkpoint(best[1])
+    run_id, path = best
+    assert run_id == cfg.trainer.run.run_id and run_id.startswith(f"{model}_")
+    payload = load_checkpoint(path)
     assert payload["config"]["run_name"] == model
-    assert set(payload["metrics"]) >= {"val_loss", "val_average_precision"}
+    assert set(payload["metrics"]) >= {"val/loss", "val/average_precision"}
+    assert (path.parent / "last.pth").exists()
 
 
 def test_checkpoint_config_rebuilds_the_same_model(tmp_path):
     cfg, raw = build_stub_config("gcn", tmp_path)
-    cfg.trainer.train(raw)
+    cfg.trainer.config = raw
+    cfg.trainer.fit()
     _, path = find_best_checkpoint(tmp_path / "gcn")
     payload = load_checkpoint(path)
 
@@ -87,9 +92,9 @@ def test_overrides_reach_the_objects(tmp_path):
     )
     assert cfg.optim.param_groups[0]["initial_lr"] == pytest.approx(2e-3 / 25)
     assert cfg.scheduler.total_steps == 3 * cfg.steps_per_epoch
-    assert cfg.trainer.n_epochs == 3
-    saver = next(c for c in cfg.callbacks if isinstance(c, ModelSavingCallback))
-    assert saver.out_dir == tmp_path / "gcn"
+    assert cfg.trainer.max_iterations == 3
+    saver = next(c for c in cfg.callbacks if isinstance(c, CheckpointCallback))
+    assert saver.checkpointer.root == tmp_path
 
 
 def test_peak_learning_rate_defaults_to_lr(tmp_path):

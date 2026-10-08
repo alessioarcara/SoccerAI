@@ -170,6 +170,19 @@ schema, regenerate the typed models used by the editor and by mypy:
 uv run ezconfy configs/schema.yaml -o soccerai/generated.py
 ```
 
+The training loop is [EzTrain](https://github.com/alessioarcara/EzTrain)'s
+`EpochTrainer`: epochs, evaluation, callbacks (early stopping, checkpoint
+schedule), W&B logging and run identity come from it; `TemporalTrainer`
+only implements the discounted per-frame loss and the evaluation step.
+Every run gets an id `<run_name>_<timestamp>`, shared by its checkpoint
+folder and the W&B run:
+
+```bash
+python scripts/train.py --resume-from gcn_20261008_111531      # continue that run
+python scripts/train.py --configs configs/base.yaml configs/models/gcn.yaml fork.yaml \
+  --resume-from gcn_20261008_111531   # fork.yaml sets a new run_name: new run, same weights
+```
+
 Processed datasets live in `soccerai/data/resources/processed/` under a name
 that hashes `data_config` and the graph converter, so changing any data
 option rebuilds them automatically (`--reload` only forces it). Runs log to
@@ -214,8 +227,9 @@ and an AUROC of about 0.82, XGBoost an AP of about 0.61 and an AUROC of about
 python scripts/eval.py --name <run_name>
 ```
 
-* Picks the checkpoint with the lowest monitored value under
-  `./checkpoints/<run_name>/` (searched recursively).
+* Picks the checkpoint with the lowest monitored value among
+  `./checkpoints/<run_name>/<run_id>/best_<monitor>_<value>.pth`; next to it,
+  `last.pth` holds the full state used to resume the run.
 * Checkpoints are self-contained (weights, the merged YAML of the run,
   feature names, best-epoch metrics): evaluation rebuilds the run from the
   stored YAML, offline. Checkpoints written before the EzConfy configuration
@@ -268,10 +282,10 @@ soccerai/
 │   └── label.py                 # Positive / negative chain extraction and manual filter
 └── models/                      # Backbones, temporal necks, heads, DiffPool
 └── training/
-    ├── trainer.py               # Training loop (per-frame discounted loss)
+    ├── trainer.py               # EzTrain epoch trainer (per-frame discounted loss)
     ├── metrics.py               # Chain-level metrics (AP, AUROC, confusion matrix) and collectors
-    ├── callbacks.py             # Early stopping, checkpointing, explainer
-    ├── checkpoint.py            # Self-contained checkpoint format
+    ├── callbacks.py             # GNNExplainer callback for per-frame models
+    ├── checkpoint.py            # Self-contained checkpoints, EzTrain checkpointer
     └── transforms.py            # Non-mutating pitch-flip augmentations
 tests/
 ├── unit/                        # Synthetic-data tests of every pipeline stage

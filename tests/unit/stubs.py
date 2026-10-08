@@ -77,7 +77,12 @@ def stub_overrides(tmp_path: Path) -> dict[str, Any]:
         "val_loader": loader,
         "callbacks": [
             "...",
-            {"_id_": "checkpoint", "_init_args_": {"out_dir": str(tmp_path)}},
+            {
+                "_id_": "checkpoint",
+                "_init_args_": {
+                    "checkpointer": {"_init_args_": {"root": str(tmp_path)}}
+                },
+            },
         ],
     }
 

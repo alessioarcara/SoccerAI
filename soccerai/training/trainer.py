@@ -1,23 +1,18 @@
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
-from typing import Any, Literal
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any
 
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from loguru import logger
+from eztrain import EpochTrainer
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
-from torch.utils.data.dataloader import DataLoader as TorchDataLoader
 from torch_geometric.data import Batch
 from torch_geometric_temporal.signal import Discrete_Signal
-from tqdm import tqdm
 
-import wandb
-from soccerai.training.callbacks import Callback, EarlyStoppingCallback
-from soccerai.training.metrics import Metric, chain_level_predictions
+from soccerai.training.metrics import chain_level_predictions
 
 BatchEvalResult = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
@@ -29,73 +24,72 @@ def resolve_device(device: str) -> str:
     return device
 
 
-class BaseTrainer(ABC):
+class BaseTrainer(EpochTrainer, ABC):
     """
-    Training loop over already-built components (all instantiated from the
-    YAML configuration): the optimizer must own the model parameters and the
-    scheduler is stepped after every batch.
+    EzTrain epoch trainer for graph models: EzTrain owns the loop (epochs,
+    periodic evaluation, callbacks, run identity and resume, logging), this
+    class the optimisation and evaluation steps.
+
+    Every evaluation scores the training split too (`train/...`, in eval
+    mode) and then the validation split (`val/...`): the loss is averaged
+    per example, so a smaller last batch does not count more. During an
+    epoch the mean training-mode loss and the learning rate are logged as
+    `train/step_loss` and `train/lr`.
+
+    All other keyword arguments (`train_loader`, `val_loader`, `metrics`,
+    `max_iterations`, `eval_freq`, `callbacks`, `logger`, `run_name`,
+    `resume_from`, `config`) go to `eztrain.EpochTrainer`.
     """
 
     def __init__(
         self,
+        *,
         model: nn.Module,
-        train_loader: TorchDataLoader,
         optimizer: Optimizer,
         scheduler: LRScheduler,
-        n_epochs: int,
-        val_loader: TorchDataLoader | None = None,
-        metrics: list[Metric] | None = None,
-        callbacks: list[Callback] | None = None,
         pos_weight: float | None = None,
-        eval_rate: int = 1,
         aux_loss_weight: float = 1.0,
         feature_names: Sequence[str] | None = None,
         device: str = "auto",
-        project_name: str = "soccerai",
-        run_name: str = "run",
+        evaluate_train: bool = True,
+        **kwargs: Any,
     ) -> None:
+        super().__init__(**kwargs)
         self.device = resolve_device(device)
         # moving the model keeps the same Parameter objects: the optimizer
         # built from them stays valid
         self.model: nn.Module = model.to(self.device)
-        self.train_loader = train_loader
-        self.val_loader = val_loader
         self.optim = optimizer
         self.scheduler = scheduler
-        self.n_epochs = n_epochs
-        self.eval_rate = eval_rate
         self.aux_loss_weight = aux_loss_weight
         self.feature_names = list(feature_names or [])
-        self.metrics = metrics or []
-        self.callbacks = callbacks or []
-        self.project_name = project_name
-        self.run_name = run_name
-        # the merged YAML of the run, stored in checkpoints and logged to W&B
-        self.run_config: dict[str, Any] = {}
+        self.evaluate_train = evaluate_train
         self.pos_weight = (
             None
             if pos_weight is None
             else torch.tensor(float(pos_weight), device=self.device)
         )
         self.criterion = nn.BCEWithLogitsLoss(pos_weight=self.pos_weight)
-        self.history: dict[str, Any] = {}
+        self._loss_sum = 0.0
+        self._n_examples = 0
+
+    @property
+    def checkpointables(self) -> Mapping[str, Any]:
+        return {
+            "model": self.model,
+            "optimizer": self.optim,
+            "scheduler": self.scheduler,
+        }
+
+    # --- optimisation and evaluation steps ----------------------------------
 
     @abstractmethod
     def _train_step(self, item: Any) -> torch.Tensor:
-        """
-        Returns: loss
-        """
-        ...
+        """Forward, backward and optimizer step; returns the loss."""
 
     @abstractmethod
     def _eval_step(self, item: Any) -> BatchEvalResult:
-        """
-        Returns: (loss, prediction_probabilities, true_labels)
-        """
-        ...
-
-    def _get_data_iterable(self, split: str) -> TorchDataLoader | None:
-        return self.train_loader if split == "train" else self.val_loader
+        """Returns (loss, prediction_probabilities, true_labels)."""
 
     def _aux_loss(self) -> torch.Tensor:
         """
@@ -121,140 +115,51 @@ class BaseTrainer(ABC):
             return int(np.asarray(item.masks).shape[1])
         return int(item.num_graphs)
 
-    def _on_training_end(self) -> None:
-        """
-        Hook called at the end of training.
-        """
-        for cb in self.callbacks:
-            cb.on_train_end(self)
+    # --- eztrain.EpochTrainer -------------------------------------------------
 
-    def _on_eval_end(self) -> None:
-        """
-        Hook called at the end of an evaluation.
-        """
-        for cb in self.callbacks:
-            cb.on_eval_end(self)
+    def train_iteration(self, iteration: int) -> Mapping[str, Any]:
+        # evaluation switches the model to eval mode: re-enable dropout and
+        # batch-norm updates for every epoch
+        self.model.train()
+        logs = dict(super().train_iteration(iteration))
+        logs["train/lr"] = self.scheduler.get_last_lr()[0]
+        return logs
 
-    def _check_for_early_stop(self) -> bool:
-        return any(
-            isinstance(cb, EarlyStoppingCallback) and cb.should_stop
-            for cb in self.callbacks
-        )
+    def train_step(self, batch: Any) -> Mapping[str, float]:
+        return {"step_loss": self._train_step(batch).item()}
 
-    def train(self, run_config: dict[str, Any] | None = None):
-        self.run_config = dict(run_config or {})
-        wandb.init(
-            project=self.project_name, name=self.run_name, config=self.run_config
-        )
-        wandb.watch(self.model, log="all", log_freq=100)
-        try:
-            for epoch in tqdm(
-                range(1, self.n_epochs + 1), desc="Epoch", colour="green"
-            ):
-                # `eval()` switches the model to eval mode at the end of every
-                # epoch: dropout / batch-norm must be re-enabled for training.
-                self.model.train()
-                train_iterable = self._get_data_iterable("train")
-                assert train_iterable is not None
-
-                for item in tqdm(
-                    train_iterable,
-                    total=len(train_iterable),
-                    desc=f"Epoch {epoch} Batches",
-                    leave=False,
-                    colour="blue",
-                ):
-                    loss = self._train_step(item)
-                    self._wandb_log(
-                        {
-                            "train/step_loss": loss.item(),
-                            "train/lr": self.scheduler.get_last_lr()[0],
-                        }
-                    )
-
-                if epoch % self.eval_rate == 0:
-                    self.eval("train")
-                    self.eval("val")
-                    self._on_eval_end()
-
-                    if self._check_for_early_stop():
-                        logger.info("Early stopping triggered! No improvement.")
-                        break
-
-            self._on_training_end()
-
-        finally:
-            wandb.finish()
-
-    @torch.inference_mode()
-    def eval(self, split: Literal["train", "val"]) -> None:
+    def evaluate(self) -> Mapping[str, Any]:
         self.model.eval()
-        iterable = self._get_data_iterable(split)
+        with torch.inference_mode():
+            logs: dict[str, Any] = {}
+            if self.evaluate_train:
+                logs.update(self.evaluate_split(self.train_loader, "train"))
+            logs.update(super().evaluate())
+        return logs
 
-        if iterable is None:
-            logger.warning(
-                "No data to evaluate for the '{}' split. Skipping evaluation.", split
-            )
-            return
+    def evaluate_split(self, loader: Iterable[Any], prefix: str) -> dict[str, Any]:
+        self._loss_sum, self._n_examples = 0.0, 0
+        results = super().evaluate_split(loader, prefix)
+        results[f"{prefix}/loss"] = self._loss_sum / max(self._n_examples, 1)
+        return results
 
-        num_items = len(iterable)
+    def eval_step(self, batch: Any) -> Mapping[str, float]:
+        loss, preds_probs, true_labels = self._eval_step(batch)
+        # the loss is a mean over the examples of the batch: weight it by
+        # the batch size so that a smaller last batch does not count more
+        n_examples = self._num_examples(batch)
+        self._loss_sum += loss.item() * n_examples
+        self._n_examples += n_examples
 
-        total_loss = 0.0
-        total_examples = 0
-        for m in self.metrics:
-            m.reset()
-
-        for item in tqdm(
-            iterable,
-            total=num_items,
-            desc=f"Evaluating {split}",
-            leave=False,
-            colour="red",
-        ):
-            loss, preds_probs, true_labels = self._eval_step(item)
-            # the loss is a mean over the examples of the batch: weight it by
-            # the batch size so that a smaller last batch does not count more
-            n_examples = self._num_examples(item)
-            total_loss += loss.item() * n_examples
-            total_examples += n_examples
-
-            example_preds, example_labels = self._per_example(
-                preds_probs, true_labels, item
-            )
-            for m in self.metrics:
-                if m.frame_level:
-                    m.update(preds_probs, true_labels, item)
-                else:
-                    m.update(example_preds, example_labels, item)
-
-        mean_loss = total_loss / max(total_examples, 1)
-
-        if split == "val":
-            self.history["val_loss"] = mean_loss
-        log_dict: dict[str, Any] = {f"{split}/loss": mean_loss}
-
-        for m in self.metrics:
-            for name, value in m.compute():
-                if split == "val":
-                    self.history[f"val_{name}"] = value
-                log_dict[f"{split}/{name}"] = value
-
-            for name, visual in m.plot():
-                if isinstance(visual, plt.Figure):
-                    log_dict[f"{split}/{name}"] = wandb.Image(visual)
-                    plt.close(visual)
-                else:
-                    log_dict[f"{split}/{name}"] = wandb.Video(
-                        visual, fps=1, format="mp4"
-                    )
-
-        self._wandb_log(log_dict)
-
-    @staticmethod
-    def _wandb_log(payload: dict[str, Any]) -> None:
-        """Log to W&B only when a run is active (eval can run standalone)."""
-        if wandb.run is not None:
-            wandb.log(payload)
+        example_preds, example_labels = self._per_example(
+            preds_probs, true_labels, batch
+        )
+        for metric in self.metrics:
+            if getattr(metric, "frame_level", False):
+                metric.update(preds_probs, true_labels, batch)
+            else:
+                metric.update(example_preds, example_labels, batch)
+        return {}
 
 
 class Trainer(BaseTrainer):
@@ -299,8 +204,8 @@ class TemporalTrainer(BaseTrainer):
     `gamma`, ...).
     """
 
-    def __init__(self, *args, gamma: float = 0.1, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, *, gamma: float = 0.1, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
         self.gamma = gamma
 
     def _per_example(

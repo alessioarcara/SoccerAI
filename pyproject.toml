@@ -40,6 +40,7 @@ dependencies = [
   "wandb[media]",
   "xgboost>=3.2.0",
   "ezconfy==0.2.0",
+  "eztrain[wandb]==0.1.2",
 ]
 name = "soccerai"
 version = "0.6.0"

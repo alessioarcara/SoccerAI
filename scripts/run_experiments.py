@@ -15,13 +15,13 @@ Usage:
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Any
 
+import torch
 import yaml
 from tabulate import tabulate
 
@@ -80,7 +80,7 @@ def run_experiment(
     )
 
     ckpt_dir = ROOT / "checkpoints" / run_name
-    before = set(ckpt_dir.glob("*.pth")) if ckpt_dir.exists() else set()
+    before = set(ckpt_dir.rglob("best_*.pth")) if ckpt_dir.exists() else set()
 
     t0 = time.time()
     log = out / f"{name}.log"
@@ -100,23 +100,24 @@ def run_experiment(
         "exit": proc.returncode,
         "minutes": round((time.time() - t0) / 60, 1),
     }
-    epochs = re.findall(
-        r"Epoch:\s+\d+%\|[^|]*\|\s*(\d+)/\d+", log.read_text(errors="replace")
+    new = sorted(
+        set(ckpt_dir.rglob("best_*.pth")) - before, key=lambda p: p.stat().st_mtime
     )
-    row["epochs"] = int(epochs[-1]) if epochs else None
-
-    new = sorted(set(ckpt_dir.glob("*.pth")) - before, key=lambda p: p.stat().st_mtime)
     if new:
-        payload = load_checkpoint(new[-1])
+        best = new[-1]
+        payload = load_checkpoint(best)
         metrics = payload.get("metrics", {})
+        last = torch.load(best.parent / "last.pth", map_location="cpu")
+        nan = float("nan")
         row.update(
             {
-                "ckpt": new[-1].name,
+                "run_id": best.parent.name,
+                "epochs": int(last["iteration"]),
                 "val_loss": round(payload["best_value"], 4),
-                "val_ap": round(metrics.get("val_average_precision", float("nan")), 3),
-                "val_auroc": round(metrics.get("val_auroc", float("nan")), 3),
-                "val_acc": round(metrics.get("val_accuracy", float("nan")), 3),
-                "val_f1": round(metrics.get("val_f1.0_pos_score", float("nan")), 3),
+                "val_ap": round(metrics.get("val/average_precision", nan), 3),
+                "val_auroc": round(metrics.get("val/auroc", nan), 3),
+                "val_acc": round(metrics.get("val/accuracy", nan), 3),
+                "val_f1": round(metrics.get("val/f1.0_pos_score", nan), 3),
             }
         )
     return row

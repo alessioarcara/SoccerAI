@@ -1,15 +1,9 @@
-import copy
-from abc import ABC
-from pathlib import Path
-
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from eztrain import Callback, Image, Video
 from loguru import logger
 from torch_geometric.explain import Explainer, GNNExplainer
 
-import wandb
-from soccerai.training.checkpoint import save_checkpoint
 from soccerai.training.metrics import Collector
 from soccerai.training.utils import (
     fig_to_numpy,
@@ -18,12 +12,12 @@ from soccerai.training.utils import (
 )
 
 
-class Callback(ABC):
-    def on_train_end(self, trainer): ...
-    def on_eval_end(self, trainer): ...
-
-
 class ExplainerCallback(Callback):
+    """
+    GNNExplainer feature importances of the frames kept by the collectors of
+    a static (per-frame) model, logged at the end of training.
+    """
+
     def on_train_end(self, trainer):
         collectors = [
             m for m in trainer.metrics if isinstance(m, Collector) and len(m) > 0
@@ -79,107 +73,13 @@ class ExplainerCallback(Callback):
                     )
 
             figs_np = np.stack(figs).transpose(0, 3, 1, 2)
-            wandb.log(
-                {f"explain/video_{pos_type}": wandb.Video(figs_np, fps=1, format="mp4")}
-            )
+            trainer.logger.log({f"explain/video_{pos_type}": Video(figs_np, fps=1)})
 
             fig = plot_average_feature_importance(
                 node_masks,
                 trainer.feature_names,
                 num_frames,
             )
-            wandb.log(
-                {f"explain/{pos_type}_average_feature_importance": wandb.Image(fig)}
+            trainer.logger.log(
+                {f"explain/{pos_type}_average_feature_importance": Image(fig)}
             )
-            plt.close(fig)
-
-
-class ModelMonitorCallback(Callback):
-    def __init__(self, history_key: str, minimize: bool):
-        super().__init__()
-        self.history_key = history_key
-        self.best = float("inf") if minimize else 0.0
-        self.minimize = minimize
-
-    def on_eval_end(self, trainer) -> bool:
-        curr = trainer.history.get(self.history_key)
-        if curr is None:
-            logger.warning(f"{self.history_key} not found in history; skipping.")
-            return False
-
-        improved = curr < self.best if self.minimize else curr > self.best
-        if improved:
-            self.best = curr
-            return True
-        return False
-
-
-class EarlyStoppingCallback(ModelMonitorCallback):
-    def __init__(self, history_key: str, minimize: bool, patience: int):
-        super().__init__(history_key, minimize)
-        self.patience = patience
-        self.counter = 0
-        self.should_stop = False
-
-    def on_eval_end(self, trainer):
-        improved = super().on_eval_end(trainer)
-
-        if improved:
-            self.counter = 0
-        else:
-            self.counter += 1
-
-            if self.counter >= self.patience:
-                self.should_stop = True
-
-
-class ModelSavingCallback(ModelMonitorCallback):
-    """
-    Keep the weights of the best evaluation and save them, with the run
-    configuration, under `<out_dir>/<model_name>/` at the end of training.
-    """
-
-    def __init__(
-        self,
-        history_key: str,
-        minimize: bool,
-        model_name: str,
-        out_dir: str | Path = "checkpoints",
-    ):
-        super().__init__(history_key, minimize)
-        self.out_dir = Path(out_dir) / model_name
-        self.out_dir.mkdir(parents=True, exist_ok=True)
-        self.model_name = model_name
-
-    def on_eval_end(self, trainer):
-        improved = super().on_eval_end(trainer)
-
-        if improved:
-            self.best_model = copy.deepcopy(trainer.model.state_dict())
-            self.best_metrics = dict(trainer.history)
-
-    def on_train_end(self, trainer):
-        if not hasattr(self, "best_model"):
-            logger.warning("No improvement was ever recorded: nothing to save")
-            return
-
-        run_id = wandb.run.id if wandb.run is not None else "local"
-        checkpoint_name = f"{run_id}_{self.history_key}_{self.best:0.4f}.pth"
-        checkpoint_path = self.out_dir / checkpoint_name
-        save_checkpoint(
-            checkpoint_path,
-            self.best_model,
-            trainer.run_config,
-            trainer.feature_names,
-            self.history_key,
-            self.best,
-            metrics=self.best_metrics,
-        )
-        logger.info(f"Saved model checkpoint to {checkpoint_path}")
-
-        if wandb.run is None:
-            return
-
-        artifact = wandb.Artifact(name=self.model_name, type="model")
-        artifact.add_file(str(checkpoint_path), name=checkpoint_name)
-        wandb.run.log_artifact(artifact)
