@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import polars as pl
 from loguru import logger
@@ -16,7 +16,7 @@ from soccerai.data.utils import (
 )
 
 
-def extract_event(event: Dict[str, Any]) -> Dict[str, Any]:
+def extract_event(event: dict[str, Any]) -> dict[str, Any]:
     return {
         "gameId": event["gameId"],
         "gameEventId": event["gameEventId"],
@@ -35,8 +35,8 @@ def extract_event(event: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def extract_players(
-    event: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+    event: dict[str, Any],
+) -> list[dict[str, Any]]:
     players = []
     game_id = event["gameId"]
     game_event_id = event["gameEventId"]
@@ -49,7 +49,7 @@ def extract_players(
         z: float,
         jerseyNum: str | None,
         visibility: str | None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return {
             "gameId": game_id,
             "gameEventId": game_event_id,
@@ -81,7 +81,7 @@ def extract_players(
     return players
 
 
-def extract_metadata(game_metadata: List[Dict[str, Any]]) -> Dict[str, Any]:
+def extract_metadata(game_metadata: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "gameId": game_metadata[0]["id"],
         "awayTeamName": game_metadata[0]["awayTeam"]["name"],
@@ -96,7 +96,7 @@ def extract_metadata(game_metadata: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def extract_player_info(player_info: Dict[str, Any]) -> Dict[str, Any]:
+def extract_player_info(player_info: dict[str, Any]) -> dict[str, Any]:
     return {
         "playerId": player_info["player"]["id"],
         "playerName": player_info["player"]["nickname"],
@@ -108,7 +108,7 @@ def extract_player_info(player_info: Dict[str, Any]) -> Dict[str, Any]:
 
 def load_and_process_soccer_events(
     event_dir_path: str, filter_invalid_events: bool = False
-) -> Tuple[pl.DataFrame, pl.DataFrame]:
+) -> tuple[pl.DataFrame, pl.DataFrame]:
     event_files = [f for f in os.listdir(event_dir_path) if f.endswith(".json")]
 
     all_events = []
@@ -239,14 +239,14 @@ def load_and_process_rosters(rosters_dir_path: str) -> pl.DataFrame:
     return rosters_df
 
 
-def _load_chains(chain_path: str) -> List[List[int]]:
+def _load_chains(chain_path: str) -> list[list[int]]:
     with open(chain_path, "r") as f:
         chains = json.load(f)
         return chains
 
 
 def _attach_indices_to_chains(
-    pos_chains: List[List[int]], neg_chains: List[List[int]]
+    pos_chains: list[list[int]], neg_chains: list[list[int]]
 ) -> pl.DataFrame:
     all_chains = pos_chains + neg_chains
 
@@ -259,7 +259,7 @@ def _attach_indices_to_chains(
     return pl.DataFrame(rows)
 
 
-def _flatten_chains(chains: List[List[int]]) -> List[int]:
+def _flatten_chains(chains: list[list[int]]) -> list[int]:
     return [idx for chain in chains for idx in chain]
 
 

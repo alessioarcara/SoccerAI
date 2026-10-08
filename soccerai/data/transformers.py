@@ -1,11 +1,11 @@
-from typing import Dict, List, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 import polars as pl
 from sklearn.base import BaseEstimator, TransformerMixin
 
 
-def _column_names(X, fallback: Sequence[str]) -> List[str]:
+def _column_names(X, fallback: Sequence[str]) -> list[str]:
     """Return the column names of a DataFrame-like input, or `fallback` for arrays."""
     cols = getattr(X, "columns", None)
     if cols is None:
@@ -39,7 +39,7 @@ class BaseTransformer(TransformerMixin, BaseEstimator):
     def get_feature_names_out(self, input_features=None) -> np.ndarray:
         return np.asarray(self.output_cols, dtype=object)
 
-    def _columns(self, X) -> Dict[str, np.ndarray]:
+    def _columns(self, X) -> dict[str, np.ndarray]:
         names = _column_names(X, self.input_cols)
         data = np.asarray(
             X.to_numpy() if isinstance(X, pl.DataFrame) else X, dtype=float
@@ -53,7 +53,7 @@ class BaseTransformer(TransformerMixin, BaseEstimator):
             )
         return {c: data[:, names.index(c)] for c in self.input_cols}
 
-    def _transform(self, cols: Dict[str, np.ndarray]) -> np.ndarray:
+    def _transform(self, cols: dict[str, np.ndarray]) -> np.ndarray:
         raise NotImplementedError
 
     def transform(self, X) -> np.ndarray:
@@ -70,7 +70,7 @@ class PlayerLocationTransformer(BaseTransformer):
         self.pitch_length = pitch_length
         self.pitch_width = pitch_width
 
-    def _transform(self, c: Dict[str, np.ndarray]) -> np.ndarray:
+    def _transform(self, c: dict[str, np.ndarray]) -> np.ndarray:
         x_normed = np.clip(c["x"] / self.pitch_length, 0.0, 1.0)
         y_normed = np.clip(c["y"] / self.pitch_width, 0.0, 1.0)
         return np.column_stack(
@@ -92,7 +92,7 @@ class GoalLocationTransformer(BaseTransformer):
     def pitch_diag(self) -> float:
         return float(np.hypot(self.pitch_length, self.pitch_width))
 
-    def _transform(self, c: Dict[str, np.ndarray]) -> np.ndarray:
+    def _transform(self, c: dict[str, np.ndarray]) -> np.ndarray:
         dx = c["x_goal"] - c["x"]
         dy = c["y_goal"] - c["y"]
 
@@ -138,7 +138,7 @@ class BallLocationTransformer(BaseTransformer):
     def pitch_diag(self) -> float:
         return float(np.hypot(self.pitch_length, self.pitch_width))
 
-    def _transform(self, c: Dict[str, np.ndarray]) -> np.ndarray:
+    def _transform(self, c: dict[str, np.ndarray]) -> np.ndarray:
         player_height_m = c["height_cm"] / 100.0
 
         # planar distance between player and ball

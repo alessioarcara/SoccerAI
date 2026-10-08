@@ -1,4 +1,5 @@
-from typing import Any, Dict, Generic, List, Sequence, Tuple, TypeVar
+from collections.abc import Sequence
+from typing import Any, Generic, TypeVar
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -31,9 +32,9 @@ def fix_random(seed: int):
 class TopKStorage(Generic[T]):
     def __init__(self, k: int) -> None:
         self.k = k
-        self._items: List[Tuple[float, T]] = []
+        self._items: list[tuple[float, T]] = []
 
-    def add(self, entry: Tuple[float, T]) -> None:
+    def add(self, entry: tuple[float, T]) -> None:
         self._items.append(entry)
         self._items.sort(key=lambda x: x[0], reverse=True)
         if len(self._items) > self.k:
@@ -42,7 +43,7 @@ class TopKStorage(Generic[T]):
     def clear(self) -> None:
         self._items.clear()
 
-    def get_all_entries(self) -> List[Tuple[float, T]]:
+    def get_all_entries(self) -> list[tuple[float, T]]:
         return list(self._items)
 
 
@@ -51,7 +52,7 @@ def _prepare_frame_data(
     idx_x: int,
     idx_team: int,
     idx_ball: int,
-) -> Tuple[np.ndarray, ...]:
+) -> tuple[np.ndarray, ...]:
     node_features = data.x.detach().cpu().numpy()
     xy = node_features[:, idx_x : idx_x + 2]
     x, y = xy.T
@@ -120,7 +121,7 @@ def plot_player_feature_importance(
 
 
 def plot_average_feature_importance(
-    node_masks: List[np.ndarray],
+    node_masks: list[np.ndarray],
     feature_names: Sequence[str],
     num_frames: int,
 ) -> plt.Figure:
@@ -144,9 +145,9 @@ def plot_average_feature_importance(
 
 
 def plot_pitch_frames_grid(
-    entries: Sequence[Tuple[float, Data]],
+    entries: Sequence[tuple[float, Data]],
     feature_names: Sequence[str],
-    grid_params: Dict[str, int],
+    grid_params: dict[str, int],
 ) -> plt.Figure:
     idx_x = feature_names.index("x")
     idx_team = feature_names.index("is_possession_team_1")
@@ -232,7 +233,7 @@ def fig_to_numpy(
 
 def build_dummy_inputs(
     bs: int, feat_dim: int, glob_dim: int, device: torch.device
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Creates random tensors to feed `torch_geometric.nn.summary`.
     """
@@ -249,7 +250,7 @@ def build_dummy_inputs(
     return dict(x=x, edge_index=edge_index, edge_attr=edge_attr, u=u, batch=batch)
 
 
-def extract_chain(batch: Discrete_Signal, chain_idx: int) -> List[Data]:
+def extract_chain(batch: Discrete_Signal, chain_idx: int) -> list[Data]:
     """
     NOTE - PyTorch Geometric Temporal assembles its batches manually instead of
     via `Batch.from_data_list`, so helper methods such as `get_example()` or

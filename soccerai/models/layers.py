@@ -1,5 +1,3 @@
-from typing import Optional
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -26,7 +24,7 @@ class GNNPlusLayer(nn.Module):
         din: int,
         dout: int,
         p_drop: float,
-        norm: Optional[nn.Module] = None,
+        norm: nn.Module | None = None,
     ):
         super().__init__()
         self.proj = pyg_nn.Linear(din, dout) if din != dout else Identity()
@@ -39,7 +37,7 @@ class GNNPlusLayer(nn.Module):
         self,
         x: torch.Tensor,
         batch: OptTensor = None,
-        batch_size: Optional[int] = None,
+        batch_size: int | None = None,
         **conv_kwargs,
     ) -> torch.Tensor:
         x_proj = self.proj(x)

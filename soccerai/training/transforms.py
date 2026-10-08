@@ -1,4 +1,5 @@
-from typing import Any, Callable, List, Optional, Sequence, Union
+from collections.abc import Callable, Sequence
+from typing import Any, TypeAlias
 
 import numpy as np
 import torch
@@ -6,10 +7,10 @@ from torch_geometric.data import Data
 from torch_geometric.transforms import BaseTransform
 from torch_geometric_temporal.signal import Discrete_Signal, DynamicGraphTemporalSignal
 
-Array = Union[np.ndarray, torch.Tensor]
+Array: TypeAlias = np.ndarray | torch.Tensor
 
 
-def get_feature_idx(name: str, feature_names: Sequence[str]) -> Optional[int]:
+def get_feature_idx(name: str, feature_names: Sequence[str]) -> int | None:
     try:
         return feature_names.index(name)
     except ValueError:
@@ -42,7 +43,7 @@ class BaseRandomFlip(BaseTransform):
 
     def __init__(self, p: float):
         self.p = p
-        self._ops: List[Callable[[Any], None]] = []
+        self._ops: list[Callable[[Any], None]] = []
 
     def _maybe(self) -> bool:
         return torch.rand(1).item() < self.p
@@ -53,9 +54,7 @@ class BaseRandomFlip(BaseTransform):
             op(x)
         return x
 
-    def forward(
-        self, data: Union[Data, Discrete_Signal]
-    ) -> Union[Data, Discrete_Signal]:
+    def forward(self, data: Data | Discrete_Signal) -> Data | Discrete_Signal:
         if not self._maybe():
             return data
 

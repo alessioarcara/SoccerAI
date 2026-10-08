@@ -20,7 +20,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import yaml
 from tabulate import tabulate
@@ -30,7 +30,7 @@ from soccerai.training.checkpoint import load_checkpoint
 ROOT = Path(__file__).resolve().parents[1]
 
 # name, model yaml (run_name), overrides of base.yaml, collector frames (0 = no plots)
-EXPERIMENTS: List[Tuple[str, str, Dict[str, Any], int]] = [
+EXPERIMENTS: list[tuple[str, str, dict[str, Any], int]] = [
     ("gcn", "gcn", {}, 12),
     ("graphsage", "graphsage", {}, 0),
     ("gatv2", "gatv2", {}, 0),
@@ -53,7 +53,7 @@ EXPERIMENTS: List[Tuple[str, str, Dict[str, Any], int]] = [
 ]
 
 
-def deep_update(d: Dict[str, Any], u: Dict[str, Any]) -> Dict[str, Any]:
+def deep_update(d: dict[str, Any], u: dict[str, Any]) -> dict[str, Any]:
     for k, v in u.items():
         if isinstance(v, dict) and isinstance(d.get(k), dict):
             deep_update(d[k], v)
@@ -65,10 +65,10 @@ def deep_update(d: Dict[str, Any], u: Dict[str, Any]) -> Dict[str, Any]:
 def run_experiment(
     name: str,
     run_name: str,
-    overrides: Dict[str, Any],
+    overrides: dict[str, Any],
     collector_frames: int,
     out: Path,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     cfg_dir = out / f"cfg_{name}"
     shutil.rmtree(cfg_dir, ignore_errors=True)
     shutil.copytree(ROOT / "configs", cfg_dir)
@@ -93,7 +93,7 @@ def run_experiment(
             env=env,
         )
 
-    row: Dict[str, Any] = {
+    row: dict[str, Any] = {
         "name": name,
         "run_name": run_name,
         "exit": proc.returncode,

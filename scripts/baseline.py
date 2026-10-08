@@ -11,8 +11,8 @@ Usage: python scripts/baseline.py   (reads configs/base.yaml like train.py)
 """
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple
 
 import numpy as np
 from loguru import logger
@@ -37,7 +37,7 @@ PITCH_DIAG = float(np.hypot(*PITCH))
 
 def chain_features(
     chain: DynamicGraphTemporalSignal, feature_names: Sequence[str]
-) -> Tuple[Dict[str, float], float]:
+) -> tuple[dict[str, float], float]:
     """Hand-crafted description of the last frame of a chain."""
     idx = {name: i for i, name in enumerate(feature_names)}
     x = chain.features[-1]
@@ -98,7 +98,7 @@ def chain_features(
 
 def build_table(
     ds: TemporalChainsDataset,
-) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+) -> tuple[np.ndarray, np.ndarray, list[str]]:
     rows, labels = [], []
     for chain in ds.temporal_chains:
         feats, label = chain_features(chain, ds.feature_names)
@@ -109,7 +109,7 @@ def build_table(
     return X, np.array(labels), names
 
 
-def evaluate(name: str, y_true: np.ndarray, scores: np.ndarray) -> List:
+def evaluate(name: str, y_true: np.ndarray, scores: np.ndarray) -> list:
     return [
         name,
         f"{average_precision_score(y_true, scores):.3f}",

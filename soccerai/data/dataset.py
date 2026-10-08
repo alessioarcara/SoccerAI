@@ -1,7 +1,7 @@
 import hashlib
 import json
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Callable, List, Sequence, Union
 
 import numpy as np
 import polars as pl
@@ -86,8 +86,8 @@ class WorldCup2022Dataset(InMemoryDataset):
             else None
         )
 
-    def _build_augmentations(self) -> List[Callable]:
-        augmentations: List[Callable] = [RandomVerticalFlip(self.feature_names, 0.5)]
+    def _build_augmentations(self) -> list[Callable]:
+        augmentations: list[Callable] = [RandomVerticalFlip(self.feature_names, 0.5)]
         # mirroring the pitch along its length would reverse the attacking
         # direction, which is fixed once the frames are normalised
         if not self.cfg.normalize_attack_direction:
@@ -95,7 +95,7 @@ class WorldCup2022Dataset(InMemoryDataset):
         return augmentations
 
     @property
-    def raw_file_names(self) -> List[str]:
+    def raw_file_names(self) -> list[str]:
         return ["dataset.parquet"]
 
     @property
@@ -118,7 +118,7 @@ class WorldCup2022Dataset(InMemoryDataset):
         return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:10]
 
     @property
-    def processed_file_names(self) -> List[str]:
+    def processed_file_names(self) -> list[str]:
         tag = self.config_tag
         return [f"train_{tag}.pt", f"val_{tag}.pt", f"feature_names_{tag}.json"]
 
@@ -461,9 +461,7 @@ class WorldCup2022Dataset(InMemoryDataset):
         chain_has_shot = (pl.col("possessionEventType") == "SH").any().over("chain_id")
         return df.filter(~((pl.col("label") == 0) & chain_has_shot))
 
-    def _create_preprocessor(
-        self, df: pl.DataFrame
-    ) -> Union[ColumnTransformer, Pipeline]:
+    def _create_preprocessor(self, df: pl.DataFrame) -> ColumnTransformer | Pipeline:
         # Column groups --------------------------------------------------- #
         cat_cols = [
             c
@@ -646,7 +644,7 @@ class WorldCup2022Dataset(InMemoryDataset):
         if self.cfg.mask_non_possession_shooting_stats and use_shooting_stats:
             if self.cfg.use_pca_on_roster_cols:
 
-                def cols_to_mask(df: pl.DataFrame) -> List[str]:
+                def cols_to_mask(df: pl.DataFrame) -> list[str]:
                     pca_cols = [c for c in df.columns if c.startswith("pca")]
                     return pca_cols + ["is_possession_team_1"]
             else:

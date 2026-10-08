@@ -1,5 +1,3 @@
-from typing import Dict, List, Tuple
-
 import numpy as np
 import polars as pl
 from IPython.display import clear_output, display
@@ -23,7 +21,7 @@ def get_chains(
     inner_distance: float = 0.0,
     skip_challenge_events: bool = True,
     use_player_pos: bool = False,
-) -> Dict[str, List[List[int]]]:
+) -> dict[str, list[list[int]]]:
     """
     Categorizes event sequences in soccer matches into chains. Extracts
     positive chains (those leading to shots) and negative chains (those not
@@ -78,10 +76,10 @@ def get_chains(
 
 
 def _split_into_long_short_chains(
-    all_chains: List[List[int]], chain_len: int
-) -> Tuple[List[List[int]], ...]:
-    long_chains: List[List[int]] = []
-    short_chains: List[List[int]] = []
+    all_chains: list[list[int]], chain_len: int
+) -> tuple[list[list[int]], ...]:
+    long_chains: list[list[int]] = []
+    short_chains: list[list[int]] = []
 
     for chain in all_chains:
         (long_chains if len(chain) >= chain_len else short_chains).append(chain)
@@ -91,7 +89,7 @@ def _split_into_long_short_chains(
 
 def _pos_labeling(
     event_df: pl.DataFrame, chain_len: int, skip_challenge_events: bool
-) -> List[List[int]]:
+) -> list[list[int]]:
     shots_df = event_df.filter(event_df["possessionEventType"] == "SH")
     pos_chains = []
 
@@ -216,12 +214,12 @@ def _neg_labeling(
     players_df: pl.DataFrame,
     metadata_df: pl.DataFrame,
     rosters_df: pl.DataFrame,
-    pos_chains: List[List[int]],
+    pos_chains: list[list[int]],
     chain_len: int,
     outer_distance: float,
     inner_distance: float = 0.0,
     use_player_pos: bool = False,
-) -> List[List[int]]:
+) -> list[list[int]]:
     pos_indices = _flatten_chains(pos_chains)
     negatives_df = event_df.filter(~pl.col("index").is_in(pos_indices))
     neg_chains = []
@@ -260,15 +258,15 @@ def _neg_labeling(
 
 
 def filter_shot_chains(
-    chains: List[List[int]],
-    chains_range: Tuple[int, int],
+    chains: list[list[int]],
+    chains_range: tuple[int, int],
     event_df: pl.DataFrame,
     players_df: pl.DataFrame,
     metadata_df: pl.DataFrame,
     output_dir: str,
     show_video: bool = True,
     interval: int = 1000,
-) -> List[List[int]]:
+) -> list[list[int]]:
     accepted_chains = []
     current_chain_index = chains_range[0]
     selection_widget = None

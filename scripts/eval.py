@@ -1,7 +1,6 @@
 import argparse
 import os
 from pathlib import Path
-from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -52,7 +51,7 @@ def evaluate(
     with torch.inference_mode():
         for signal in tqdm(loader, desc="signals", leave=False):
             h = c = None
-            last_preds: Optional[torch.Tensor] = None
+            last_preds: torch.Tensor | None = None
 
             for snapshot in signal:
                 snapshot = snapshot.to(device, non_blocking=True)

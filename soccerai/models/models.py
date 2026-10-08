@@ -1,4 +1,4 @@
-from typing import Optional, cast
+from typing import cast
 
 import torch
 import torch.nn as nn
@@ -27,7 +27,7 @@ class GNN(nn.Module):
         edge_weight: OptTensor = None,
         edge_attr: OptTensor = None,
         batch: OptTensor = None,
-        batch_size: Optional[int] = None,
+        batch_size: int | None = None,
     ):
         z = self.backbone(x, edge_index, edge_weight, edge_attr, batch, batch_size)
         fused_emb = self.neck(z, u, batch, batch_size)
@@ -54,7 +54,7 @@ class TemporalGNN(nn.Module):
         edge_weight: OptTensor = None,
         edge_attr: OptTensor = None,
         batch: OptTensor = None,
-        batch_size: Optional[int] = None,
+        batch_size: int | None = None,
         prev_h: OptTensor = None,
         prev_c: OptTensor = None,
     ):

@@ -9,7 +9,7 @@ exercised end to end without the real data.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 import polars as pl
@@ -49,21 +49,21 @@ def make_frame_rows(
     label: int,
     period: int = 1,
     home_start_left: bool = True,
-    home_start_left_et: Optional[bool] = None,
+    home_start_left_et: bool | None = None,
     possession: str = "home",
     carrier_idx: int = 9,
     event_type: str = "PA",
     clock_seconds: int = 600,
-    rng: Optional[np.random.Generator] = None,
-    positions: Optional[Dict[str, np.ndarray]] = None,
-    ball: Optional[Sequence[float]] = None,
-) -> List[dict]:
+    rng: np.random.Generator | None = None,
+    positions: dict[str, np.ndarray] | None = None,
+    ball: Sequence[float] | None = None,
+) -> list[dict]:
     """Rows (22 players + ball) of one frame, in the raw parquet schema."""
     rng = rng if rng is not None else np.random.default_rng(0)
     home_name, away_name = f"Home{game_id}", f"Away{game_id}"
     start_period2 = 3000.0 if period <= 2 else None
 
-    rows: List[dict] = []
+    rows: list[dict] = []
     for team, team_name in (("home", home_name), ("away", away_name)):
         for i in range(PLAYERS_PER_TEAM):
             if positions is not None and team in positions:
@@ -177,7 +177,7 @@ def make_raw_df(
     `possession`, `event_types` (list, one per frame), `clock_start`.
     """
     rng = np.random.default_rng(seed)
-    rows: List[dict] = []
+    rows: list[dict] = []
     event_index = 0
     for spec in chains:
         n_frames = spec["n_frames"]

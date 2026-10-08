@@ -1,5 +1,6 @@
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+from typing import Any
 
 import torch
 
@@ -15,7 +16,7 @@ def save_checkpoint(
     feature_names: Sequence[str],
     history_key: str,
     best_value: float,
-    metrics: Optional[Mapping[str, float]] = None,
+    metrics: Mapping[str, float] | None = None,
 ) -> None:
     """
     Save a self-contained checkpoint: weights plus everything needed to
@@ -37,7 +38,7 @@ def save_checkpoint(
     )
 
 
-def load_checkpoint(path: Path) -> Dict[str, Any]:
+def load_checkpoint(path: Path) -> dict[str, Any]:
     """
     Load a checkpoint saved by `save_checkpoint`; bare state dicts written
     by older versions are wrapped into the same structure (without config).
@@ -48,14 +49,14 @@ def load_checkpoint(path: Path) -> Dict[str, Any]:
     return {"state_dict": payload, "config": None, "feature_names": None}
 
 
-def checkpoint_config(payload: Mapping[str, Any]) -> Optional[Config]:
+def checkpoint_config(payload: Mapping[str, Any]) -> Config | None:
     cfg = payload.get("config")
     return None if cfg is None else Config(**cfg)
 
 
 def find_best_checkpoint(
     model_dir: Path, include_legacy: bool = False
-) -> Optional[Tuple[str, Path]]:
+) -> tuple[str, Path] | None:
     """
     Return `(wandb_run_id, path)` of the checkpoint with the lowest monitored
     value among `<run_id>_<key>_<value>.pth` files under `model_dir`
@@ -65,7 +66,7 @@ def find_best_checkpoint(
     unless `include_legacy` is set: they belong to earlier architectures and
     their monitored values are not comparable.
     """
-    best: Optional[Tuple[str, Path, float]] = None
+    best: tuple[str, Path, float] | None = None
     for path in model_dir.rglob("*.pth"):
         run_id, _, rest = path.stem.partition("_")
         try:

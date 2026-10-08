@@ -2,7 +2,7 @@ import json
 import os
 import subprocess
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import polars as pl
 
@@ -14,7 +14,7 @@ def offset_x(x: float) -> float:
 def home_attacks_right(
     period: int,
     home_team_start_left: bool,
-    home_team_start_left_extra_time: Optional[bool] = None,
+    home_team_start_left_extra_time: bool | None = None,
 ) -> bool:
     """
     Whether the home team attacks towards x = pitch length in the given period.
@@ -38,8 +38,8 @@ def offset_y(y: float) -> float:
 
 
 def download_video_frame(
-    frame_index: int, event_dict: Dict[str, Any], output_dir: str
-) -> Tuple[int, Optional[str]]:
+    frame_index: int, event_dict: dict[str, Any], output_dir: str
+) -> tuple[int, str | None]:
     output_filename = f"{output_dir}/frame_{frame_index}.jpeg"
 
     if os.path.exists(output_filename):
@@ -92,24 +92,24 @@ def download_video_frame(
 
 
 def download_video_frames(
-    frames: List[int],
+    frames: list[int],
     event_df: pl.DataFrame,
     output_dir: str = "./frames",
     max_workers: int = 8,
-) -> Dict[int, str]:
+) -> dict[int, str]:
     video_files = {}
     event_dicts = event_df.to_dicts()
 
     os.makedirs(output_dir, exist_ok=True)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures: Dict[Future, int] = {
+        futures: dict[Future, int] = {
             executor.submit(
                 download_video_frame, f_idx, event_dicts[f_idx], output_dir
             ): f_idx
             for f_idx in frames
         }
         for future in as_completed(futures):
-            res: Tuple[int, Optional[str]] = future.result()
+            res: tuple[int, str | None] = future.result()
             frame_idx, filename = res
             if filename is not None:
                 video_files[frame_idx] = filename
@@ -117,7 +117,7 @@ def download_video_frames(
 
 
 def save_accepted_chains(
-    accepted_chains: List[List[int]], dst_dir: str, are_positive: bool
+    accepted_chains: list[list[int]], dst_dir: str, are_positive: bool
 ) -> None:
     output_file = os.path.join(
         dst_dir, f"accepted_{'pos' if are_positive else 'neg'}_chains.json"

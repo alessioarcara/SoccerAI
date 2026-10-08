@@ -1,7 +1,6 @@
 import random
 import re
 import time
-from typing import Dict, List, Optional, Tuple
 
 from bs4 import BeautifulSoup
 from selenium.common.exceptions import WebDriverException
@@ -11,7 +10,7 @@ from soccerai.data.config import SHOOTING_STATS, TEAM_ABBREVS
 from soccerai.data.scraping.utils import normalize
 
 
-def get_player_id(driver, player_name: str, player_team: str) -> Optional[str]:
+def get_player_id(driver, player_name: str, player_team: str) -> str | None:
     country_code = TEAM_ABBREVS.get(player_team)
     if not country_code:
         print(f"Country not recognized for {player_name}")
@@ -91,7 +90,7 @@ def get_html(driver, player_name, player_id):
         return None
 
 
-def extract_metastats(html: str) -> Dict:
+def extract_metastats(html: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
     meta_div = soup.find("div", id="meta")
 
@@ -140,7 +139,7 @@ def extract_metastats(html: str) -> Dict:
 
 
 def compute_shooting_stats_average(
-    season_data: List[Tuple[str, Dict]],
+    season_data: list[tuple[str, dict]],
     num_years_back: int = 3,
     min_minutes_90s: float = 5.0,
 ):
@@ -158,8 +157,8 @@ def compute_shooting_stats_average(
     selected_seasons = season_data[
         max(0, reference_index - num_years_back) : reference_index + 1
     ]
-    stats_sum: Dict[str, float] = {}
-    stats_count: Dict[str, int] = {}
+    stats_sum: dict[str, float] = {}
+    stats_count: dict[str, int] = {}
     skip_keys = {"age", "team", "country", "comp_level", "lg_finish", "matches"}
 
     for _, stats in selected_seasons:

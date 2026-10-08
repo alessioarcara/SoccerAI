@@ -1,6 +1,5 @@
 import re
 from datetime import datetime
-from typing import Dict, List, Optional, Union
 from urllib.parse import quote
 
 import Levenshtein
@@ -12,9 +11,7 @@ from soccerai.data.config import TEAM_ABBREVS
 from soccerai.data.scraping.utils import get_api_data, normalize
 
 
-def search_player_id(
-    player_name: str, nationality: str, base_url: str
-) -> Optional[str]:
+def search_player_id(player_name: str, nationality: str, base_url: str) -> str | None:
     search_url = f"{base_url}/players/search/{player_name}"
     data = get_api_data(search_url)
     if data is None:
@@ -40,7 +37,7 @@ def search_player_id(
     return player_id
 
 
-def get_avg_market_value_pre2021(mv_url: str, num_years_back: int = 3) -> Optional[int]:
+def get_avg_market_value_pre2021(mv_url: str, num_years_back: int = 3) -> int | None:
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
@@ -74,7 +71,7 @@ def get_avg_market_value_pre2021(mv_url: str, num_years_back: int = 3) -> Option
 
 def get_player_physical_profile(
     player_id: str, base_url: str
-) -> Optional[Dict[str, Optional[Union[str, int]]]]:
+) -> dict[str, str | int | None] | None:
     url = f"{base_url}/players/{player_id}/profile"
     data = get_api_data(url)
     if data is None:
@@ -87,7 +84,7 @@ def get_player_physical_profile(
     }
 
 
-def search_club_id(club_name: str, base_url: str) -> Optional[str]:
+def search_club_id(club_name: str, base_url: str) -> str | None:
     encoded_club_name = quote(club_name)
     search_url = f"{base_url}/clubs/search/{encoded_club_name}"
     data = get_api_data(search_url)
@@ -147,7 +144,7 @@ def get_players_from_roster(roster_url: str) -> list:
     return players
 
 
-def find_best_player_match(input_name: str, players: List[Dict]) -> Optional[Dict]:
+def find_best_player_match(input_name: str, players: list[dict]) -> dict | None:
     norm_input = normalize(input_name)
     best_match = min(
         players,
@@ -159,7 +156,7 @@ def find_best_player_match(input_name: str, players: List[Dict]) -> Optional[Dic
     return best_match
 
 
-def standardize_nationality(input_nat: str, standard_nats: Dict[str, str]) -> str:
+def standardize_nationality(input_nat: str, standard_nats: dict[str, str]) -> str:
     norm_input = normalize(input_nat)
     normalized = {nat: normalize(nat) for nat in standard_nats.keys()}
     best_nat = max(

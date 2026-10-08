@@ -1,5 +1,4 @@
 from math import ceil
-from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -106,7 +105,7 @@ class HierarchicalGNN(nn.Module):
         edge_weight: OptTensor = None,
         edge_attr: OptTensor = None,
         batch: OptTensor = None,
-        batch_size: Optional[int] = None,
+        batch_size: int | None = None,
         prev_h: OptTensor = None,
         prev_c: OptTensor = None,
     ):
@@ -140,7 +139,7 @@ class HierarchicalGNN(nn.Module):
         fused = torch.cat([graph_emb, glob_emb], dim=-1)
 
         if isinstance(self.rnn, nn.LSTMCell):
-            state: Optional[Tuple[OptTensor, OptTensor]] = (
+            state: tuple[OptTensor, OptTensor] | None = (
                 prev_h,
                 prev_c,
             )

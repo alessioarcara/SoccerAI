@@ -1,5 +1,3 @@
-from typing import Dict, Optional, Tuple, Type
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,13 +7,13 @@ from torch_geometric.typing import OptTensor
 from soccerai.models.typings import ReadoutType, RNNType
 from soccerai.training.trainer_config import NeckConfig
 
-READOUT_AGGREGATIONS: Dict[ReadoutType, Type[pyg_nn.Aggregation]] = {
+READOUT_AGGREGATIONS: dict[ReadoutType, type[pyg_nn.Aggregation]] = {
     "sum": pyg_nn.SumAggregation,
     "mean": pyg_nn.MeanAggregation,
     "max": pyg_nn.MaxAggregation,
 }
 
-RNN_CELLS: Dict[RNNType, Type[nn.Module]] = {"gru": nn.GRUCell, "lstm": nn.LSTMCell}
+RNN_CELLS: dict[RNNType, type[nn.Module]] = {"gru": nn.GRUCell, "lstm": nn.LSTMCell}
 
 
 class GraphGlobalFusion(nn.Module):
@@ -53,7 +51,7 @@ class RecurrentCell(nn.Module):
 
     def forward(
         self, x: torch.Tensor, prev_h: OptTensor, prev_c: OptTensor
-    ) -> Tuple[torch.Tensor, OptTensor]:
+    ) -> tuple[torch.Tensor, OptTensor]:
         if isinstance(self.cell, nn.LSTMCell):
             state = None if prev_h is None or prev_c is None else (prev_h, prev_c)
             h, c = self.cell(x, state)
@@ -116,10 +114,10 @@ class TemporalFusion(nn.Module):
         u: torch.Tensor,
         x: torch.Tensor,
         batch: OptTensor = None,
-        batch_size: Optional[int] = None,
+        batch_size: int | None = None,
         prev_h: OptTensor = None,
         prev_c: OptTensor = None,
-    ) -> Tuple[torch.Tensor, torch.Tensor, OptTensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, OptTensor]:
         if self.mode == "node":
             z_nodes = torch.cat(z, dim=-1) if isinstance(z, list) else z
             rnn_input = self.norm(torch.cat([z_nodes, self.raw_features_proj(x)], -1))

@@ -1,15 +1,14 @@
 import copy
 from abc import ABC
 from pathlib import Path
-from typing import List
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import wandb
 from loguru import logger
 from torch_geometric.explain import Explainer, GNNExplainer
 
-import wandb
 from soccerai.training.checkpoint import save_checkpoint
 from soccerai.training.metrics import Collector
 from soccerai.training.trainer_config import Config
@@ -25,8 +24,8 @@ class Callback(ABC):
     def on_eval_end(self, trainer): ...
 
 
-def build_callbacks(cfg: Config) -> List[Callback]:
-    callbacks: List[Callback] = []
+def build_callbacks(cfg: Config) -> list[Callback]:
+    callbacks: list[Callback] = []
 
     if cfg.trainer.early_stopping_callback:
         callbacks.append(

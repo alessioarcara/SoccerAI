@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from typing import List, Tuple
 
 import numpy as np
 import polars as pl
@@ -17,13 +16,13 @@ class GraphConverter(ABC):
     @abstractmethod
     def _create_edges(
         self, x_df: pl.DataFrame
-    ) -> Tuple[torch.Tensor, OptTensor, OptTensor]:
+    ) -> tuple[torch.Tensor, OptTensor, OptTensor]:
         pass
 
     def convert_dataframe_to_data_list(
         self, df: pl.DataFrame
-    ) -> Tuple[List[Data], List[str]]:
-        data_list: List[Data] = []
+    ) -> tuple[list[Data], list[str]]:
+        data_list: list[Data] = []
 
         for _, event_df in df.group_by(
             ["gameEventId", "possessionEventId"], maintain_order=True
@@ -85,7 +84,7 @@ class GraphConverter(ABC):
 class FullyConnectedGraphConverter(GraphConverter):
     def _create_edges(
         self, x_df: pl.DataFrame
-    ) -> Tuple[torch.Tensor, OptTensor, OptTensor]:
+    ) -> tuple[torch.Tensor, OptTensor, OptTensor]:
         src, dst = [], []
 
         for i in range(self.NUM_PLAYERS):
@@ -129,7 +128,7 @@ class BipartiteGraphConverter(GraphConverter):
 
     def _create_edges(
         self, x_df: pl.DataFrame
-    ) -> Tuple[torch.Tensor, OptTensor, OptTensor]:
+    ) -> tuple[torch.Tensor, OptTensor, OptTensor]:
         # node coordinates are already scaled to [0, 1]: back to metres, so
         # that the proximity weight has a physical length scale
         positions = x_df.select(["x", "y"]).to_numpy() * np.array(

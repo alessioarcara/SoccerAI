@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Annotated, Any, Dict, Literal, Optional, Union
+from typing import Annotated, Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
@@ -73,15 +73,13 @@ class DiffPoolConfig(BackboneCommon):
 
 
 BackboneConfig = Annotated[
-    Union[
-        GCNConfig,
-        GCN2Config,
-        GraphSAGEConfig,
-        GATv2Config,
-        GINEConfig,
-        GraphGPSConfig,
-        DiffPoolConfig,
-    ],
+    GCNConfig
+    | GCN2Config
+    | GraphSAGEConfig
+    | GATv2Config
+    | GINEConfig
+    | GraphGPSConfig
+    | DiffPoolConfig,
     Field(discriminator="type"),
 ]
 
@@ -128,18 +126,18 @@ class TrainerConfig(StrictModel):
     bs: int
     lr: float
     # peak learning rate of the one-cycle schedule (None = lr)
-    max_lr: Optional[float] = None
+    max_lr: float | None = None
     # weight of the positive class in the BCE loss: a number, "auto" for
     # #negatives / #positives of the training chains, or None
-    pos_weight: Optional[Union[float, Literal["auto"]]] = None
+    pos_weight: float | Literal["auto"] | None = None
     wd: float
     n_epochs: int
     eval_rate: int
     gamma: float
     # weight of the auxiliary loss exposed by some models (DiffPool)
     aux_loss_weight: float = 1.0
-    early_stopping_callback: Optional[EarlyStoppingCallbackConfig] = None
-    model_saving_callback: Optional[ModelSavingCallbackConfig] = None
+    early_stopping_callback: EarlyStoppingCallbackConfig | None = None
+    model_saving_callback: ModelSavingCallbackConfig | None = None
 
 
 class DataConfig(StrictModel):
@@ -150,7 +148,7 @@ class DataConfig(StrictModel):
     drop_games_without_negatives: bool = True
     # keep positive chains only if their last action is within this distance
     # (metres) of the attacked goal line, like the negatives (None = keep all)
-    goal_window_for_positives: Optional[float] = 25.0
+    goal_window_for_positives: float | None = 25.0
     include_goal_features: bool
     include_ball_features: bool
     use_macro_roles: bool
@@ -164,7 +162,7 @@ class DataConfig(StrictModel):
     # mirror frames so that the possession team always attacks towards x = 105
     normalize_attack_direction: bool = True
     # keep only the last frames of every chain (None = whole chain)
-    max_chain_len: Optional[int] = 12
+    max_chain_len: int | None = 12
     # per-player scraped statistics (weight, market value, shooting record,
     # age); constant per player, they let the model identify players
     use_roster_features: bool = False
@@ -203,7 +201,7 @@ def _load_yaml(path: PathLike):
     return yaml.safe_load(Path(path).expanduser().read_text()) or {}
 
 
-def _deep_merge(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
+def _deep_merge(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
     """
     Recursively merge dict `b` into dict `a`
     """

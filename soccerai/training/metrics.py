@@ -1,14 +1,10 @@
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from typing import (
     Any,
     Generic,
-    List,
     Literal,
-    Optional,
-    Sequence,
-    Tuple,
     TypeVar,
-    Union,
 )
 
 import matplotlib.pyplot as plt
@@ -37,7 +33,7 @@ T = TypeVar("T")
 
 def chain_level_predictions(
     preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Any
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Reduce per-frame predictions of a temporal batch to one prediction per
     chain, taken at the last valid (non padded) frame.
@@ -69,7 +65,7 @@ class Metric(ABC):
         pass
 
     @abstractmethod
-    def compute(self) -> List[Tuple[str, float]]:
+    def compute(self) -> list[tuple[str, float]]:
         pass
 
     @abstractmethod
@@ -77,7 +73,7 @@ class Metric(ABC):
         pass
 
     @abstractmethod
-    def plot(self) -> List[Tuple[str, Union[plt.Figure, np.ndarray]]]:
+    def plot(self) -> list[tuple[str, plt.Figure | np.ndarray]]:
         """
         Returns a tuple containing the plot title and either the image data as a static figure or the video frames as a numpy array.
         """
@@ -88,7 +84,7 @@ class BinaryConfusionMatrix(Metric):
     def __init__(
         self,
         cfg: MetricsConfig,
-        ignore_value: Optional[int] = None,
+        ignore_value: int | None = None,
         mode: Literal["pos", "both"] = "pos",
     ):
         self.cfg = cfg
@@ -120,12 +116,12 @@ class BinaryConfusionMatrix(Metric):
         fbeta = ((1 + beta2) * tp / denom) if denom > 0 else 0.0
         return fbeta
 
-    def compute(self) -> List[Tuple[str, float]]:
+    def compute(self) -> list[tuple[str, float]]:
         tn, fp = self.cm[0, 0].item(), self.cm[0, 1].item()
         fn, tp = self.cm[1, 0].item(), self.cm[1, 1].item()
 
         total = tn + fp + fn + tp
-        results: List[Tuple[str, float]] = []
+        results: list[tuple[str, float]] = []
 
         # Accuracy
         accuracy = (tp + tn) / total if total > 0 else 0.0
@@ -145,7 +141,7 @@ class BinaryConfusionMatrix(Metric):
     def reset(self) -> None:
         self.cm = torch.zeros((2, 2), dtype=torch.int64)
 
-    def plot(self) -> List[Tuple[str, Union[plt.Figure, np.ndarray]]]:
+    def plot(self) -> list[tuple[str, plt.Figure | np.ndarray]]:
         cm_np = self.cm.cpu().numpy()
         fig, ax = plt.subplots(figsize=(8, 6))
         sns.heatmap(
@@ -165,7 +161,7 @@ class BinaryConfusionMatrix(Metric):
 
 
 class BinaryPrecisionRecallCurve(Metric):
-    def __init__(self, ignore_value: Optional[int] = None):
+    def __init__(self, ignore_value: int | None = None):
         self.ignore_value = ignore_value
         self.reset()
 
@@ -186,7 +182,7 @@ class BinaryPrecisionRecallCurve(Metric):
         self.all_preds_probs.append(preds_flat)
         self.all_true_labels.append(labels_flat)
 
-    def compute(self) -> List[Tuple[str, float]]:
+    def compute(self) -> list[tuple[str, float]]:
         all_preds_probs_flat = torch.cat(self.all_preds_probs)
         all_true_labels_flat = torch.cat(self.all_true_labels).long()
 
@@ -198,7 +194,7 @@ class BinaryPrecisionRecallCurve(Metric):
         self.all_preds_probs = []
         self.all_true_labels = []
 
-    def plot(self) -> List[Tuple[str, Union[plt.Figure, np.ndarray]]]:
+    def plot(self) -> list[tuple[str, plt.Figure | np.ndarray]]:
         all_preds_probs_flat = torch.cat(self.all_preds_probs)
         all_true_labels_flat = torch.cat(self.all_true_labels).long()
         p, r, thresholds = binary_precision_recall_curve(
@@ -239,16 +235,16 @@ class Collector(Metric, Generic[T]):
         self.storage: TopKStorage[T] = TopKStorage(self.cfg.collector.n_frames)
 
     @property
-    def frames(self) -> List[Tuple[float, T]]:
+    def frames(self) -> list[tuple[float, T]]:
         return self._fetch_frames()
 
     @abstractmethod
-    def _fetch_frames(self) -> List[Tuple[float, T]]: ...
+    def _fetch_frames(self) -> list[tuple[float, T]]: ...
 
     def __len__(self) -> int:
         return len(self.storage._items)
 
-    def compute(self) -> List[Tuple[str, float]]:
+    def compute(self) -> list[tuple[str, float]]:
         return []
 
     def reset(self) -> None:
@@ -272,7 +268,7 @@ class FrameCollector(Collector[Data]):
         for i in indices:
             self.storage.add((float(probs_np[i]), batch[i]))
 
-    def plot(self) -> List[Tuple[str, Union[plt.Figure, np.ndarray]]]:
+    def plot(self) -> list[tuple[str, plt.Figure | np.ndarray]]:
         entries = self.storage.get_all_entries()
 
         if not entries:
@@ -288,7 +284,7 @@ class FrameCollector(Collector[Data]):
         return self.storage.get_all_entries()
 
 
-class ChainCollector(Collector[Tuple[np.ndarray, List[Data]]]):
+class ChainCollector(Collector[tuple[np.ndarray, list[Data]]]):
     def update(
         self,
         preds_probs: torch.Tensor,
@@ -313,7 +309,7 @@ class ChainCollector(Collector[Tuple[np.ndarray, List[Data]]]):
                     )
                 )
 
-    def plot(self) -> List[Tuple[str, Union[plt.Figure, np.ndarray]]]:
+    def plot(self) -> list[tuple[str, plt.Figure | np.ndarray]]:
         chain_predictions = [entry[1][0] for entry in self.storage.get_all_entries()]
         if not chain_predictions:
             return []

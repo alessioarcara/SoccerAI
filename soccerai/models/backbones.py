@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Optional, Type
+from collections.abc import Callable
 
 import torch
 import torch.nn as nn
@@ -21,11 +21,11 @@ from soccerai.training.trainer_config import (
 
 
 class BackboneRegistry:
-    _registry: Dict[str, Type[nn.Module]] = {}
+    _registry: dict[str, type[nn.Module]] = {}
 
     @classmethod
-    def register(cls, name: str) -> Callable[[Type[nn.Module]], Type[nn.Module]]:
-        def decorator(backbone: Type[nn.Module]) -> Type[nn.Module]:
+    def register(cls, name: str) -> Callable[[type[nn.Module]], type[nn.Module]]:
+        def decorator(backbone: type[nn.Module]) -> type[nn.Module]:
             cls._registry[name] = backbone
             return backbone
 
@@ -38,7 +38,7 @@ class BackboneRegistry:
         return cls._registry[name](*args, **kwargs)
 
 
-NORMALIZATIONS: Dict[NormalizationType, Type[nn.Module]] = {
+NORMALIZATIONS: dict[NormalizationType, type[nn.Module]] = {
     "none": Identity,
     "batch": BatchNorm,
     "layer": pyg_nn.LayerNorm,
@@ -47,7 +47,7 @@ NORMALIZATIONS: Dict[NormalizationType, Type[nn.Module]] = {
 }
 
 # names understood by `torch_geometric.nn.GPSConv(norm=...)`
-GPS_NORMALIZATIONS: Dict[NormalizationType, Optional[str]] = {
+GPS_NORMALIZATIONS: dict[NormalizationType, str | None] = {
     "none": None,
     "batch": "batch_norm",
     "layer": "layer_norm",
@@ -62,7 +62,7 @@ def apply_layer(
     drop: nn.Module,
     h: torch.Tensor,
     batch: OptTensor,
-    batch_size: Optional[int],
+    batch_size: int | None,
     **conv_kwargs,
 ) -> torch.Tensor:
     """
@@ -121,7 +121,7 @@ class GCNBackbone(nn.Module):
         edge_weight: OptTensor = None,
         edge_attr: OptTensor = None,
         batch: OptTensor = None,
-        batch_size: Optional[int] = None,
+        batch_size: int | None = None,
     ):
         h = x
 
@@ -175,7 +175,7 @@ class GCNIIBackbone(nn.Module):
         edge_weight: OptTensor = None,
         edge_attr: OptTensor = None,
         batch: OptTensor = None,
-        batch_size: Optional[int] = None,
+        batch_size: int | None = None,
     ):
         h = h0 = self.node_proj(x)
 
@@ -237,7 +237,7 @@ class GraphSAGEBackbone(nn.Module):
         edge_weight: OptTensor = None,
         edge_attr: OptTensor = None,
         batch: OptTensor = None,
-        batch_size: Optional[int] = None,
+        batch_size: int | None = None,
     ):
         h = x
 
@@ -294,7 +294,7 @@ class GATv2Backbone(nn.Module):
         edge_weight: OptTensor = None,
         edge_attr: OptTensor = None,
         batch: OptTensor = None,
-        batch_size: Optional[int] = None,
+        batch_size: int | None = None,
     ) -> torch.Tensor:
         h = x
         n_layers = len(self.convs)
@@ -366,7 +366,7 @@ class GINEBackbone(nn.Module):
         edge_weight: OptTensor = None,
         edge_attr: OptTensor = None,
         batch: OptTensor = None,
-        batch_size: Optional[int] = None,
+        batch_size: int | None = None,
     ):
         outs = []
         h = x
@@ -428,7 +428,7 @@ class GraphGPSBackbone(nn.Module):
         edge_weight: OptTensor = None,
         edge_attr: OptTensor = None,
         batch: OptTensor = None,
-        batch_size: Optional[int] = None,
+        batch_size: int | None = None,
     ):
         h = self.node_proj(x)
 

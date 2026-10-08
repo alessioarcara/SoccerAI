@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Callable, List, Optional, Sequence, Tuple
+from collections.abc import Callable, Sequence
 
 import numpy as np
 from torch.utils.data import Dataset
@@ -21,11 +21,11 @@ class TemporalChainsDataset(Dataset):
 
     def __init__(
         self,
-        temporal_chains: List[DynamicGraphTemporalSignal],
+        temporal_chains: list[DynamicGraphTemporalSignal],
         num_features: int,
         num_global_features: int,
         feature_names: Sequence[str],
-        transform: Optional[Callable] = None,
+        transform: Callable | None = None,
     ):
         self.temporal_chains = temporal_chains
         self.num_features = num_features
@@ -46,7 +46,7 @@ class TemporalChainsDataset(Dataset):
 
     @staticmethod
     def from_worldcup_dataset(
-        dataset: WorldCup2022Dataset, max_chain_len: Optional[int] = None
+        dataset: WorldCup2022Dataset, max_chain_len: int | None = None
     ) -> TemporalChainsDataset:
         """
         Group the frames of `dataset` by chain, in chronological order.
@@ -106,7 +106,7 @@ class TemporalChainsDataset(Dataset):
         )
 
     @staticmethod
-    def collate(batch: List[DynamicGraphTemporalSignal]):
+    def collate(batch: list[DynamicGraphTemporalSignal]):
         """
         Stack B chains into one `DynamicGraphTemporalSignalBatch`.
 
@@ -210,7 +210,7 @@ class TemporalChainsDataset(Dataset):
 
 def pad_chain(
     c: DynamicGraphTemporalSignal, num_pad_frames: int
-) -> Tuple[List[np.ndarray], ...]:
+) -> tuple[list[np.ndarray], ...]:
     """
     Append `num_pad_frames` masked frames: zero features, target -1 and the
     edges of the last real frame with zero weight (so that no spurious

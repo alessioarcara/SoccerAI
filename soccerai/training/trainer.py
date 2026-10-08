@@ -1,11 +1,13 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any, Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import wandb
 from loguru import logger
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
@@ -14,12 +16,11 @@ from torch_geometric.data import Batch
 from torch_geometric_temporal.signal import Discrete_Signal
 from tqdm import tqdm
 
-import wandb
 from soccerai.training.callbacks import Callback, EarlyStoppingCallback
 from soccerai.training.metrics import Metric
 from soccerai.training.trainer_config import Config
 
-BatchEvalResult = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+BatchEvalResult = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
 
 def compute_pos_weight(labels: np.ndarray) -> float:
@@ -37,11 +38,11 @@ class BaseTrainer(ABC):
         model: nn.Module,
         train_loader: TorchDataLoader,
         device: str,
-        feature_names: Optional[Sequence[str]] = None,
-        val_loader: Optional[TorchDataLoader] = None,
-        metrics: Optional[List[Metric]] = None,
-        callbacks: Optional[List[Callback]] = None,
-        pos_weight: Optional[float] = None,
+        feature_names: Sequence[str] | None = None,
+        val_loader: TorchDataLoader | None = None,
+        metrics: list[Metric] | None = None,
+        callbacks: list[Callback] | None = None,
+        pos_weight: float | None = None,
     ) -> None:
         self.cfg = cfg
         self.device = device
@@ -69,7 +70,7 @@ class BaseTrainer(ABC):
             total_steps=cfg.trainer.n_epochs * len(self.train_loader),
             pct_start=0.1,
         )
-        self.history: Dict[str, Any] = {}
+        self.history: dict[str, Any] = {}
 
     @abstractmethod
     def _train_step(self, item: Any) -> torch.Tensor:
@@ -85,7 +86,7 @@ class BaseTrainer(ABC):
         """
         ...
 
-    def _get_data_iterable(self, split: str) -> Optional[TorchDataLoader]:
+    def _get_data_iterable(self, split: str) -> TorchDataLoader | None:
         return self.train_loader if split == "train" else self.val_loader
 
     def _aux_loss(self) -> torch.Tensor | float:
@@ -208,7 +209,7 @@ class BaseTrainer(ABC):
 
         if split == "val":
             self.history["val_loss"] = mean_loss
-        log_dict: Dict[str, Any] = {f"{split}/loss": mean_loss}
+        log_dict: dict[str, Any] = {f"{split}/loss": mean_loss}
 
         for m in self.metrics:
             for name, value in m.compute():
@@ -228,7 +229,7 @@ class BaseTrainer(ABC):
         self._wandb_log(log_dict)
 
     @staticmethod
-    def _wandb_log(payload: Dict[str, Any]) -> None:
+    def _wandb_log(payload: dict[str, Any]) -> None:
         """Log to W&B only when a run is active (eval can run standalone)."""
         if wandb.run is not None:
             wandb.log(payload)
@@ -272,7 +273,7 @@ class Trainer(BaseTrainer):
 class TemporalTrainer(BaseTrainer):
     def _compute_signal_loss_and_last_pred(
         self, signal: Discrete_Signal
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         masks = torch.tensor(signal.masks, dtype=torch.bool, device=self.device).T
         B, T_max = masks.shape
 
