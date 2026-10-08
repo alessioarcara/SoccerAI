@@ -1,6 +1,6 @@
 from typing import Literal
 
-NormalizationType = Literal["none", "batch", "layer", "instance", "graph"]
+NormalizationType = Literal["none", "batch", "layer", "node", "instance", "graph"]
 
 ReadoutType = Literal["mean", "sum", "max"]
 

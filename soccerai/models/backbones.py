@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from functools import partial
 
 import torch
 import torch.nn as nn
@@ -38,10 +39,14 @@ class BackboneRegistry:
         return cls._registry[name](*args, **kwargs)
 
 
-NORMALIZATIONS: dict[NormalizationType, type[nn.Module]] = {
+NORMALIZATIONS: dict[NormalizationType, Callable[..., nn.Module]] = {
     "none": Identity,
     "batch": BatchNorm,
+    # PyG's LayerNorm normalises over all nodes and channels of a graph
     "layer": pyg_nn.LayerNorm,
+    # per-node LayerNorm: unlike "graph"/"instance"/"layer" it does not subtract
+    # a per-graph mean, so where the whole play takes place survives
+    "node": partial(pyg_nn.LayerNorm, mode="node"),
     "instance": pyg_nn.InstanceNorm,
     "graph": pyg_nn.GraphNorm,
 }
@@ -51,6 +56,7 @@ GPS_NORMALIZATIONS: dict[NormalizationType, str | None] = {
     "none": None,
     "batch": "batch_norm",
     "layer": "layer_norm",
+    "node": "layer_norm",
     "instance": "instance_norm",
     "graph": "graph_norm",
 }
@@ -401,6 +407,7 @@ class GraphGPSBackbone(nn.Module):
                 heads=cfg.heads,
                 dropout=cfg.drop,
                 norm=GPS_NORMALIZATIONS[cfg.norm],
+                norm_kwargs={"mode": "node"} if cfg.norm == "node" else None,
                 attn_kwargs={"dropout": cfg.attn_drop},
             )
 

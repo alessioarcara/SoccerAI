@@ -93,6 +93,11 @@ class NeckConfig(StrictModel):
     mode: TemporalMode
     raw_features_proj: bool
     proj_dout: int
+    # concatenate the embedding of the ball carrier to the readout: the mean
+    # over 22 nodes dilutes the one node that decides whether a shot follows.
+    # The width of the carrier embedding is added to `rnn_din` (graph mode)
+    # or to `head.din` (node mode) automatically.
+    carrier_readout: bool = False
 
 
 class HeadConfig(StrictModel):

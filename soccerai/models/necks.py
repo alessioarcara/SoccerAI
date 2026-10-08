@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric.nn as pyg_nn
 from torch_geometric.typing import OptTensor
+from torch_geometric.utils import scatter
 
 from soccerai.models.typings import ReadoutType, RNNType
 from soccerai.training.trainer_config import NeckConfig
@@ -21,25 +22,43 @@ class GraphGlobalFusion(nn.Module):
     Fuse graph-level and global feature vectors into one concatenated vector:
     1. Readout over nodes -> graph embedding
     2. Linear projection + ReLU -> global embedding
-    3. Concatenate [graph || global]
+    3. Concatenate [graph || global], or [graph || carrier || global] when
+       `carrier_idx` is given: the embedding of the ball carrier, read from
+       the node flagged in column `carrier_idx` of the raw node features
+       (zeros for a graph without carrier, e.g. a padded frame).
     """
 
-    def __init__(self, glob_din: int, cfg: NeckConfig):
+    def __init__(self, glob_din: int, cfg: NeckConfig, carrier_idx: int | None = None):
         super().__init__()
         self.readout = READOUT_AGGREGATIONS[cfg.readout]()
         self.global_proj = pyg_nn.Linear(glob_din, cfg.glob_dout)
+        self.carrier_idx = carrier_idx
 
     def forward(
-        self, z: torch.Tensor, u: torch.Tensor, batch: torch.Tensor, batch_size: int
+        self,
+        z: torch.Tensor,
+        u: torch.Tensor,
+        batch: torch.Tensor,
+        batch_size: int,
+        x: OptTensor = None,
     ) -> torch.Tensor:
-        z_list = z if isinstance(z, list) else [z]
+        z_cat = torch.cat(z, dim=-1) if isinstance(z, list) else z
 
-        graph_embs = [
-            self.readout(x=z, index=batch, dim_size=batch_size) for z in z_list
-        ]
-        graph_emb = torch.cat(graph_embs, dim=1)
-        glob_emb = F.relu(self.global_proj(u), inplace=True)
-        return torch.cat([graph_emb, glob_emb], dim=-1)
+        embs = [self.readout(x=z_cat, index=batch, dim_size=batch_size)]
+        if self.carrier_idx is not None:
+            assert x is not None, "the carrier readout needs the node features"
+            is_carrier = x[:, self.carrier_idx] > 0.5
+            embs.append(
+                scatter(
+                    z_cat[is_carrier],
+                    batch[is_carrier],
+                    dim=0,
+                    dim_size=batch_size,
+                    reduce="mean",
+                )
+            )
+        embs.append(F.relu(self.global_proj(u), inplace=True))
+        return torch.cat(embs, dim=-1)
 
 
 class RecurrentCell(nn.Module):
@@ -82,10 +101,11 @@ class TemporalFusion(nn.Module):
         node_dim: int,
         glob_din: int,
         cfg: NeckConfig,
+        carrier_idx: int | None = None,
     ):
         super().__init__()
         self.mode = cfg.mode
-        self.fusion = GraphGlobalFusion(glob_din, cfg)
+        self.fusion = GraphGlobalFusion(glob_din, cfg, carrier_idx)
 
         self.raw_features_proj: nn.Module = nn.Identity()
         if self.mode == "node":
@@ -102,8 +122,11 @@ class TemporalFusion(nn.Module):
         elif self.mode == "graph":
             # the sum readout of 22 nodes and the global projection live on
             # very different scales: normalise the fused vector before the RNN
-            self.norm = nn.LayerNorm(cfg.rnn_din)
-            self.rnn = RecurrentCell(cfg.rnn_type, cfg.rnn_din, cfg.rnn_dout)
+            rnn_din = cfg.rnn_din
+            if carrier_idx is not None:
+                rnn_din += backbone_dout  # carrier embedding
+            self.norm = nn.LayerNorm(rnn_din)
+            self.rnn = RecurrentCell(cfg.rnn_type, rnn_din, cfg.rnn_dout)
 
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
@@ -122,9 +145,9 @@ class TemporalFusion(nn.Module):
             z_nodes = torch.cat(z, dim=-1) if isinstance(z, list) else z
             rnn_input = self.norm(torch.cat([z_nodes, self.raw_features_proj(x)], -1))
             h, c = self.rnn(rnn_input, prev_h, prev_c)
-            fused = self.fusion(h, u, batch, batch_size)
+            fused = self.fusion(h, u, batch, batch_size, x)
             return fused, h, c
 
-        fused = self.norm(self.fusion(z, u, batch, batch_size))
+        fused = self.norm(self.fusion(z, u, batch, batch_size, x))
         h, c = self.rnn(fused, prev_h, prev_c)
         return h, h, c

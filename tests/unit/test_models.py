@@ -18,6 +18,8 @@ BACKBONES = ["gcn", "gcn2", "graphsage", "gatv2", "gine", "graphgps", "diffpool"
 class DatasetStub:
     num_node_features = N_FEAT
     num_global_features = 3
+    # the carrier readout looks the flag up by name: use the first column
+    feature_names = ["is_ball_carrier_1"] + [f"f{i}" for i in range(1, N_FEAT)]
 
 
 def load_cfg(tmp_path, name: str):
@@ -103,3 +105,60 @@ def test_diffpool_exposes_auxiliary_losses(tmp_path):
     assert model.aux_loss.shape == (1,) and model.aux_loss.requires_grad
     assert float(model.aux_loss.min()) >= 0.0
 
+
+@pytest.mark.parametrize("name", [b for b in BACKBONES if b != "diffpool"])
+def test_carrier_readout_runs_with_every_backbone(tmp_path, name):
+    cfg = load_cfg(tmp_path, name)
+    cfg.model.neck.carrier_readout = True
+    model = build_model(cfg, DatasetStub())
+    batch = TemporalChainsDataset.collate(
+        [make_chain(3, 1.0, 0), make_chain(2, 0.0, 1)]
+    )
+    out = run_chain(model, list(batch))
+    assert out.shape == (2, 1)
+    out.sum().backward()
+
+
+def test_carrier_readout_takes_the_flagged_node():
+    from soccerai.models.necks import GraphGlobalFusion
+    from soccerai.training.trainer_config import NeckConfig
+
+    neck_cfg = NeckConfig(
+        rnn_type="gru",
+        readout="mean",
+        glob_dout=2,
+        rnn_din=4,
+        rnn_dout=4,
+        mode="graph",
+        raw_features_proj=False,
+        proj_dout=2,
+    )
+    fusion = GraphGlobalFusion(glob_din=1, cfg=neck_cfg, carrier_idx=0)
+    x = torch.tensor([[0.0], [1.0], [0.0], [0.0]])  # carrier: node 1, none in graph 1
+    z = torch.tensor([[1.0, 1.0], [5.0, 7.0], [2.0, 2.0], [4.0, 4.0]])
+    batch = torch.tensor([0, 0, 1, 1])
+    out = fusion(z, torch.zeros(2, 1), batch, 2, x)
+    assert out[:, 2:4].tolist() == [[5.0, 7.0], [0.0, 0.0]]
+
+
+def test_node_norm_keeps_the_graph_mean():
+    from soccerai.models.backbones import NORMALIZATIONS
+
+    norm = NORMALIZATIONS["node"](4)
+    h = torch.randn(22, 4)
+    batch = torch.zeros(22, dtype=torch.long)
+    shifted = norm(h + 3.0, batch=batch, batch_size=1)
+    graph = NORMALIZATIONS["graph"](4)
+    # a per-graph norm maps a shifted graph to the same output, a per-node norm
+    # reacts to the shift only through each node's own channels
+    assert torch.allclose(
+        graph(h + torch.tensor([3.0, 0, 0, 0]), batch=batch, batch_size=1),
+        graph(h, batch=batch, batch_size=1),
+        atol=1e-4,
+    )
+    assert not torch.allclose(
+        norm(h + torch.tensor([3.0, 0, 0, 0]), batch=batch, batch_size=1),
+        norm(h, batch=batch, batch_size=1),
+        atol=1e-4,
+    )
+    assert shifted.shape == h.shape

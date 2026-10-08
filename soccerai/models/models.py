@@ -30,7 +30,7 @@ class GNN(nn.Module):
         batch_size: int | None = None,
     ):
         z = self.backbone(x, edge_index, edge_weight, edge_attr, batch, batch_size)
-        fused_emb = self.neck(z, u, batch, batch_size)
+        fused_emb = self.neck(z, u, batch, batch_size, x)
         return self.head(fused_emb)
 
 
@@ -63,36 +63,53 @@ class TemporalGNN(nn.Module):
         return self.head(fused_emb), h, c
 
 
-def build_model(cfg: Config, train_ds: WorldCup2022Dataset) -> nn.Module:
-    head = GraphClassificationHead(cfg.model.head)
+CARRIER_FEATURE = "is_ball_carrier_1"
 
-    if cfg.model.use_temporal:
-        if cfg.model.use_hierarchical:
-            return HierarchicalGNN(
-                train_ds.num_node_features,
-                train_ds.num_global_features,
-                cfg.model,
-                head,
-            )
+
+def build_model(cfg: Config, train_ds: WorldCup2022Dataset) -> nn.Module:
+    neck_cfg = cfg.model.neck
+    if cfg.model.use_temporal and cfg.model.use_hierarchical:
+        if neck_cfg.carrier_readout:
+            raise ValueError("carrier_readout is not supported by DiffPool")
+        return HierarchicalGNN(
+            train_ds.num_node_features,
+            train_ds.num_global_features,
+            cfg.model,
+            GraphClassificationHead(cfg.model.head),
+        )
 
     backbone = BackboneRegistry.create(
         cfg.model.backbone.type, train_ds.num_node_features, cfg.model.backbone
     )
+    backbone_dout = cast(int, backbone.out_dim)
+
+    carrier_idx: int | None = None
+    head_din = cfg.model.head.din
+    if neck_cfg.carrier_readout:
+        carrier_idx = list(train_ds.feature_names).index(CARRIER_FEATURE)
+        # the carrier embedding widens what the head receives, except in
+        # temporal graph mode where it goes through the recurrent cell
+        if not cfg.model.use_temporal:
+            head_din += backbone_dout
+        elif neck_cfg.mode == "node":
+            head_din += neck_cfg.rnn_dout
+    head = GraphClassificationHead(cfg.model.head.model_copy(update={"din": head_din}))
 
     if cfg.model.use_temporal:
         return TemporalGNN(
             backbone,
             TemporalFusion(
-                cast(int, backbone.out_dim),
+                backbone_dout,
                 train_ds.num_node_features,
                 train_ds.num_global_features,
-                cfg.model.neck,
+                neck_cfg,
+                carrier_idx,
             ),
             head,
         )
 
     return GNN(
         backbone,
-        GraphGlobalFusion(train_ds.num_global_features, cfg.model.neck),
+        GraphGlobalFusion(train_ds.num_global_features, neck_cfg, carrier_idx),
         head,
     )
