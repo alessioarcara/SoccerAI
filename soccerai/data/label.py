@@ -6,6 +6,7 @@ from loguru import logger
 from tqdm.notebook import tqdm
 
 from soccerai.data import config
+from soccerai.data.annotations import FRAME_KEYS
 from soccerai.data.data import _flatten_chains
 from soccerai.data.utils import home_attacks_right
 from soccerai.data.visualize import shot_frames_navigator
@@ -90,34 +91,39 @@ def _split_into_long_short_chains(
 def _pos_labeling(
     event_df: pl.DataFrame, chain_len: int, skip_challenge_events: bool
 ) -> list[list[int]]:
-    shots_df = event_df.filter(event_df["possessionEventType"] == "SH")
+    rows = event_df.sort("index").to_dicts()
+    shot_positions = [
+        i for i, row in enumerate(rows) if row["possessionEventType"] == "SH"
+    ]
     pos_chains = []
 
-    for shot in tqdm(
-        shots_df.iter_rows(named=True),
-        total=shots_df.height,
+    for shot_pos in tqdm(
+        shot_positions,
+        total=len(shot_positions),
         desc="Computing positive chains",
         colour="green",
     ):
+        shot = rows[shot_pos]
         shot_idx = shot["index"]
         team_name = shot["teamName"]
+        if team_name is None or shot["period"] not in (1, 2, 3, 4):
+            continue
 
         pos_chain = [shot_idx]
-        prev_idx = shot_idx - 1
-
-        while (
-            prev_idx >= 0
-            and event_df.row(prev_idx, named=True)["teamName"] == team_name
-        ):
+        prev_pos = shot_pos - 1
+        while prev_pos >= 0:
+            previous = rows[prev_pos]
             if (
-                skip_challenge_events
-                and event_df.row(prev_idx, named=True)["possessionEventType"] == "CH"
+                previous["teamName"] != team_name
+                or previous["gameId"] != shot["gameId"]
+                or previous["period"] != shot["period"]
+                or previous["possessionEventType"] == "SH"
+                or previous["possessionEventType"] is None
             ):
-                prev_idx -= 1
-                continue
-
-            pos_chain.append(prev_idx)
-            prev_idx -= 1
+                break
+            if not (skip_challenge_events and previous["possessionEventType"] == "CH"):
+                pos_chain.append(previous["index"])
+            prev_pos -= 1
 
         pos_chain = pos_chain[::-1]
 
@@ -167,8 +173,14 @@ def _is_within_range(
     home_team_name = metadata_event["homeTeamName"]
     away_team_name = metadata_event["awayTeamName"]
 
+    identity = last_action_event_df.row(0, named=True)
+    frame_players = players_df.filter(
+        pl.all_horizontal(
+            [pl.col(c).eq_missing(pl.lit(identity[c])) for c in FRAME_KEYS]
+        )
+    )
     joined_df = last_action_event_df.join(
-        players_df, on=["gameEventId", "possessionEventId"]
+        frame_players, on=FRAME_KEYS, nulls_equal=True
     )
 
     if use_player_pos:
@@ -201,7 +213,7 @@ def _is_within_range(
         return False
 
     x_position = candidates.row(0, named=True)["x"]
-    if x_position is None:
+    if x_position is None or not np.isfinite(x_position):
         return False
 
     is_within_left_range = inner_distance <= x_position <= outer_distance
@@ -233,40 +245,50 @@ def _neg_labeling(
     inner_distance: float = 0.0,
     use_player_pos: bool = False,
 ) -> list[list[int]]:
-    pos_indices = _flatten_chains(pos_chains)
-    negatives_df = event_df.filter(~pl.col("index").is_in(pos_indices))
-    neg_chains = []
-    neg_chain = []
-    curr_team_name = negatives_df[0, "teamName"]
+    pos_indices = set(_flatten_chains(pos_chains))
+    neg_chains: list[list[int]] = []
+    run: list[dict] = []
+    current_key = None
+
+    def finish_run():
+        if not run:
+            return
+        # A possession containing any shot is never a negative example,
+        # including shots whose positive chain is below the length threshold.
+        if any(
+            r["possessionEventType"] in ("SH", None) or r["index"] in pos_indices
+            for r in run
+        ):
+            return
+        indices = [r["index"] for r in run]
+        if len(indices) >= chain_len and _is_within_range(
+            event_df,
+            players_df,
+            metadata_df,
+            rosters_df,
+            indices[-1],
+            run[0]["teamName"],
+            outer_distance,
+            inner_distance,
+            use_player_pos,
+        ):
+            neg_chains.append(indices)
 
     for row in tqdm(
-        negatives_df.iter_rows(named=True),
-        total=negatives_df.height,
+        event_df.sort("index").iter_rows(named=True),
+        total=event_df.height,
         desc="Computing negative chains",
         colour="red",
     ):
-        idx = row["index"]
-        team_name = row["teamName"]
-
-        if curr_team_name == team_name:
-            neg_chain.append(idx)
-        else:
-            if len(neg_chain) >= chain_len and _is_within_range(
-                event_df,
-                players_df,
-                metadata_df,
-                rosters_df,
-                neg_chain[-1],
-                curr_team_name,
-                outer_distance,
-                inner_distance,
-                use_player_pos,
-            ):
-                neg_chains.append(neg_chain)
-
-            neg_chain = [idx]
-            curr_team_name = team_name
-
+        key = (row["gameId"], row["period"], row["teamName"])
+        valid = row["teamName"] is not None and row["period"] in (1, 2, 3, 4)
+        if not valid or key != current_key:
+            finish_run()
+            run = []
+        current_key = key if valid else None
+        if valid:
+            run.append(row)
+    finish_run()
     return neg_chains
 
 
@@ -280,6 +302,8 @@ def filter_shot_chains(
     show_video: bool = True,
     interval: int = 1000,
 ) -> list[list[int]]:
+    if not 0 <= chains_range[0] < chains_range[1] <= len(chains):
+        raise ValueError("chains_range must select a nonempty range of existing chains")
     accepted_chains = []
     current_chain_index = chains_range[0]
     selection_widget = None
@@ -333,6 +357,8 @@ def filter_shot_chains(
             update_ui()
             update_selection_widget()
         else:
+            accept_button.disabled = discard_button.disabled = True
+            selection_widget.disabled = True
             with main_output:
                 clear_output(wait=True)
                 print("Labeling complete!")
@@ -340,6 +366,8 @@ def filter_shot_chains(
     def on_accept(_):
         nonlocal selection_widget
         selected_frames = list(selection_widget.value)
+        if not selected_frames:
+            return
         accepted_chains.append(selected_frames)
         next_chain()
 
