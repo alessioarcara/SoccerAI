@@ -1,7 +1,11 @@
+from __future__ import annotations
+
 import hashlib
 import json
 from collections.abc import Callable, Sequence
+from enum import StrEnum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import polars as pl
@@ -25,8 +29,20 @@ from soccerai.data.transformers import (
     NonPossessionShootingStatsMask,
     PlayerLocationTransformer,
 )
-from soccerai.training.trainer_config import DataConfig
+from soccerai.data.utils import balanced_pos_weight
 from soccerai.training.transforms import RandomHorizontalFlip, RandomVerticalFlip
+
+if TYPE_CHECKING:
+    from soccerai.generated import DataConfig
+
+CARRIER_FEATURE = "is_ball_carrier_1"
+
+
+class SplitMode(StrEnum):
+    # last `val_ratio` of the games (group stage trains, knock-outs validate)
+    CHRONOLOGICAL = "chronological"
+    # seeded random subset of the games
+    RANDOM = "random"
 
 
 def home_attacks_right_expr() -> pl.Expr:
@@ -104,12 +120,18 @@ class WorldCup2022Dataset(InMemoryDataset):
         Short hash of everything that determines the processed files, so that
         a change of data configuration (or of the preprocessing code) can never
         silently reuse stale caches. Options applied only at load time
-        (augmentations) are left out, so toggling them reuses the cache.
+        (augmentations, chain window) are left out, so toggling them reuses
+        the cache.
         """
         payload = json.dumps(
             {
-                "data": self.cfg.model_dump(exclude={"use_augmentations"}),
-                "converter": type(self.converter).__name__,
+                "data": self.cfg.model_dump(
+                    exclude={"use_augmentations", "max_chain_len"}
+                ),
+                "converter": {
+                    "type": type(self.converter).__name__,
+                    **vars(self.converter),
+                },
                 "random_state": self.random_state,
                 "version": self.PROCESSING_VERSION,
             },
@@ -122,6 +144,15 @@ class WorldCup2022Dataset(InMemoryDataset):
     def processed_file_names(self) -> list[str]:
         tag = self.config_tag
         return [f"train_{tag}.pt", f"val_{tag}.pt", f"feature_names_{tag}.json"]
+
+    @property
+    def carrier_feature_idx(self) -> int:
+        """Column of the node features flagging the ball carrier."""
+        return list(self.feature_names).index(CARRIER_FEATURE)
+
+    def positive_weight(self) -> float:
+        """#negative / #positive frames: the BCE weight balancing frames."""
+        return balanced_pos_weight(self._data.y.view(-1).numpy())
 
     @property
     def num_global_features(self) -> int:
@@ -146,10 +177,10 @@ class WorldCup2022Dataset(InMemoryDataset):
         """
         present = sorted(df.select("gameId").unique()["gameId"].to_list())
 
-        if self.cfg.split_mode == "chronological":
+        if self.cfg.split_mode == SplitMode.CHRONOLOGICAL:
             n_val = max(1, round(self.cfg.val_ratio * len(all_game_ids)))
             val_games = set(sorted(all_game_ids)[len(all_game_ids) - n_val :])
-        elif self.cfg.split_mode == "random":
+        elif self.cfg.split_mode == SplitMode.RANDOM:
             if len(present) < 2:
                 raise ValueError(f"Cannot split {len(present)} game(s) in two")
             n_val = min(

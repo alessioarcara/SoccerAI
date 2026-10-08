@@ -39,6 +39,7 @@ dependencies = [
   "ipywidgets",
   "wandb[media]",
   "xgboost>=3.2.0",
+  "ezconfy==0.2.0",
 ]
 name = "soccerai"
 version = "0.6.0"

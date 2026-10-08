@@ -8,7 +8,6 @@ from test_transformers import make_data_cfg, make_dataset_stub
 from soccerai.data.converters import (
     BipartiteGraphConverter,
     FullyConnectedGraphConverter,
-    create_graph_converter,
 )
 
 
@@ -46,11 +45,6 @@ def test_fully_connected_has_no_weights():
     assert ei.shape == (2, 22 * 21) and ew is None and ea is None
 
 
-def test_factory_passes_the_length_scale():
-    conv = create_graph_converter("bipartite", 7.5)
-    assert isinstance(conv, BipartiteGraphConverter) and conv.length_scale == 7.5
-
-
 def test_dataframe_to_graphs_end_to_end():
     raw = make_raw_df(
         [
@@ -61,8 +55,8 @@ def test_dataframe_to_graphs_end_to_end():
     ds = make_dataset_stub(make_data_cfg())
     df = ds._prepare_dataframe(raw)
     transformed = ds._create_preprocessor(df).fit_transform(df)
-    data_list, feature_names = create_graph_converter(
-        "bipartite", 10.0
+    data_list, feature_names = BipartiteGraphConverter(
+        length_scale=10.0
     ).convert_dataframe_to_data_list(transformed)
 
     assert len(data_list) == 5

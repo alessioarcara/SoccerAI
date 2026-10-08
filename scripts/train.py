@@ -1,183 +1,57 @@
 import argparse
-import os
-from pathlib import Path
+from typing import Any
 
 import torch
 from loguru import logger
-from torch.utils.data.dataloader import DataLoader as TorchDataLoader
-from torch_geometric.loader import DataLoader as PyGDataLoader
-from torch_geometric.loader import PrefetchLoader
 from torch_geometric.nn import summary
 
-from soccerai.data.converters import create_graph_converter
-from soccerai.data.dataset import WorldCup2022Dataset
-from soccerai.data.temporal_dataset import TemporalChainsDataset
-from soccerai.models.models import build_model
-from soccerai.training.callbacks import build_callbacks
-from soccerai.training.metrics import (
-    BinaryConfusionMatrix,
-    BinaryPrecisionRecallCurve,
-    ChainCollector,
-    FrameCollector,
-)
-from soccerai.training.trainer import TemporalTrainer, Trainer, compute_pos_weight
-from soccerai.training.trainer_config import build_config
-from soccerai.training.utils import build_dummy_inputs, fix_random
-
-CONFIG_DIR = Path("configs")
+from soccerai.config import DEFAULT_CONFIGS, SCHEMA_PATH, build_config
+from soccerai.training.utils import build_dummy_inputs
 
 torch.set_float32_matmul_precision("high")
 
-NUM_WORKERS = (os.cpu_count() or 1) - 1
 
-
-def main(args):
-    cfg = build_config(Path(args.config_dir))
-    fix_random(cfg.seed)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    converter = create_graph_converter(
-        cfg.data.connection_mode, cfg.data.edge_length_scale
-    )
-    ds_kwargs = dict(
-        root="soccerai/data/resources",
-        converter=converter,
-        cfg=cfg.data,
-        random_state=cfg.seed,
-    )
-
-    train_ds = WorldCup2022Dataset(split="train", force_reload=args.reload, **ds_kwargs)
-    val_ds = WorldCup2022Dataset(split="val", **ds_kwargs)
+def main(args: argparse.Namespace) -> None:
+    overrides: dict[str, Any] = {}
+    if args.reload:
+        overrides["train_ds"] = {"_init_args_": {"force_reload": True}}
+    cfg, raw = build_config(args.configs, overrides or None, args.schema)
 
     logger.success(
-        "Datasets loaded successfully → train graphs: {}, val graphs: {}",
-        len(train_ds),
-        len(val_ds),
+        "Datasets loaded → train chains: {}, val chains: {}",
+        len(cfg.train_chains),
+        len(cfg.val_chains),
     )
+    if cfg.pos_weight is not None:
+        logger.info("Positive class weight: {:.3f}", cfg.pos_weight)
 
-    model = build_model(cfg, train_ds)
-    loader_kwargs = dict(
-        batch_size=cfg.trainer.bs,
-        num_workers=NUM_WORKERS,
-        pin_memory=True,
-        persistent_workers=True,
-        prefetch_factor=4,
-    )
-
-    callbacks = build_callbacks(cfg)
-
-    def collectors(collector_cls, feature_names):
-        # with n_frames = 0 nothing would be plotted: skip the extraction work
-        if cfg.collector.n_frames <= 0:
-            return []
-        return [collector_cls(label, cfg, feature_names) for label in (1, 0)]
-
-    pos_weight = cfg.trainer.pos_weight
-    if cfg.model.use_temporal:
-        train_ds = TemporalChainsDataset.from_worldcup_dataset(
-            train_ds, cfg.data.max_chain_len
-        )
-        val_ds = TemporalChainsDataset.from_worldcup_dataset(
-            val_ds, cfg.data.max_chain_len
-        )
-        if pos_weight == "auto":
-            # one loss term per chain: balance #negative / #positive chains
-            pos_weight = compute_pos_weight(
-                [chain.targets[-1].item() for chain in train_ds.temporal_chains]
-            )
-
-        train_loader = TorchDataLoader(
-            train_ds,
-            collate_fn=TemporalChainsDataset.collate,
-            shuffle=True,
-            **loader_kwargs,
-        )
-        val_loader = TorchDataLoader(
-            val_ds,
-            collate_fn=TemporalChainsDataset.collate,
-            shuffle=False,
-            **loader_kwargs,
-        )
-        trainer = TemporalTrainer(
-            cfg=cfg,
-            model=model,
-            train_loader=train_loader,
-            val_loader=val_loader,
-            device=device,
-            feature_names=train_ds.feature_names,
-            metrics=[
-                BinaryConfusionMatrix(cfg.metrics, -1),
-                BinaryPrecisionRecallCurve(-1),
-                *collectors(ChainCollector, train_ds.feature_names),
-            ],
-            callbacks=callbacks,
-            pos_weight=pos_weight,
-        )
-
-    else:
-        if pos_weight == "auto":
-            # one loss term per frame: balance #negative / #positive frames
-            pos_weight = compute_pos_weight(train_ds._data.y.view(-1).numpy())
-        train_loader = PrefetchLoader(
-            PyGDataLoader(
-                train_ds,
-                shuffle=True,
-                **loader_kwargs,
-            ),
-        )
-        val_loader = PrefetchLoader(
-            PyGDataLoader(
-                val_ds,
-                shuffle=False,
-                **loader_kwargs,
-            ),
-        )
-
-        trainer = Trainer(
-            cfg=cfg,
-            model=model,
-            train_loader=train_loader,
-            val_loader=val_loader,
-            device=device,
-            feature_names=train_ds.feature_names,
-            metrics=[
-                BinaryConfusionMatrix(cfg.metrics),
-                BinaryPrecisionRecallCurve(),
-                *collectors(FrameCollector, train_ds.feature_names),
-            ],
-            callbacks=callbacks,
-            pos_weight=pos_weight,
-        )
-
-    if pos_weight is not None:
-        logger.info("Positive class weight: {:.3f}", pos_weight)
-
+    trainer = cfg.trainer
     print(
         summary(
-            model,
+            cfg.model,
             **build_dummy_inputs(
-                cfg.trainer.bs,
-                train_ds.num_features,
-                train_ds.num_global_features,
-                device,
+                cfg.batch_size,
+                cfg.train_ds.num_features,
+                cfg.train_ds.num_global_features,
+                trainer.device,
             ),
         )
     )
-
-    trainer.train(cfg.run_name)
+    trainer.train(raw)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        "--configs",
+        nargs="+",
+        default=[str(p) for p in DEFAULT_CONFIGS],
+        help="YAML files merged in order (later files win)",
+    )
+    parser.add_argument("--schema", default=str(SCHEMA_PATH))
+    parser.add_argument(
         "--reload",
         action="store_true",
         help="If set, forces the dataset to be re-created",
     )
-    parser.add_argument(
-        "--config-dir",
-        default=str(CONFIG_DIR),
-        help="Directory holding base.yaml and the per-model yaml files",
-    )
-    args = parser.parse_args()
-    main(args)
+    main(parser.parse_args())

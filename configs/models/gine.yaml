@@ -1,0 +1,13 @@
+run_name: gine
+
+# jumping knowledge: out_dim = n_layers x dout, picked up by the neck
+backbone:
+  _target_type_: soccerai.models.backbones:GINEBackbone
+  _init_args_:
+    din: ${train_ds.num_node_features}
+    n_layers: 3
+    dout: 64
+    drop: 0.1
+    norm: graph
+    train_eps: true
+    plus: true

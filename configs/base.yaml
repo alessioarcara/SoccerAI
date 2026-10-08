@@ -1,81 +1,215 @@
-project_name: "soccerai"
-run_name: "gcn"
-seed: 42
-
+# Shared experiment: data, chains, loaders, temporal model around the
+# backbone, optimisation, metrics and trainer, all wired by EzConfy.
+# Combine with one file of configs/models/ (which defines `backbone`):
+#   python scripts/train.py --configs configs/base.yaml configs/models/gcn.yaml
+#
 # Defaults are sized for ~2k training chains: small widths, normalisation in
-# every block, dropout, decoupled weight decay and an explicit one-cycle
-# schedule. Per-model files override what they need.
-model:
-  use_temporal: True
-  use_hierarchical: False
+# every block, dropout, decoupled weight decay and a one-cycle schedule.
 
-  backbone:
-    n_layers: 2
-    dout: 64
-    drop: 0.1
-    norm: "graph"
+project_name: soccerai
+run_name: gcn
+seed: 42
+device: auto              # cuda when available
 
-  neck:
-    mode: "graph"            # recurrent cell over the fused graph vector
-    rnn_type: "gru"
-    readout: "mean"
-    rnn_din: 96              # backbone.dout + glob_dout (graph mode)
-    rnn_dout: 128
+n_epochs: 60
+batch_size: 64
+num_workers: 8
+lr: 1.0e-3
+max_lr: ${lr}             # peak of the one-cycle schedule
+wd: 1.0e-2
+eval_rate: 1
+threshold: 0.5            # decision threshold of the confusion-matrix metrics
+fbeta: 1.0
+collector_frames: 12      # most confident chains plotted per class (0 = none)
+
+# ---------------------------------------------------------------- data ---- #
+data_config:
+  val_ratio: 0.25                   # 48 group-stage games / 16 knock-out games
+  split_mode: chronological         # or "random" (seeded)
+  drop_games_without_negatives: true
+  goal_window_for_positives: 25.0   # same end-of-chain criterion as the negatives
+  include_goal_features: true
+  include_ball_features: true
+  use_macro_roles: false
+  use_augmentations: true
+  use_regression_imputing: false
+  use_pca_on_roster_cols: true
+  mask_non_possession_shooting_stats: false
+  use_roster_features: false        # per-player constants let the model identify players
+  use_match_clock: false
+  normalize_attack_direction: true
+  max_chain_len: 12                 # last frames of every chain (null = whole chain)
+
+converter:
+  _target_type_: soccerai.data.converters:BipartiteGraphConverter
+  _init_args_:
+    length_scale: 10.0              # metres; edge weight = exp(-distance / scale)
+
+train_ds:
+  _target_type_: soccerai.data.dataset:WorldCup2022Dataset
+  _init_args_:
+    root: soccerai/data/resources
+    converter: ${converter}
+    split: train
+    cfg: ${data_config}
+    random_state: ${seed}
+    force_reload: false
+
+val_ds:
+  _target_type_: soccerai.data.dataset:WorldCup2022Dataset
+  _init_args_:
+    root: soccerai/data/resources
+    converter: ${converter}
+    split: val
+    cfg: ${data_config}
+    random_state: ${seed}
+
+train_chains:
+  _target_type_: soccerai.data.temporal_dataset:TemporalChainsDataset
+  _init_method_: from_worldcup_dataset
+  _init_args_:
+    dataset: ${train_ds}
+    max_chain_len: ${data_config.max_chain_len}
+
+val_chains:
+  _target_type_: soccerai.data.temporal_dataset:TemporalChainsDataset
+  _init_method_: from_worldcup_dataset
+  _init_args_:
+    dataset: ${val_ds}
+    max_chain_len: ${data_config.max_chain_len}
+
+train_loader:
+  _target_type_: torch.utils.data:DataLoader
+  _init_args_:
+    dataset: ${train_chains}
+    collate_fn: ${train_chains.collate}
+    batch_size: ${batch_size}
+    shuffle: true
+    num_workers: ${num_workers}
+    pin_memory: true
+    persistent_workers: true
+    prefetch_factor: 4
+
+val_loader:
+  _target_type_: torch.utils.data:DataLoader
+  _init_args_:
+    dataset: ${val_chains}
+    collate_fn: ${val_chains.collate}
+    batch_size: ${batch_size}
+    shuffle: false
+    num_workers: ${num_workers}
+    pin_memory: true
+    persistent_workers: true
+    prefetch_factor: 4
+
+steps_per_epoch: ${train_loader.__len__()}
+
+# one loss term per chain: balance #negative / #positive chains (null = off)
+pos_weight: ${train_chains.positive_weight()}
+
+# --------------------------------------------------------------- model ---- #
+# `backbone` comes from configs/models/<name>.yaml; every width below is
+# derived from the dataset and from the modules it depends on.
+neck:
+  _target_type_: soccerai.models.necks:TemporalFusion
+  _init_args_:
+    backbone_dout: ${backbone.out_dim}
+    node_dim: ${train_ds.num_node_features}
+    glob_din: ${train_ds.num_global_features}
     glob_dout: 32
-    raw_features_proj: False
-    proj_dout: 32
+    rnn_dout: 128
+    mode: graph              # recurrent cell over the fused graph vector
+    rnn_type: gru
+    readout: mean
+    carrier_readout: false   # concatenate the ball-carrier embedding to the readout
+    carrier_idx: ${train_ds.carrier_feature_idx}
 
-  head:
+head:
+  _target_type_: soccerai.models.heads:GraphClassificationHead
+  _init_args_:
+    din: ${neck.out_dim}
     n_layers: 2
-    din: 128                 # rnn_dout (graph mode) or rnn_dout + glob_dout (node mode)
     drop: 0.3
 
-trainer:
-  bs: 64
-  n_epochs: 60
-  lr: 1e-3
-  max_lr: null             # peak of the one-cycle schedule (null = lr)
-  wd: 1e-2
-  gamma: 0.1               # per-frame loss discount towards the end of the chain
-  pos_weight: "auto"       # balance the BCE with #neg / #pos of the training chains (frames for static models)
-  eval_rate: 1
+model:
+  _target_type_: soccerai.models.models:TemporalGNN
+  _init_args_:
+    backbone: ${backbone}
+    neck: ${neck}
+    head: ${head}
 
-  early_stopping_callback:
-    patience: 10
-    history_key: "val_loss"
-    minimize: True
+# ------------------------------------------------------------ training ---- #
+optim:
+  _target_type_: torch.optim:AdamW
+  _init_args_:
+    params: ${model.parameters()}
+    lr: ${lr}
+    weight_decay: ${wd}
 
-  model_saving_callback:
-    history_key: "val_loss"
-    minimize: True
-
-data:
-  include_goal_features: True
-  include_ball_features: True
-  use_macro_roles: False
-  use_augmentations: True
-  use_regression_imputing: False
-  use_pca_on_roster_cols: True
-  mask_non_possession_shooting_stats: False
-  use_roster_features: False   # per-player constants let the model identify players
-  use_match_clock: False
-  connection_mode: "bipartite"
-  edge_length_scale: 10.0      # metres; edge weight = exp(-distance / scale)
-  normalize_attack_direction: True
-  max_chain_len: 12            # last frames of every chain
-  val_ratio: 0.25              # 48 group-stage games / 16 knock-out games
-  split_mode: "chronological"
-  drop_games_without_negatives: True
-  goal_window_for_positives: 25.0   # same end-of-chain criterion as the negatives
-
-collector:
-  n_frames: 12
-
-pitch_grid:
-  nrows: 6
-  ncols: 4
-  figheight: 12
+# warm-up to `max_lr` over the first 10% of the steps, then anneal
+scheduler:
+  _target_type_: torch.optim.lr_scheduler:OneCycleLR
+  _init_args_:
+    optimizer: ${optim}
+    max_lr: ${max_lr}
+    epochs: ${n_epochs}
+    steps_per_epoch: ${steps_per_epoch}
+    pct_start: 0.1
 
 metrics:
-  thr: 0.5
-  fbeta: 1.0
+  - _target_type_: soccerai.training.metrics:BinaryConfusionMatrix
+    _init_args_:
+      threshold: ${threshold}
+      fbeta: ${fbeta}
+      ignore_value: -1
+  - _target_type_: soccerai.training.metrics:BinaryPrecisionRecallCurve
+    _init_args_:
+      ignore_value: -1
+  - _id_: tp_chains
+    _target_type_: soccerai.training.metrics:ChainCollector
+    _init_args_:
+      target_label: 1
+      feature_names: ${train_ds.feature_names}
+      n_frames: ${collector_frames}
+      threshold: ${threshold}
+  - _id_: fp_chains
+    _target_type_: soccerai.training.metrics:ChainCollector
+    _init_args_:
+      target_label: 0
+      feature_names: ${train_ds.feature_names}
+      n_frames: ${collector_frames}
+      threshold: ${threshold}
+
+callbacks:
+  - _id_: early_stopping
+    _target_type_: soccerai.training.callbacks:EarlyStoppingCallback
+    _init_args_:
+      history_key: val_loss
+      minimize: true
+      patience: 10
+  - _id_: checkpoint
+    _target_type_: soccerai.training.callbacks:ModelSavingCallback
+    _init_args_:
+      history_key: val_loss
+      minimize: true
+      model_name: ${run_name}
+
+trainer:
+  _target_type_: soccerai.training.trainer:TemporalTrainer
+  _init_args_:
+    model: ${model}
+    train_loader: ${train_loader}
+    val_loader: ${val_loader}
+    optimizer: ${optim}
+    scheduler: ${scheduler}
+    n_epochs: ${n_epochs}
+    eval_rate: ${eval_rate}
+    metrics: ${metrics}
+    callbacks: ${callbacks}
+    pos_weight: ${pos_weight}
+    gamma: 0.1               # per-frame loss discount towards the start of the chain
+    aux_loss_weight: 1.0     # auxiliary loss exposed by some models (DiffPool)
+    feature_names: ${train_ds.feature_names}
+    device: ${device}
+    project_name: ${project_name}
+    run_name: ${run_name}

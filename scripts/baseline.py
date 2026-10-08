@@ -12,7 +12,6 @@ Usage: python scripts/baseline.py   (reads configs/base.yaml like train.py)
 
 import argparse
 from collections.abc import Sequence
-from pathlib import Path
 
 import numpy as np
 from loguru import logger
@@ -24,14 +23,10 @@ from tabulate import tabulate
 from torch_geometric_temporal.signal import DynamicGraphTemporalSignal
 from xgboost import XGBClassifier
 
+from soccerai.config import DEFAULT_CONFIGS, build_config
 from soccerai.data.config import X_GOAL_RIGHT, Y_GOAL
-from soccerai.data.converters import create_graph_converter
-from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.data.temporal_dataset import TemporalChainsDataset
-from soccerai.training.trainer_config import build_config
-from soccerai.training.utils import fix_random
 
-CONFIG_DIR = Path("configs")
 PITCH = np.array([X_GOAL_RIGHT, 2 * Y_GOAL])  # length, width (metres)
 PITCH_DIAG = float(np.hypot(*PITCH))
 
@@ -122,23 +117,9 @@ def evaluate(name: str, y_true: np.ndarray, scores: np.ndarray) -> list:
 
 
 def main(args: argparse.Namespace) -> None:
-    cfg = build_config(Path(args.config_dir))
-    fix_random(cfg.seed)
-    converter = create_graph_converter(
-        cfg.data.connection_mode, cfg.data.edge_length_scale
-    )
-    datasets = {}
-    for split in ["train", "val"]:
-        ds = WorldCup2022Dataset(
-            root="soccerai/data/resources",
-            converter=converter,
-            split=split,
-            cfg=cfg.data,
-            random_state=cfg.seed,
-        )
-        datasets[split] = TemporalChainsDataset.from_worldcup_dataset(
-            ds, cfg.data.max_chain_len
-        )
+    # same processed data, chains and split as the GNNs
+    cfg, _ = build_config(args.configs)
+    datasets = {"train": cfg.train_chains, "val": cfg.val_chains}
 
     X_train, y_train, names = build_table(datasets["train"])
     X_val, y_val, _ = build_table(datasets["val"])
@@ -207,5 +188,7 @@ def main(args: argparse.Namespace) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--importance", action="store_true")
-    parser.add_argument("--config-dir", default=str(CONFIG_DIR))
+    parser.add_argument(
+        "--configs", nargs="+", default=[str(p) for p in DEFAULT_CONFIGS]
+    )
     main(parser.parse_args())

@@ -5,8 +5,7 @@ import torch_geometric.nn as pyg_nn
 from torch_geometric.typing import OptTensor
 from torch_geometric.utils import scatter
 
-from soccerai.models.typings import ReadoutType, RNNType
-from soccerai.training.trainer_config import NeckConfig
+from soccerai.models.typings import ReadoutType, RNNType, TemporalMode
 
 READOUT_AGGREGATIONS: dict[ReadoutType, type[pyg_nn.Aggregation]] = {
     "sum": pyg_nn.SumAggregation,
@@ -22,21 +21,35 @@ class GraphGlobalFusion(nn.Module):
     Fuse graph-level and global feature vectors into one concatenated vector:
     1. Readout over nodes -> graph embedding
     2. Linear projection + ReLU -> global embedding
-    3. Concatenate [graph || global], or [graph || carrier || global] when
-       `carrier_idx` is given: the embedding of the ball carrier, read from
-       the node flagged in column `carrier_idx` of the raw node features
-       (zeros for a graph without carrier, e.g. a padded frame).
+    3. Concatenate [graph || global], or [graph || carrier || global] with
+       `carrier_readout`: the embedding of the ball carrier, read from the
+       node flagged in column `carrier_idx` of the raw node features (zeros
+       for a graph without carrier, e.g. a padded frame).
+
+    `out_dim` is the width of the fused vector.
     """
 
-    def __init__(self, glob_din: int, cfg: NeckConfig, carrier_idx: int | None = None):
+    def __init__(
+        self,
+        node_dout: int,
+        glob_din: int,
+        glob_dout: int,
+        readout: ReadoutType = "mean",
+        carrier_readout: bool = False,
+        carrier_idx: int | None = None,
+    ):
         super().__init__()
-        self.readout = READOUT_AGGREGATIONS[cfg.readout]()
-        self.global_proj = pyg_nn.Linear(glob_din, cfg.glob_dout)
-        self.carrier_idx = carrier_idx
+        if carrier_readout and carrier_idx is None:
+            raise ValueError("carrier_readout needs the carrier feature index")
+        self.readout = READOUT_AGGREGATIONS[readout]()
+        self.global_proj = pyg_nn.Linear(glob_din, glob_dout)
+        self.carrier_idx = carrier_idx if carrier_readout else None
+        n_node_embs = 2 if carrier_readout else 1
+        self.out_dim = n_node_embs * node_dout + glob_dout
 
     def forward(
         self,
-        z: torch.Tensor,
+        z: torch.Tensor | list[torch.Tensor],
         u: torch.Tensor,
         batch: torch.Tensor,
         batch_size: int,
@@ -92,7 +105,8 @@ class TemporalFusion(nn.Module):
         2) Recurrent cell over the fused vectors.
 
     In both modes the vector handed to the head depends on the recurrent
-    state, i.e. on the previous frames of the chain.
+    state, i.e. on the previous frames of the chain. Every internal width is
+    derived from the arguments; `out_dim` is the width of the output vector.
     """
 
     def __init__(
@@ -100,36 +114,53 @@ class TemporalFusion(nn.Module):
         backbone_dout: int,
         node_dim: int,
         glob_din: int,
-        cfg: NeckConfig,
+        glob_dout: int,
+        rnn_dout: int,
+        mode: TemporalMode = "graph",
+        rnn_type: RNNType = "gru",
+        readout: ReadoutType = "mean",
+        raw_features_proj: bool = False,
+        proj_dout: int = 32,
+        carrier_readout: bool = False,
         carrier_idx: int | None = None,
     ):
         super().__init__()
-        self.mode = cfg.mode
-        self.fusion = GraphGlobalFusion(glob_din, cfg, carrier_idx)
+        self.mode = mode
+
+        def fusion(node_dout: int) -> GraphGlobalFusion:
+            return GraphGlobalFusion(
+                node_dout,
+                glob_din,
+                glob_dout,
+                readout=readout,
+                carrier_readout=carrier_readout,
+                carrier_idx=carrier_idx,
+            )
 
         self.raw_features_proj: nn.Module = nn.Identity()
-        if self.mode == "node":
-            if cfg.raw_features_proj:
+        if mode == "node":
+            if raw_features_proj:
                 self.raw_features_proj = nn.Sequential(
-                    pyg_nn.Linear(node_dim, cfg.proj_dout), nn.ReLU()
+                    pyg_nn.Linear(node_dim, proj_dout), nn.ReLU()
                 )
-                rnn_din = backbone_dout + cfg.proj_dout
+                rnn_din = backbone_dout + proj_dout
             else:
                 rnn_din = backbone_dout + node_dim
             self.norm = nn.LayerNorm(rnn_din)
-            self.rnn = RecurrentCell(cfg.rnn_type, rnn_din, cfg.rnn_dout)
+            self.rnn = RecurrentCell(rnn_type, rnn_din, rnn_dout)
+            self.fusion = fusion(rnn_dout)
+            self.out_dim = self.fusion.out_dim
 
-        elif self.mode == "graph":
-            # the sum readout of 22 nodes and the global projection live on
-            # very different scales: normalise the fused vector before the RNN
-            rnn_din = cfg.rnn_din
-            if carrier_idx is not None:
-                rnn_din += backbone_dout  # carrier embedding
-            self.norm = nn.LayerNorm(rnn_din)
-            self.rnn = RecurrentCell(cfg.rnn_type, rnn_din, cfg.rnn_dout)
+        elif mode == "graph":
+            self.fusion = fusion(backbone_dout)
+            # the readout of 22 nodes and the global projection live on very
+            # different scales: normalise the fused vector before the RNN
+            self.norm = nn.LayerNorm(self.fusion.out_dim)
+            self.rnn = RecurrentCell(rnn_type, self.fusion.out_dim, rnn_dout)
+            self.out_dim = rnn_dout
 
         else:
-            raise ValueError(f"Invalid mode: {self.mode}")
+            raise ValueError(f"Invalid mode: {mode}")
 
     def forward(
         self,
@@ -149,5 +180,18 @@ class TemporalFusion(nn.Module):
             return fused, h, c
 
         fused = self.norm(self.fusion(z, u, batch, batch_size, x))
+        h, c = self.rnn(fused, prev_h, prev_c)
+        return h, h, c
+
+    def forward_pooled(
+        self,
+        graph_emb: torch.Tensor,
+        u: torch.Tensor,
+        prev_h: OptTensor = None,
+        prev_c: OptTensor = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, OptTensor]:
+        """Graph mode for backbones that pool the graph themselves (DiffPool)."""
+        glob = F.relu(self.fusion.global_proj(u), inplace=True)
+        fused = self.norm(torch.cat([graph_emb, glob], dim=-1))
         h, c = self.rnn(fused, prev_h, prev_c)
         return h, h, c

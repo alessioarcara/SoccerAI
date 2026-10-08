@@ -4,27 +4,19 @@ os.environ.setdefault("WANDB_MODE", "disabled")
 
 import pytest  # noqa: E402
 import torch  # noqa: E402
-import yaml  # noqa: E402
-from test_config import REPO_CONFIGS, _write_configs  # noqa: E402
-from test_temporal_collate import N_FEAT, make_chain  # noqa: E402
+from stubs import MODELS, build_stub_config  # noqa: E402
+from test_temporal_collate import make_chain  # noqa: E402
 
 from soccerai.data.temporal_dataset import TemporalChainsDataset  # noqa: E402
-from soccerai.models.models import build_model  # noqa: E402
-from soccerai.training.trainer_config import build_config  # noqa: E402
-
-BACKBONES = ["gcn", "gcn2", "graphsage", "gatv2", "gine", "graphgps", "diffpool"]
 
 
-class DatasetStub:
-    num_node_features = N_FEAT
-    num_global_features = 3
-    # the carrier readout looks the flag up by name: use the first column
-    feature_names = ["is_ball_carrier_1"] + [f"f{i}" for i in range(1, N_FEAT)]
+def build_model(tmp_path, name: str, overrides=None):
+    cfg, _ = build_stub_config(name, tmp_path, overrides)
+    return cfg.model
 
 
-def load_cfg(tmp_path, name: str):
-    model_cfg = yaml.safe_load((REPO_CONFIGS / f"{name}.yaml").read_text())
-    return build_config(_write_configs(tmp_path, name, model_cfg))
+def neck_args(**kwargs):
+    return {"neck": {"_init_args_": kwargs}}
 
 
 def run_chain(model, snapshots, x_override=None):
@@ -46,11 +38,9 @@ def run_chain(model, snapshots, x_override=None):
     return out
 
 
-@pytest.mark.parametrize("name", BACKBONES)
+@pytest.mark.parametrize("name", MODELS)
 def test_every_backbone_runs_and_backpropagates(tmp_path, name):
-    torch.manual_seed(0)
-    cfg = load_cfg(tmp_path, name)
-    model = build_model(cfg, DatasetStub())
+    model = build_model(tmp_path, name)
     batch = TemporalChainsDataset.collate(
         [make_chain(3, 1.0, 0), make_chain(2, 0.0, 1)]
     )
@@ -64,12 +54,8 @@ def test_every_backbone_runs_and_backpropagates(tmp_path, name):
 
 @pytest.mark.parametrize("mode", ["node", "graph"])
 def test_temporal_context_reaches_the_head(tmp_path, mode):
-    torch.manual_seed(0)
-    cfg = load_cfg(tmp_path, "gcn")
-    cfg.model.neck.mode = mode
-    if mode == "node":
-        cfg.model.head.din = cfg.model.neck.rnn_dout + cfg.model.neck.glob_dout
-    model = build_model(cfg, DatasetStub()).eval()
+    # the head width follows the neck mode on its own
+    model = build_model(tmp_path, "gcn", neck_args(mode=mode)).eval()
 
     snapshots = list(TemporalChainsDataset.collate([make_chain(2, 1.0, 0)]))
     reference = run_chain(model, snapshots)
@@ -81,8 +67,7 @@ def test_temporal_context_reaches_the_head(tmp_path, mode):
 def test_gnn_plus_layers_normalise_once(tmp_path):
     from soccerai.models.layers import GNNPlusLayer, Identity
 
-    cfg = load_cfg(tmp_path, "gine")  # plus: True, norm: batch
-    model = build_model(cfg, DatasetStub())
+    model = build_model(tmp_path, "gine")  # plus: true
     assert all(isinstance(c, GNNPlusLayer) for c in model.backbone.convs)
     assert all(isinstance(n, Identity) for n in model.backbone.norms)
 
@@ -91,26 +76,23 @@ def test_gnn_plus_layers_normalise_once(tmp_path):
     "norm,expected", [("none", "NoneType"), ("layer", "LayerNorm")]
 )
 def test_graphgps_uses_the_configured_norm(tmp_path, norm, expected):
-    cfg = load_cfg(tmp_path, "graphgps")
-    cfg.model.backbone.norm = norm
-    model = build_model(cfg, DatasetStub())
+    model = build_model(
+        tmp_path, "graphgps", {"backbone": {"_init_args_": {"norm": norm}}}
+    )
     assert type(model.backbone.convs[0].norm1).__name__ == expected
 
 
 def test_diffpool_exposes_auxiliary_losses(tmp_path):
-    cfg = load_cfg(tmp_path, "diffpool")
-    model = build_model(cfg, DatasetStub())
+    model = build_model(tmp_path, "diffpool")
     batch = TemporalChainsDataset.collate([make_chain(2, 1.0, 0)])
     run_chain(model, list(batch))
     assert model.aux_loss.shape == (1,) and model.aux_loss.requires_grad
     assert float(model.aux_loss.min()) >= 0.0
 
 
-@pytest.mark.parametrize("name", [b for b in BACKBONES if b != "diffpool"])
+@pytest.mark.parametrize("name", [m for m in MODELS if m != "diffpool"])
 def test_carrier_readout_runs_with_every_backbone(tmp_path, name):
-    cfg = load_cfg(tmp_path, name)
-    cfg.model.neck.carrier_readout = True
-    model = build_model(cfg, DatasetStub())
+    model = build_model(tmp_path, name, neck_args(carrier_readout=True))
     batch = TemporalChainsDataset.collate(
         [make_chain(3, 1.0, 0), make_chain(2, 0.0, 1)]
     )
@@ -121,19 +103,11 @@ def test_carrier_readout_runs_with_every_backbone(tmp_path, name):
 
 def test_carrier_readout_takes_the_flagged_node():
     from soccerai.models.necks import GraphGlobalFusion
-    from soccerai.training.trainer_config import NeckConfig
 
-    neck_cfg = NeckConfig(
-        rnn_type="gru",
-        readout="mean",
-        glob_dout=2,
-        rnn_din=4,
-        rnn_dout=4,
-        mode="graph",
-        raw_features_proj=False,
-        proj_dout=2,
+    fusion = GraphGlobalFusion(
+        node_dout=2, glob_din=1, glob_dout=2, carrier_readout=True, carrier_idx=0
     )
-    fusion = GraphGlobalFusion(glob_din=1, cfg=neck_cfg, carrier_idx=0)
+    assert fusion.out_dim == 2 * 2 + 2
     x = torch.tensor([[0.0], [1.0], [0.0], [0.0]])  # carrier: node 1, none in graph 1
     z = torch.tensor([[1.0, 1.0], [5.0, 7.0], [2.0, 2.0], [4.0, 4.0]])
     batch = torch.tensor([0, 0, 1, 1])

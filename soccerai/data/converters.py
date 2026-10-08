@@ -159,15 +159,3 @@ class BipartiteGraphConverter(GraphConverter):
         edge_index = torch.tensor(np.stack([src, dst]), dtype=torch.long)
         edge_weight = edge_attr = torch.tensor(weights, dtype=torch.float32)
         return edge_index, edge_weight, edge_attr
-
-
-def create_graph_converter(
-    connection_mode: str, edge_length_scale: float = 10.0
-) -> GraphConverter:
-    match connection_mode:
-        case "fully_connected":
-            return FullyConnectedGraphConverter()
-        case "bipartite":
-            return BipartiteGraphConverter(length_scale=edge_length_scale)
-        case _:
-            raise ValueError("Invalid connection mode")

@@ -1,7 +1,0 @@
-model:
-  backbone:
-    type: "gatv2"
-    n_layers: 2
-    num_heads: 4
-    use_edge_attr: True
-    edge_dropout: 0.2

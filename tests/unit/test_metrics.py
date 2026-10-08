@@ -8,7 +8,6 @@ from soccerai.training.metrics import (
     BinaryPrecisionRecallCurve,
     chain_level_predictions,
 )
-from soccerai.training.trainer_config import MetricsConfig
 
 
 def _batch_and_predictions():
@@ -28,7 +27,7 @@ def test_chain_level_predictions_take_last_valid_frame():
 
 def test_confusion_matrix_counts_one_entry_per_chain():
     batch, preds, labels = _batch_and_predictions()
-    cm = BinaryConfusionMatrix(MetricsConfig(thr=0.5, fbeta=1.0), ignore_value=-1)
+    cm = BinaryConfusionMatrix(threshold=0.5, fbeta=1.0, ignore_value=-1)
     cm.update(*chain_level_predictions(preds, labels, batch.masks), batch)
     # chain 0: label 1, last pred 0.8 -> TP ; chain 1: label 0, pred 0.9 -> FP
     assert cm.cm.tolist() == [[0, 1], [0, 1]]

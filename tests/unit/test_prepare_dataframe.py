@@ -141,12 +141,12 @@ def test_overlapping_positive_chains_are_disambiguated():
 
 
 def test_processed_file_names_depend_on_config():
-    from soccerai.data.converters import create_graph_converter
+    from soccerai.data.converters import BipartiteGraphConverter
 
     a = make_dataset_stub(make_data_cfg())
     b = make_dataset_stub(make_data_cfg(include_ball_features=False))
     for ds in (a, b):
-        ds.converter = create_graph_converter("bipartite")
+        ds.converter = BipartiteGraphConverter()
     assert a.processed_file_names != b.processed_file_names
     assert a.processed_file_names == make_dataset_stub(
         make_data_cfg()

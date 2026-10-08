@@ -2,20 +2,19 @@ import torch
 import torch.nn as nn
 import torch_geometric.nn as pyg_nn
 
-from soccerai.training.trainer_config import HeadConfig
-
 
 class GraphClassificationHead(nn.Module):
-    def __init__(self, cfg: HeadConfig):
-        super().__init__()
-        layers = []
+    """MLP halving the width at every hidden layer, down to one logit."""
 
-        din = cfg.din
-        for _ in range(cfg.n_layers):
+    def __init__(self, din: int, n_layers: int = 2, drop: float = 0.3):
+        super().__init__()
+        layers: list[nn.Module] = []
+
+        for _ in range(n_layers):
             dout = din // 2
             layers.append(pyg_nn.Linear(din, dout))
             layers.append(nn.ReLU(inplace=True))
-            layers.append(nn.Dropout(p=cfg.drop))
+            layers.append(nn.Dropout(p=drop))
             din = dout
 
         layers.append(pyg_nn.Linear(din, 1))

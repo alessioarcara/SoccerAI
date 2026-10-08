@@ -2,9 +2,10 @@
 Run a list of training experiments sequentially and tabulate the validation
 metrics of their best epoch (read back from the saved checkpoints).
 
-Each experiment copies `configs/`, overrides `run_name` and any nested keys of
-`base.yaml`, trains with `scripts/train.py` (W&B offline unless WANDB_MODE is
-set) and appends one JSON line to `<out>/results.jsonl`.
+Each experiment trains with `scripts/train.py` on `configs/base.yaml`, the
+model file `configs/models/<model>.yaml` and a file holding its overrides
+(W&B offline unless WANDB_MODE is set), then appends one JSON line to
+`<out>/results.jsonl`.
 
 Usage:
     python scripts/run_experiments.py                 # every experiment below
@@ -15,7 +16,6 @@ import argparse
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import time
@@ -26,11 +26,10 @@ import yaml
 from tabulate import tabulate
 
 from soccerai.training.checkpoint import load_checkpoint
-from soccerai.training.trainer_config import deep_merge
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# name, model yaml (run_name), overrides of base.yaml, collector frames (0 = no plots)
+# name, configs/models/<model>.yaml, overrides, collector frames (0 = no plots)
 EXPERIMENTS: list[tuple[str, str, dict[str, Any], int]] = [
     ("gcn", "gcn", {}, 12),
     ("graphsage", "graphsage", {}, 0),
@@ -39,16 +38,21 @@ EXPERIMENTS: list[tuple[str, str, dict[str, Any], int]] = [
     ("gcn2", "gcn2", {}, 0),
     ("graphgps", "graphgps", {}, 0),
     ("diffpool", "diffpool", {}, 0),
-    ("gcn_roster_on", "gcn", {"data": {"use_roster_features": True}}, 0),
+    ("gcn_roster_on", "gcn", {"data_config": {"use_roster_features": True}}, 0),
     (
         "gcn_no_direction_norm",
         "gcn",
-        {"data": {"normalize_attack_direction": False}},
+        {"data_config": {"normalize_attack_direction": False}},
         0,
     ),
-    ("gcn_no_goal_window", "gcn", {"data": {"goal_window_for_positives": None}}, 0),
-    ("gcn_full_chains", "gcn", {"data": {"max_chain_len": None}}, 0),
-    ("gcn_no_pos_weight", "gcn", {"trainer": {"pos_weight": None}}, 0),
+    (
+        "gcn_no_goal_window",
+        "gcn",
+        {"data_config": {"goal_window_for_positives": None}},
+        0,
+    ),
+    ("gcn_full_chains", "gcn", {"data_config": {"max_chain_len": None}}, 0),
+    ("gcn_no_pos_weight", "gcn", {"pos_weight": None}, 0),
     ("gcn_seed1", "gcn", {"seed": 1}, 0),
     ("gcn_seed2", "gcn", {"seed": 2}, 0),
 ]
@@ -56,19 +60,24 @@ EXPERIMENTS: list[tuple[str, str, dict[str, Any], int]] = [
 
 def run_experiment(
     name: str,
-    run_name: str,
+    model: str,
     overrides: dict[str, Any],
     collector_frames: int,
     out: Path,
 ) -> dict[str, Any]:
-    cfg_dir = out / f"cfg_{name}"
-    shutil.rmtree(cfg_dir, ignore_errors=True)
-    shutil.copytree(ROOT / "configs", cfg_dir)
-    base = yaml.safe_load((cfg_dir / "base.yaml").read_text())
-    base["run_name"] = run_name
-    base["collector"]["n_frames"] = collector_frames
-    base = deep_merge(base, overrides)
-    (cfg_dir / "base.yaml").write_text(yaml.safe_dump(base))
+    # the overrides become the last config file of the run (later files win)
+    override_path = out / f"{name}.yaml"
+    override_path.write_text(
+        yaml.safe_dump({**overrides, "collector_frames": collector_frames})
+    )
+    configs = [
+        ROOT / "configs" / "base.yaml",
+        ROOT / "configs" / "models" / f"{model}.yaml",
+        override_path,
+    ]
+    run_name = (
+        overrides.get("run_name") or yaml.safe_load(configs[1].read_text())["run_name"]
+    )
 
     ckpt_dir = ROOT / "checkpoints" / run_name
     before = set(ckpt_dir.glob("*.pth")) if ckpt_dir.exists() else set()
@@ -78,7 +87,7 @@ def run_experiment(
     env = {"WANDB_MODE": "offline", **os.environ}
     with open(log, "w") as fh:
         proc = subprocess.run(
-            [sys.executable, "scripts/train.py", "--config-dir", str(cfg_dir)],
+            [sys.executable, "scripts/train.py", "--configs", *map(str, configs)],
             cwd=ROOT,
             stdout=fh,
             stderr=subprocess.STDOUT,
@@ -119,8 +128,8 @@ def main(args: argparse.Namespace) -> None:
     selected = [e for e in EXPERIMENTS if not args.names or e[0] in args.names]
 
     rows = []
-    for name, run_name, overrides, frames in selected:
-        row = run_experiment(name, run_name, overrides, frames, out)
+    for name, model, overrides, frames in selected:
+        row = run_experiment(name, model, overrides, frames, out)
         rows.append(row)
         with open(out / "results.jsonl", "a") as fh:
             fh.write(json.dumps(row) + "\n")

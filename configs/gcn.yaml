@@ -1,5 +1,0 @@
-model:
-  backbone:
-    type: "gcn"
-    n_layers: 3
-    plus: False

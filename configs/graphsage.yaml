@@ -1,6 +1,0 @@
-model:
-  backbone:
-    type: "graphsage"
-    n_layers: 2
-    l2_norm: True
-    aggr_type: "max"

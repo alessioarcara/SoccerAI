@@ -1,9 +1,0 @@
-model:
-  backbone:
-    type: "gine"
-    n_layers: 3
-    train_eps: True
-    plus: True
-
-  neck:
-    rnn_din: 224             # 3 layers x 64 (jumping knowledge) + glob_dout

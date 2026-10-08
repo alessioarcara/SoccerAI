@@ -20,7 +20,6 @@ from torchmetrics.functional.classification import (
     binary_precision_recall_curve,
 )
 
-from soccerai.training.trainer_config import Config, MetricsConfig
 from soccerai.training.utils import (
     TopKStorage,
     extract_chain,
@@ -84,11 +83,13 @@ class Metric(ABC):
 class BinaryConfusionMatrix(Metric):
     def __init__(
         self,
-        cfg: MetricsConfig,
+        threshold: float = 0.5,
+        fbeta: float = 1.0,
         ignore_value: int | None = None,
         mode: Literal["pos", "both"] = "pos",
     ):
-        self.cfg = cfg
+        self.threshold = threshold
+        self.fbeta = fbeta
         self.ignore_value = ignore_value
         self.mode = mode
         self.reset()
@@ -96,7 +97,7 @@ class BinaryConfusionMatrix(Metric):
     def update(
         self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
     ) -> None:
-        preds_labels_flat = (preds_probs >= self.cfg.thr).view(-1).long().cpu()
+        preds_labels_flat = (preds_probs >= self.threshold).view(-1).long().cpu()
         true_labels_flat = true_labels.view(-1).long().cpu()
 
         if self.ignore_value is not None:
@@ -109,7 +110,7 @@ class BinaryConfusionMatrix(Metric):
         ).view(2, 2)
 
     def _get_fbeta(self, tp: float, fp: float, fn: float) -> float:
-        beta2 = self.cfg.fbeta**2
+        beta2 = self.fbeta**2
         denom = (1 + beta2) * tp + beta2 * fn + fp
         fbeta = ((1 + beta2) * tp / denom) if denom > 0 else 0.0
         return fbeta
@@ -127,12 +128,12 @@ class BinaryConfusionMatrix(Metric):
 
         # Pos F-beta
         fbeta_pos = self._get_fbeta(tp=tp, fp=fp, fn=fn)
-        results.append((f"f{self.cfg.fbeta}_pos_score", fbeta_pos))
+        results.append((f"f{self.fbeta}_pos_score", fbeta_pos))
 
         if self.mode == "both":
             # Neg F-beta
             fbeta_neg = self._get_fbeta(tp=tn, fp=fn, fn=fp)
-            results.append((f"f{self.cfg.fbeta}_neg_score", fbeta_neg))
+            results.append((f"f{self.fbeta}_neg_score", fbeta_neg))
 
         return results
 
@@ -224,12 +225,32 @@ class BinaryPrecisionRecallCurve(Metric):
 class Collector(Metric, Generic[T]):
     frame_level = True
 
-    def __init__(self, target_label: int, cfg: Config, feature_names: Sequence[str]):
-        self.cfg = cfg
+    """
+    Keep the `n_frames` most confident examples of class `target_label`
+    predicted above `threshold`, and plot them on a pitch grid. With
+    `n_frames = 0` nothing is collected.
+    """
+
+    def __init__(
+        self,
+        target_label: int,
+        feature_names: Sequence[str],
+        n_frames: int,
+        threshold: float = 0.5,
+        grid_nrows: int = 6,
+        grid_ncols: int = 4,
+        grid_figheight: int = 12,
+    ):
         self.target_label = target_label
         self.positive_type = "TP" if self.target_label == 1 else "FP"
         self.feature_names = feature_names
-        self.storage: TopKStorage[T] = TopKStorage(self.cfg.collector.n_frames)
+        self.threshold = threshold
+        self.pitch_grid = {
+            "nrows": grid_nrows,
+            "ncols": grid_ncols,
+            "figheight": grid_figheight,
+        }
+        self.storage: TopKStorage[T] = TopKStorage(n_frames)
 
     @property
     def frames(self) -> list[tuple[float, T]]:
@@ -255,11 +276,13 @@ class FrameCollector(Collector[Data]):
         true_labels: torch.Tensor,
         batch: Batch,
     ) -> None:
+        if self.storage.k == 0:
+            return
         probs_np = preds_probs.detach().cpu().numpy()
         labels_np = true_labels.detach().cpu().numpy()
 
         indices = np.where(
-            (probs_np >= self.cfg.metrics.thr) & (labels_np == self.target_label)
+            (probs_np >= self.threshold) & (labels_np == self.target_label)
         )[0]
 
         for i in indices:
@@ -271,9 +294,7 @@ class FrameCollector(Collector[Data]):
         if not entries:
             return []
 
-        fig = plot_pitch_frames_grid(
-            entries, self.feature_names, self.cfg.pitch_grid.model_dump()
-        )
+        fig = plot_pitch_frames_grid(entries, self.feature_names, self.pitch_grid)
 
         return [(f"{self.positive_type}_frames", fig)]
 
@@ -288,6 +309,8 @@ class ChainCollector(Collector[tuple[np.ndarray, list[Data]]]):
         true_labels: torch.Tensor,
         batch: Discrete_Signal,
     ) -> None:
+        if self.storage.k == 0:
+            return
         probs_np = preds_probs.detach().cpu().numpy()
         labels_np = true_labels.detach().cpu().numpy()
 
@@ -296,7 +319,7 @@ class ChainCollector(Collector[tuple[np.ndarray, list[Data]]]):
         for i, t in enumerate(last_t):
             conf = probs_np[t - 1, i]
 
-            if (conf >= self.cfg.metrics.thr) & (labels_np[0, i] == self.target_label):
+            if (conf >= self.threshold) & (labels_np[0, i] == self.target_label):
                 chain_predictions = probs_np[:t, i]
                 chain = extract_chain(batch[:t], i)
                 self.storage.add(
@@ -347,7 +370,7 @@ class ChainCollector(Collector[tuple[np.ndarray, list[Data]]]):
         fig.tight_layout()
 
         pitch_grid_fig = plot_pitch_frames_grid(
-            self.frames, self.feature_names, self.cfg.pitch_grid.model_dump()
+            self.frames, self.feature_names, self.pitch_grid
         )
 
         scores_np, snapshots = self.highest_confidence_chain[1]

@@ -232,7 +232,7 @@ def fig_to_numpy(
 
 
 def build_dummy_inputs(
-    bs: int, feat_dim: int, glob_dim: int, device: torch.device
+    bs: int, feat_dim: int, glob_dim: int, device: str | torch.device
 ) -> dict[str, Any]:
     """
     Creates random tensors to feed `torch_geometric.nn.summary`.

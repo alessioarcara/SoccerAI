@@ -10,7 +10,7 @@ from soccerai.data.transformers import (
     NonPossessionShootingStatsMask,
     PlayerLocationTransformer,
 )
-from soccerai.training.trainer_config import DataConfig
+from soccerai.generated import DataConfig
 
 DIAG = float(np.hypot(105.0, 68.0))
 
@@ -25,7 +25,6 @@ def make_data_cfg(**overrides) -> DataConfig:
         use_regression_imputing=False,
         use_pca_on_roster_cols=False,
         mask_non_possession_shooting_stats=False,
-        connection_mode="bipartite",
         normalize_attack_direction=False,
         use_roster_features=True,
         use_match_clock=True,

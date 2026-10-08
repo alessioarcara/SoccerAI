@@ -4,15 +4,14 @@ from typing import Any
 
 import torch
 
-from soccerai.training.trainer_config import Config
-
-CHECKPOINT_FORMAT = 1
+# 2: `config` is the merged EzConfy YAML of the run (1: pydantic Config dump)
+CHECKPOINT_FORMAT = 2
 
 
 def save_checkpoint(
     path: Path,
     state_dict: Mapping[str, torch.Tensor],
-    cfg: Config,
+    run_config: Mapping[str, Any],
     feature_names: Sequence[str],
     history_key: str,
     best_value: float,
@@ -20,14 +19,14 @@ def save_checkpoint(
 ) -> None:
     """
     Save a self-contained checkpoint: weights plus everything needed to
-    rebuild the model and its dataset (config, feature names) without
-    querying the experiment tracker.
+    rebuild the model and its dataset (the merged YAML configuration, feature
+    names) without querying the experiment tracker.
     """
     torch.save(
         {
             "format": CHECKPOINT_FORMAT,
             "state_dict": {k: v.detach().cpu() for k, v in state_dict.items()},
-            "config": cfg.model_dump(),
+            "config": dict(run_config),
             "feature_names": list(feature_names),
             "history_key": history_key,
             "best_value": float(best_value),
@@ -49,11 +48,6 @@ def load_checkpoint(path: Path) -> dict[str, Any]:
     return {"state_dict": payload, "config": None, "feature_names": None}
 
 
-def checkpoint_config(payload: Mapping[str, Any]) -> Config | None:
-    cfg = payload.get("config")
-    return None if cfg is None else Config(**cfg)
-
-
 def find_best_checkpoint(
     model_dir: Path, include_legacy: bool = False
 ) -> tuple[str, Path] | None:
@@ -62,9 +56,9 @@ def find_best_checkpoint(
     value among `<run_id>_<key>_<value>.pth` files under `model_dir`
     (searched recursively).
 
-    Bare state dicts written before the self-contained format are skipped
-    unless `include_legacy` is set: they belong to earlier architectures and
-    their monitored values are not comparable.
+    Checkpoints of older formats (bare state dicts, pydantic configs) are
+    skipped unless `include_legacy` is set: their configuration cannot be
+    rebuilt by the current code.
     """
     candidates: list[tuple[float, str, Path]] = []
     for path in model_dir.rglob("*.pth"):
@@ -77,6 +71,6 @@ def find_best_checkpoint(
 
     # best value first, so that usually a single file has to be loaded
     for _, run_id, path in sorted(candidates, key=lambda c: c[0]):
-        if include_legacy or load_checkpoint(path).get("config") is not None:
+        if include_legacy or load_checkpoint(path).get("format") == CHECKPOINT_FORMAT:
             return run_id, path
     return None

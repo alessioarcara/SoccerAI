@@ -1,10 +1,20 @@
 import json
 import os
 import subprocess
+from collections.abc import Sequence
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from typing import Any
 
+import numpy as np
 import polars as pl
+
+
+def balanced_pos_weight(labels: Sequence[float] | np.ndarray) -> float:
+    """#negatives / #positives, the BCE weight that balances the classes."""
+    arr = np.asarray(labels).reshape(-1)
+    n_pos = float((arr == 1).sum())
+    n_neg = float((arr == 0).sum())
+    return n_neg / max(n_pos, 1.0)
 
 
 def offset_x(x: float) -> float:

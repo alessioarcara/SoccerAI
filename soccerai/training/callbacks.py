@@ -11,7 +11,6 @@ from torch_geometric.explain import Explainer, GNNExplainer
 import wandb
 from soccerai.training.checkpoint import save_checkpoint
 from soccerai.training.metrics import Collector
-from soccerai.training.trainer_config import Config
 from soccerai.training.utils import (
     fig_to_numpy,
     plot_average_feature_importance,
@@ -22,28 +21,6 @@ from soccerai.training.utils import (
 class Callback(ABC):
     def on_train_end(self, trainer): ...
     def on_eval_end(self, trainer): ...
-
-
-def build_callbacks(cfg: Config) -> list[Callback]:
-    callbacks: list[Callback] = []
-
-    if cfg.trainer.early_stopping_callback:
-        callbacks.append(
-            EarlyStoppingCallback(**cfg.trainer.early_stopping_callback.model_dump())
-        )
-
-    if cfg.trainer.model_saving_callback:
-        callbacks.append(
-            ModelSavingCallback(
-                **cfg.trainer.model_saving_callback.model_dump(),
-                model_name=cfg.run_name,
-            )
-        )
-
-    if not cfg.model.use_temporal:
-        callbacks.append(ExplainerCallback())
-
-    return callbacks
 
 
 class ExplainerCallback(Callback):
@@ -157,9 +134,20 @@ class EarlyStoppingCallback(ModelMonitorCallback):
 
 
 class ModelSavingCallback(ModelMonitorCallback):
-    def __init__(self, history_key: str, minimize: bool, model_name: str):
+    """
+    Keep the weights of the best evaluation and save them, with the run
+    configuration, under `<out_dir>/<model_name>/` at the end of training.
+    """
+
+    def __init__(
+        self,
+        history_key: str,
+        minimize: bool,
+        model_name: str,
+        out_dir: str | Path = "checkpoints",
+    ):
         super().__init__(history_key, minimize)
-        self.out_dir = Path("checkpoints") / model_name
+        self.out_dir = Path(out_dir) / model_name
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.model_name = model_name
 
@@ -181,7 +169,7 @@ class ModelSavingCallback(ModelMonitorCallback):
         save_checkpoint(
             checkpoint_path,
             self.best_model,
-            trainer.cfg,
+            trainer.run_config,
             trainer.feature_names,
             self.history_key,
             self.best,

@@ -131,38 +131,66 @@ and then `pip install -e ".[dev]"`.
 
 ### Training a model
 
-1. Set `run_name` in `configs/base.yaml` to one of the per-model files
-   (`gcn`, `gcn2`, `graphsage`, `gatv2`, `gine`, `graphgps`, `diffpool`).
-   `base.yaml` holds the defaults, the per-model file only what differs; any
-   unknown key is rejected, so typos cannot be silently ignored.
+The configuration is managed with [EzConfy](https://github.com/alessioarcara/EzConfy):
+YAML files are deep-merged in order, validated against `configs/schema.yaml`
+and every component (converter, datasets, chains, loaders, backbone, neck,
+head, model, optimizer, scheduler, metrics, callbacks, trainer) is built from
+YAML via `_target_type_` / `_init_args_`, wired by `${...}` references.
 
-2. Launch training:
+* `configs/base.yaml` is the shared experiment: everything except the backbone.
+* `configs/models/<name>.yaml` defines `backbone` (and `run_name`) for `gcn`,
+  `gcn2`, `graphsage`, `gatv2`, `gine`, `graphgps`, `diffpool`; a few also
+  adjust the neck or the model.
+* Widths are derived, never written by hand: the neck reads
+  `${backbone.out_dim}`, the head `${neck.out_dim}`.
 
-   ```bash
-   python scripts/train.py                      # uses configs/
-   python scripts/train.py --config-dir my_cfg  # e.g. an ablation copy of configs/
-   ```
+```bash
+python scripts/train.py   # base.yaml + models/gcn.yaml
+python scripts/train.py --configs configs/base.yaml configs/models/gine.yaml
+python scripts/train.py --configs configs/base.yaml configs/models/gcn.yaml my_ablation.yaml
+```
 
-   Processed datasets live in `soccerai/data/resources/processed/` under a
-   name that hashes the `data:` section of the configuration, so changing
-   any data option rebuilds them automatically (`--reload` only forces it).
-   Runs log to W&B (`WANDB_MODE=offline` keeps them local).
+An ablation is a small YAML with only the keys it changes, passed last, e.g.
+
+```yaml
+seed: 1
+data_config:
+  use_roster_features: true
+neck:
+  _init_args_:
+    carrier_readout: true
+```
+
+Lists of objects (metrics, callbacks) can be patched element by element with
+EzConfy's `...` marker and the `_id_` of the element. Note that EzConfy
+accepts unknown keys, so a typo in a key is not reported. After changing the
+schema, regenerate the typed models used by the editor and by mypy:
+
+```bash
+uv run ezconfy configs/schema.yaml -o soccerai/generated.py
+```
+
+Processed datasets live in `soccerai/data/resources/processed/` under a name
+that hashes `data_config` and the graph converter, so changing any data
+option rebuilds them automatically (`--reload` only forces it). Runs log to
+W&B (`WANDB_MODE=offline` keeps them local).
 
 ### Key configuration options
 
 | Option | Default | Effect |
 | --- | --- | --- |
-| `data.normalize_attack_direction` | `True` | mirror frames so the possession team always attacks towards `x = 105`; goal features refer to the attacked goal for every node |
-| `data.max_chain_len` | `12` | keep only the last frames of every chain |
-| `data.use_roster_features` | `False` | scraped per-player statistics (weight, market value, shooting record, age); constant per player, they let the model identify players |
-| `data.use_match_clock` | `False` | match clock as a global feature |
-| `data.edge_length_scale` | `10.0` | metres; bipartite edge weight `exp(-distance / scale)` |
-| `data.split_mode` / `data.val_ratio` | `chronological` / `0.25` | the 48 group-stage games train, the knock-out games validate (`random` draws a seeded game subset) |
-| `data.drop_games_without_negatives` | `True` | drop games whose chains are all positive (the five extra-time matches) |
-| `data.goal_window_for_positives` | `25.0` | keep positive chains only if their last action is within 25 m of the goal line, like the negatives (`null` keeps all) |
-| `trainer.max_lr` | `null` | peak of the one-cycle schedule (`null` = `lr`) |
-| `trainer.pos_weight` | `"auto"` | positive-class weight of the BCE (`#neg / #pos` of the training chains) |
-| `trainer.gamma` | `0.1` | per-frame loss discount towards the end of the chain |
+| `data_config.normalize_attack_direction` | `true` | mirror frames so the possession team always attacks towards `x = 105`; goal features refer to the attacked goal for every node |
+| `data_config.max_chain_len` | `12` | keep only the last frames of every chain |
+| `data_config.use_roster_features` | `false` | scraped per-player statistics (weight, market value, shooting record, age); constant per player, they let the model identify players |
+| `data_config.use_match_clock` | `false` | match clock as a global feature |
+| `data_config.split_mode` / `val_ratio` | `chronological` / `0.25` | the 48 group-stage games train, the knock-out games validate (`random` draws a seeded game subset) |
+| `data_config.drop_games_without_negatives` | `true` | drop games whose chains are all positive (the five extra-time matches) |
+| `data_config.goal_window_for_positives` | `25.0` | keep positive chains only if their last action is within 25 m of the goal line, like the negatives (`null` keeps all) |
+| `converter.length_scale` | `10.0` | metres; bipartite edge weight `exp(-distance / scale)` |
+| `max_lr` | `${lr}` | peak of the one-cycle schedule |
+| `pos_weight` | `${train_chains.positive_weight()}` | positive-class weight of the BCE (`#neg / #pos` training chains; `null` disables it) |
+| `trainer.gamma` | `0.1` | per-frame loss discount towards the start of the chain |
+| `neck.carrier_readout` | `false` | concatenate the ball-carrier embedding to the readout |
 
 Validation metrics (loss, AP, AUROC, accuracy, F-beta) are computed once per
 chain at its last frame, consistently with the loss and with `eval.py`.
@@ -188,10 +216,10 @@ python scripts/eval.py --name <run_name>
 
 * Picks the checkpoint with the lowest monitored value under
   `./checkpoints/<run_name>/` (searched recursively).
-* Checkpoints are self-contained (weights, configuration, feature names,
-  best-epoch metrics), so evaluation works offline; checkpoints written by
-  earlier versions of the code fall back to the W&B run configuration and
-  are not compatible with the current architectures.
+* Checkpoints are self-contained (weights, the merged YAML of the run,
+  feature names, best-epoch metrics): evaluation rebuilds the run from the
+  stored YAML, offline. Checkpoints written before the EzConfy configuration
+  are skipped.
 
 ### Tests
 
@@ -212,16 +240,22 @@ which adds it from the raw event files without re-reading the tracking data.
 
 ## Repository Structure
 ```bash
-configs/                         # base.yaml (defaults) + one file per model
+configs/
+├── schema.yaml                  # EzConfy schema of the configuration
+├── base.yaml                    # Shared experiment, wired with ${...} references
+└── models/                      # One file per backbone
 scripts/
-├── train.py                     # Trains the model selected by run_name
+├── train.py                     # Builds the configuration and trains
 ├── eval.py                      # Evaluates the best checkpoint of a run offline
 ├── baseline.py                  # Tabular reference models on last-frame features
+├── run_experiments.py           # Sequential ablations, one override file each
 ├── patch_dataset_period.py      # Adds the game period to an existing dataset.parquet
 └── preload_video_frames.py      # Pre-downloads video frames used for labelling
 notebooks/
 └── data_collection.ipynb        # Manual filtering of chains and dataset creation
 soccerai/
+├── config.py                    # Seeds, then builds and validates the configuration
+├── generated.py                 # Typed models generated from configs/schema.yaml
 └── data/
 │   ├── converters.py            # Tabular frames -> PyG graphs (bipartite / fully connected)
 │   ├── data.py                  # Loads World Cup 2022 data and exports the parquet
@@ -238,7 +272,6 @@ soccerai/
     ├── metrics.py               # Chain-level metrics (AP, AUROC, confusion matrix) and collectors
     ├── callbacks.py             # Early stopping, checkpointing, explainer
     ├── checkpoint.py            # Self-contained checkpoint format
-    ├── trainer_config.py        # Strict configuration schema
     └── transforms.py            # Non-mutating pitch-flip augmentations
 tests/
 ├── unit/                        # Synthetic-data tests of every pipeline stage

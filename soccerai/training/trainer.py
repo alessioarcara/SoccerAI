@@ -8,8 +8,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from loguru import logger
-from torch.optim import AdamW
-from torch.optim.lr_scheduler import OneCycleLR
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data.dataloader import DataLoader as TorchDataLoader
 from torch_geometric.data import Batch
 from torch_geometric_temporal.signal import Discrete_Signal
@@ -18,60 +18,66 @@ from tqdm import tqdm
 import wandb
 from soccerai.training.callbacks import Callback, EarlyStoppingCallback
 from soccerai.training.metrics import Metric, chain_level_predictions
-from soccerai.training.trainer_config import Config
 
 BatchEvalResult = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
 
-def compute_pos_weight(labels: np.ndarray) -> float:
-    """#negatives / #positives, the BCE weight that balances the classes."""
-    labels = np.asarray(labels).reshape(-1)
-    n_pos = float((labels == 1).sum())
-    n_neg = float((labels == 0).sum())
-    return n_neg / max(n_pos, 1.0)
+def resolve_device(device: str) -> str:
+    """`auto` picks the GPU when there is one."""
+    if device == "auto":
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    return device
 
 
 class BaseTrainer(ABC):
+    """
+    Training loop over already-built components (all instantiated from the
+    YAML configuration): the optimizer must own the model parameters and the
+    scheduler is stepped after every batch.
+    """
+
     def __init__(
         self,
-        cfg: Config,
         model: nn.Module,
         train_loader: TorchDataLoader,
-        device: str,
-        feature_names: Sequence[str] | None = None,
+        optimizer: Optimizer,
+        scheduler: LRScheduler,
+        n_epochs: int,
         val_loader: TorchDataLoader | None = None,
         metrics: list[Metric] | None = None,
         callbacks: list[Callback] | None = None,
         pos_weight: float | None = None,
+        eval_rate: int = 1,
+        aux_loss_weight: float = 1.0,
+        feature_names: Sequence[str] | None = None,
+        device: str = "auto",
+        project_name: str = "soccerai",
+        run_name: str = "run",
     ) -> None:
-        self.cfg = cfg
-        self.device = device
+        self.device = resolve_device(device)
+        # moving the model keeps the same Parameter objects: the optimizer
+        # built from them stays valid
         self.model: nn.Module = model.to(self.device)
         self.train_loader = train_loader
         self.val_loader = val_loader
-        self.feature_names = feature_names or []
+        self.optim = optimizer
+        self.scheduler = scheduler
+        self.n_epochs = n_epochs
+        self.eval_rate = eval_rate
+        self.aux_loss_weight = aux_loss_weight
+        self.feature_names = list(feature_names or [])
         self.metrics = metrics or []
         self.callbacks = callbacks or []
+        self.project_name = project_name
+        self.run_name = run_name
+        # the merged YAML of the run, stored in checkpoints and logged to W&B
+        self.run_config: dict[str, Any] = {}
         self.pos_weight = (
             None
             if pos_weight is None
             else torch.tensor(float(pos_weight), device=self.device)
         )
         self.criterion = nn.BCEWithLogitsLoss(pos_weight=self.pos_weight)
-        self.optim = AdamW(
-            self.model.parameters(),
-            lr=self.cfg.trainer.lr,
-            weight_decay=self.cfg.trainer.wd,
-        )
-        # warm-up to `max_lr` over the first 10% of the steps, then anneal
-        self.scheduler = OneCycleLR(
-            self.optim,
-            max_lr=(
-                cfg.trainer.lr if cfg.trainer.max_lr is None else cfg.trainer.max_lr
-            ),
-            total_steps=cfg.trainer.n_epochs * len(self.train_loader),
-            pct_start=0.1,
-        )
         self.history: dict[str, Any] = {}
 
     @abstractmethod
@@ -100,7 +106,7 @@ class BaseTrainer(ABC):
         aux = getattr(self.model, "aux_loss", None)
         if aux is None:
             return torch.zeros((), device=self.device)
-        return self.cfg.trainer.aux_loss_weight * aux
+        return self.aux_loss_weight * aux
 
     def _per_example(
         self, preds_probs: torch.Tensor, true_labels: torch.Tensor, item: Any
@@ -135,14 +141,15 @@ class BaseTrainer(ABC):
             for cb in self.callbacks
         )
 
-    def train(self, run_name: str):
+    def train(self, run_config: dict[str, Any] | None = None):
+        self.run_config = dict(run_config or {})
         wandb.init(
-            project=self.cfg.project_name, name=run_name, config=self.cfg.model_dump()
+            project=self.project_name, name=self.run_name, config=self.run_config
         )
         wandb.watch(self.model, log="all", log_freq=100)
         try:
             for epoch in tqdm(
-                range(1, self.cfg.trainer.n_epochs + 1), desc="Epoch", colour="green"
+                range(1, self.n_epochs + 1), desc="Epoch", colour="green"
             ):
                 # `eval()` switches the model to eval mode at the end of every
                 # epoch: dropout / batch-norm must be re-enabled for training.
@@ -165,7 +172,7 @@ class BaseTrainer(ABC):
                         }
                     )
 
-                if epoch % self.cfg.trainer.eval_rate == 0:
+                if epoch % self.eval_rate == 0:
                     self.eval("train")
                     self.eval("val")
                     self._on_eval_end()
@@ -286,6 +293,16 @@ class Trainer(BaseTrainer):
 
 
 class TemporalTrainer(BaseTrainer):
+    """
+    Trainer over batches of chains. `gamma` discounts the per-frame losses
+    towards the start of a chain (the last frame weighs 1, the one before
+    `gamma`, ...).
+    """
+
+    def __init__(self, *args, gamma: float = 0.1, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.gamma = gamma
+
     def _per_example(
         self,
         preds_probs: torch.Tensor,
@@ -307,7 +324,7 @@ class TemporalTrainer(BaseTrainer):
         # (B, 1) − (T_max,) => (B, T_max) tramite broadcasting
         exps = (lengths - 1).unsqueeze(1) - T
 
-        weights = torch.where(masks, self.cfg.trainer.gamma ** exps.float(), 0.0)
+        weights = torch.where(masks, self.gamma ** exps.float(), 0.0)
         weights /= weights.sum(dim=1, keepdim=True).clamp(min=1e-12)
 
         weights = weights.T.contiguous()  # (T_max, B)

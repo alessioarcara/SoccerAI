@@ -10,8 +10,8 @@ from torch_geometric.utils import (
     to_dense_batch,
 )
 
-from soccerai.models.necks import RNN_CELLS
-from soccerai.training.trainer_config import DiffPoolConfig, ModelConfig
+from soccerai.models.necks import TemporalFusion
+from soccerai.models.typings import ReadoutType
 
 
 class DenseSageGNN(torch.nn.Module):
@@ -88,59 +88,58 @@ def diffpool_aux_losses(
     return link + ent
 
 
-class HierarchicalGNN(nn.Module):
-    def __init__(self, din: int, glob_din: int, cfg: ModelConfig, head: nn.Module):
+class DiffPoolBackbone(nn.Module):
+    """
+    Two DiffPool levels over a dense SAGE stack, then a readout of the
+    clusters: returns one embedding per graph, shape (B, out_dim).
+
+    The link-prediction and assignment-entropy regularisers of every graph
+    (shape (B,)) are left in `aux_loss` after each forward pass.
+    """
+
+    def __init__(
+        self,
+        din: int,
+        dhid: int,
+        pooling_ratio: float = 0.25,
+        dhid_multiplier: int = 1,
+        readout: ReadoutType = "mean",
+        num_nodes: int = 22,
+    ):
         super().__init__()
+        dhid1, dhid2, dhid3 = (
+            max(1, int(dhid * (dhid_multiplier**i))) for i in range(3)
+        )
+        self.readout = readout
 
-        assert isinstance(cfg.backbone, DiffPoolConfig)
-        pooling_ratio = cfg.backbone.pooling_ratio
-        base_dhid = cfg.backbone.dhid
-        factor = cfg.backbone.dhid_multiplier
-        self.readout = cfg.neck.readout
-
-        # Backbone
-        dhid_levels = [max(1, int(base_dhid * (factor**i))) for i in range(3)]
-        dhid1, dhid2, dhid3 = dhid_levels
-
-        num_nodes = ceil(pooling_ratio * 22)
-        self.gnn1_pool = DenseSageGNN(din, dhid1, num_nodes)
+        n_clusters = ceil(pooling_ratio * num_nodes)
+        self.gnn1_pool = DenseSageGNN(din, dhid1, n_clusters)
         self.gnn1_embed = DenseSageGNN(din, dhid1, dhid1, lin=False)
 
-        num_nodes = ceil(pooling_ratio * num_nodes)
-        self.gnn2_pool = DenseSageGNN(3 * dhid1, dhid2, num_nodes)
+        n_clusters = ceil(pooling_ratio * n_clusters)
+        self.gnn2_pool = DenseSageGNN(3 * dhid1, dhid2, n_clusters)
         self.gnn2_embed = DenseSageGNN(3 * dhid1, dhid2, dhid2, lin=False)
 
         self.gnn3_embed = DenseSageGNN(3 * dhid2, dhid3, dhid3, lin=False)
-
-        # Neck
-        self.global_proj = pyg_nn.Linear(glob_din, cfg.neck.glob_dout)
-
-        self.rnn = RNN_CELLS[cfg.neck.rnn_type](
-            input_size=cfg.neck.rnn_din, hidden_size=cfg.neck.rnn_dout
-        )
-
-        # Head
-        self.head = head
+        # the dense SAGE stack concatenates its three layers
+        self.out_dim = 3 * dhid3
+        self.aux_loss: torch.Tensor | None = None
 
     def forward(
         self,
         x: torch.Tensor,
         edge_index: Adj,
-        u: torch.Tensor,
         edge_weight: OptTensor = None,
         edge_attr: OptTensor = None,
         batch: OptTensor = None,
         batch_size: int | None = None,
-        prev_h: OptTensor = None,
-        prev_c: OptTensor = None,
-    ):
+    ) -> torch.Tensor:
         x, mask = to_dense_batch(x, batch)
         adj = to_dense_adj(edge_index, batch=batch, edge_attr=edge_attr)
 
         s = self.gnn1_pool(x, adj, mask)
         x = self.gnn1_embed(x, adj, mask)
 
-        # link-prediction and assignment-entropy regularisers of DiffPool,
         # one value per graph (B,); the trainer averages them over the real
         # (non-padded) graphs and adds them to the classification loss
         aux_loss = diffpool_aux_losses(adj, s, mask)
@@ -156,24 +155,44 @@ class HierarchicalGNN(nn.Module):
         x = self.gnn3_embed(x, adj)
 
         if self.readout == "mean":
-            graph_emb = x.mean(dim=1)
-        elif self.readout == "sum":
-            graph_emb = x.sum(dim=1)
-        else:  # "max"
-            graph_emb, _ = x.max(dim=1)
+            return x.mean(dim=1)
+        if self.readout == "sum":
+            return x.sum(dim=1)
+        return x.max(dim=1).values
 
-        glob_emb = F.relu(self.global_proj(u), inplace=True)
-        fused = torch.cat([graph_emb, glob_emb], dim=-1)
 
-        if isinstance(self.rnn, nn.LSTMCell):
-            state: tuple[OptTensor, OptTensor] | None = (
-                prev_h,
-                prev_c,
-            )
-            h, c = self.rnn(fused, state if prev_h is not None else None)
-        else:  # GRUCell
-            h = self.rnn(fused, prev_h)
-            c = None
+class HierarchicalGNN(nn.Module):
+    """
+    Temporal model over a backbone that pools the graph itself (DiffPool):
+    same interface and neck/head as `TemporalGNN`.
+    """
 
-        logits = self.head(h)
-        return logits, h, c
+    def __init__(
+        self, backbone: DiffPoolBackbone, neck: TemporalFusion, head: nn.Module
+    ):
+        super().__init__()
+        self.backbone = backbone
+        self.neck = neck
+        self.head = head
+
+    @property
+    def aux_loss(self) -> torch.Tensor | None:
+        return self.backbone.aux_loss
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        edge_index: Adj,
+        u: torch.Tensor,
+        edge_weight: OptTensor = None,
+        edge_attr: OptTensor = None,
+        batch: OptTensor = None,
+        batch_size: int | None = None,
+        prev_h: OptTensor = None,
+        prev_c: OptTensor = None,
+    ):
+        graph_emb = self.backbone(
+            x, edge_index, edge_weight, edge_attr, batch, batch_size
+        )
+        fused, h, c = self.neck.forward_pooled(graph_emb, u, prev_h, prev_c)
+        return self.head(fused), h, c

@@ -11,6 +11,7 @@ from torch_geometric_temporal.signal import (
 )
 
 from soccerai.data.dataset import WorldCup2022Dataset
+from soccerai.data.utils import balanced_pos_weight
 
 
 class TemporalChainsDataset(Dataset):
@@ -35,6 +36,12 @@ class TemporalChainsDataset(Dataset):
 
     def __len__(self) -> int:
         return len(self.temporal_chains)
+
+    def positive_weight(self) -> float:
+        """#negative / #positive chains: the BCE weight balancing chains."""
+        return balanced_pos_weight(
+            [chain.targets[-1].item() for chain in self.temporal_chains]
+        )
 
     def __getitem__(self, idx: int) -> DynamicGraphTemporalSignal:
         temporal_chain = self.temporal_chains[idx]

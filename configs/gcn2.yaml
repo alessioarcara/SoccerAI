@@ -1,4 +1,0 @@
-model:
-  backbone:
-    type: "gcn2"
-    n_layers: 6

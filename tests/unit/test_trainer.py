@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 from typing import Any
 
 os.environ.setdefault("WANDB_MODE", "disabled")
@@ -8,6 +7,8 @@ import pytest  # noqa: E402
 import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402
 from test_temporal_collate import N_FEAT, make_chain  # noqa: E402
+from torch.optim import AdamW  # noqa: E402
+from torch.optim.lr_scheduler import OneCycleLR  # noqa: E402
 from torch.utils.data import DataLoader  # noqa: E402
 from torch_geometric.nn import global_mean_pool  # noqa: E402
 
@@ -17,9 +18,6 @@ from soccerai.training.metrics import (  # noqa: E402
     BinaryPrecisionRecallCurve,
 )
 from soccerai.training.trainer import TemporalTrainer  # noqa: E402
-from soccerai.training.trainer_config import build_config  # noqa: E402
-
-REPO_CONFIGS = Path(__file__).resolve().parents[2] / "configs"
 
 
 class RecordingModel(nn.Module):
@@ -47,13 +45,7 @@ class RecordingModel(nn.Module):
         return out, prev_h, prev_c
 
 
-def _make_trainer(n_epochs: int, val_batch_size: int, model=None, max_lr=None):
-    cfg = build_config(REPO_CONFIGS)
-    cfg.trainer.n_epochs = n_epochs
-    cfg.trainer.max_lr = max_lr
-    cfg.trainer.eval_rate = 1
-    cfg.trainer.bs = 2
-
+def _make_trainer(n_epochs: int, val_batch_size: int, model=None):
     train_chains: Any = [make_chain(3, 1.0, 0), make_chain(1, 0.0, 1)]
     val_chains: Any = [
         make_chain(2, 1.0, 2),
@@ -67,14 +59,24 @@ def _make_trainer(n_epochs: int, val_batch_size: int, model=None, max_lr=None):
         val_chains, batch_size=val_batch_size, collate_fn=TemporalChainsDataset.collate
     )
     model = model or RecordingModel()
+    optimizer = AdamW(model.parameters(), lr=1e-3, weight_decay=1e-2)
+    scheduler = OneCycleLR(
+        optimizer,
+        max_lr=1e-3,
+        epochs=n_epochs,
+        steps_per_epoch=len(train_loader),
+        pct_start=0.1,
+    )
     trainer = TemporalTrainer(
-        cfg=cfg,
         model=model,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        n_epochs=n_epochs,
         train_loader=train_loader,
         val_loader=val_loader,
         device="cpu",
         metrics=[
-            BinaryConfusionMatrix(cfg.metrics, -1),
+            BinaryConfusionMatrix(ignore_value=-1),
             BinaryPrecisionRecallCurve(-1),
         ],
         callbacks=[],
@@ -84,7 +86,7 @@ def _make_trainer(n_epochs: int, val_batch_size: int, model=None, max_lr=None):
 
 def test_model_is_in_train_mode_during_every_epoch():
     trainer, model = _make_trainer(n_epochs=2, val_batch_size=3)
-    trainer.train("unit-test")
+    trainer.train()
 
     # per epoch: 3 training forwards (T_max=3), then eval on train (3) and val (4)
     assert len(model.modes) == 2 * (3 + 3 + 4)
@@ -112,29 +114,9 @@ def test_auxiliary_loss_is_added_to_the_training_loss():
     base_loss, _ = trainer._compute_signal_loss_and_last_pred(batch)
 
     model.aux_loss = torch.tensor(2.0)
-    trainer.cfg.trainer.aux_loss_weight = 0.5
+    trainer.aux_loss_weight = 0.5
     loss, _ = trainer._compute_signal_loss_and_last_pred(batch)
     assert loss.item() == pytest.approx(base_loss.item() + 0.5 * 2.0, abs=1e-5)
-
-
-def _peak_lr(trainer) -> float:
-    lrs = []
-    for _ in range(5):  # one batch per epoch, warm-up ends after 2 steps
-        trainer.optim.step()
-        trainer.scheduler.step()
-        lrs.append(trainer.scheduler.get_last_lr()[0])
-    return max(lrs)
-
-
-def test_scheduler_peaks_at_lr_when_max_lr_is_unset():
-    trainer, _ = _make_trainer(n_epochs=20, val_batch_size=3, max_lr=None)
-    assert trainer.scheduler.get_last_lr()[0] <= trainer.cfg.trainer.lr
-    assert _peak_lr(trainer) == pytest.approx(trainer.cfg.trainer.lr, rel=1e-3)
-
-
-def test_scheduler_peaks_at_the_configured_max_lr():
-    trainer, _ = _make_trainer(n_epochs=20, val_batch_size=3, max_lr=0.05)
-    assert _peak_lr(trainer) == pytest.approx(0.05, rel=1e-3)
 
 
 class PaddingAuxModel(RecordingModel):
@@ -165,9 +147,9 @@ def test_auxiliary_loss_ignores_padded_frames():
 
 
 def test_pos_weight_balances_the_loss():
-    from soccerai.training.trainer import compute_pos_weight
+    from soccerai.data.utils import balanced_pos_weight
 
-    assert compute_pos_weight([1, 0, 0, 0]) == 3.0
+    assert balanced_pos_weight([1, 0, 0, 0]) == 3.0
 
     torch.manual_seed(0)
     trainer_a, model_a = _make_trainer(n_epochs=1, val_batch_size=3)
