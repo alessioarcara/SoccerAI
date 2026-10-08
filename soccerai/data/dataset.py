@@ -88,6 +88,12 @@ class WorldCup2022Dataset(InMemoryDataset):
         self.split = split
         self.cfg = cfg
         self.random_state = random_state
+        raw_path = Path(root) / "raw" / "dataset.parquet"
+        self.raw_digest = (
+            hashlib.sha256(raw_path.read_bytes()).hexdigest()
+            if raw_path.exists()
+            else None
+        )
         super().__init__(root=root, transform=None, force_reload=force_reload)
 
         data_path_idx = 0 if self.split == "train" else 1
@@ -134,6 +140,7 @@ class WorldCup2022Dataset(InMemoryDataset):
                 },
                 "random_state": self.random_state,
                 "version": self.PROCESSING_VERSION,
+                "raw_digest": getattr(self, "raw_digest", None),
             },
             sort_keys=True,
             default=str,

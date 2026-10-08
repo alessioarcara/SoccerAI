@@ -184,8 +184,9 @@ python scripts/train.py --configs configs/base.yaml configs/models/gcn.yaml fork
 ```
 
 Processed datasets live in `soccerai/data/resources/processed/` under a name
-that hashes `data_config` and the graph converter, so changing any data
-option rebuilds them automatically (`--reload` only forces it). Runs log to
+that hashes `data_config`, the graph converter, and the raw parquet contents,
+so changing a data option or replacing the raw data rebuilds them automatically
+(`--reload` only forces it). Runs log to
 W&B (`WANDB_MODE=offline` keeps them local).
 
 ### Key configuration options
