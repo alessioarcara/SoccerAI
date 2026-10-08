@@ -36,7 +36,7 @@ In this work, we benchmark several graph-neural-network (GNN) architectures to e
 > [!NOTE]
 > Five knock-out matches went to extra time and had no negative chains in
 > the labelled data, so they are excluded by default; the validation split
-> is therefore the 11 remaining knock-out games (358 chains, 24% positive).
+> is therefore the 11 remaining knock-out games (341 chains, about 25% positive).
 > The attacked goal is derived from the game period (`gameEvents.period`),
 > and positive chains are kept only if the action before the shot happens
 > within 25 m of the goal line, the same criterion used to select negatives.
@@ -218,9 +218,9 @@ python scripts/baseline.py --importance
 trains a logistic regression and an XGBoost model on hand-crafted features
 of the last frame of each chain (same processed data and split as the GNNs)
 and prints their validation AP / AUROC / log-loss: the numbers a GNN has to
-beat. On the current dataset logistic regression reaches an AP of about 0.60
-and an AUROC of about 0.82, XGBoost an AP of about 0.61 and an AUROC of about
-0.79, against a 0.24 positive rate.
+beat. On the repaired dataset logistic regression reaches an AP of about 0.60
+and an AUROC of about 0.81, XGBoost an AP of about 0.59 and an AUROC of about
+0.77, against a 0.25 positive rate.
 
 ### Evaluating a trained model
 
@@ -270,6 +270,13 @@ tracking velocities and does not re-read the tracking archive, so the committed
 ball speeds still include the vertical component, while `PlayerVelocityEnricher`
 now computes planar speeds: rebuild the parquet from the tracking data to make
 them consistent.
+
+Preprocessing and graph conversion discard a whole chain when required frames
+are missing or invalid, rather than shortening it while retaining its label.
+Missing ball coordinates remain null; chains needing those coordinates are
+discarded when ball features are enabled. Players are ordered by team and
+shirt number consistently across frames, and chains with changing lineups are
+discarded.
 
 ## Repository Structure
 ```bash

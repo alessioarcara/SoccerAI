@@ -48,8 +48,14 @@ def test_fully_connected_has_no_weights():
 def test_dataframe_to_graphs_end_to_end():
     raw = make_raw_df(
         [
-            dict(game_id=1, chain_id=0, label=1, n_frames=3),
-            dict(game_id=1, chain_id=1, label=0, n_frames=2, possession="away"),
+            {"game_id": 1, "chain_id": 0, "label": 1, "n_frames": 3},
+            {
+                "game_id": 1,
+                "chain_id": 1,
+                "label": 0,
+                "n_frames": 2,
+                "possession": "away",
+            },
         ]
     )
     ds = make_dataset_stub(make_data_cfg())
@@ -66,3 +72,62 @@ def test_dataframe_to_graphs_end_to_end():
         assert data.u.shape[0] == 1 and data.y.shape == (1, 1)
     assert sorted({int(d.chain_id) for d in data_list}) == [0, 1]
     assert "x" in feature_names and "chain_id" not in feature_names
+
+
+def transformed_frames():
+    ds = make_dataset_stub(make_data_cfg())
+    raw = make_raw_df(
+        [
+            {"game_id": 1, "chain_id": 0, "label": 1, "n_frames": 3},
+            {"game_id": 1, "chain_id": 1, "label": 0, "n_frames": 2},
+        ]
+    )
+    df = ds._prepare_dataframe(raw)
+    return ds._create_preprocessor(df).fit_transform(df)
+
+
+def test_empty_or_all_incomplete_conversion_returns_feature_names():
+    df = transformed_frames()
+    converter = FullyConnectedGraphConverter()
+    for case in [df.head(0), df.filter(pl.col("jerseyNum") != "1")]:
+        graphs, names = converter.convert_dataframe_to_data_list(case)
+        assert graphs == [] and "x" in names and "node_id" not in names
+
+
+@pytest.mark.parametrize("frame", [0, 1, 2])
+def test_incomplete_frame_discards_entire_chain(frame):
+    df = transformed_frames().filter(
+        ~((pl.col("event_index") == frame) & (pl.col("node_id") == 1))
+    )
+    graphs, _ = FullyConnectedGraphConverter().convert_dataframe_to_data_list(df)
+    assert len(graphs) == 2 and {g.chain_id for g in graphs} == {1}
+
+
+def test_node_order_is_stable_when_input_rows_are_shuffled():
+    df = transformed_frames()
+    graphs, _ = FullyConnectedGraphConverter().convert_dataframe_to_data_list(
+        df.sample(fraction=1, shuffle=True, seed=1)
+    )
+    assert all(g.jersey_numbers.tolist() == list(range(1, 12)) * 2 for g in graphs)
+
+
+def test_lineup_change_discards_chain():
+    df = transformed_frames().with_columns(
+        pl.when((pl.col("event_index") == 2) & (pl.col("node_id") == 1))
+        .then(99)
+        .otherwise(pl.col("node_id"))
+        .alias("node_id")
+    )
+    graphs, _ = FullyConnectedGraphConverter().convert_dataframe_to_data_list(df)
+    assert {g.chain_id for g in graphs} == {1}
+
+
+def test_converter_rejects_chain_spanning_games():
+    df = transformed_frames().with_columns(
+        pl.when(pl.col("event_index") == 2)
+        .then(2)
+        .otherwise(pl.col("gameId"))
+        .alias("gameId")
+    )
+    graphs, _ = FullyConnectedGraphConverter().convert_dataframe_to_data_list(df)
+    assert {g.chain_id for g in graphs} == {1}

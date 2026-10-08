@@ -20,6 +20,7 @@ from sklearn.preprocessing import OneHotEncoder, QuantileTransformer
 from torch_geometric.data import InMemoryDataset
 from torch_geometric.transforms import Compose
 
+from soccerai.data.annotations import FRAME_KEYS
 from soccerai.data.config import SHOOTING_STATS, X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
 from soccerai.data.converters import GraphConverter
 from soccerai.data.transformers import (
@@ -71,7 +72,7 @@ class WorldCup2022Dataset(InMemoryDataset):
     MAX_BALL_RELATIVE_SPEED = 35.0
     # Bump when the preprocessing code changes in a way that must invalidate
     # previously processed files.
-    PROCESSING_VERSION = 3
+    PROCESSING_VERSION = 4
     # rosters were scraped in spring 2025, the tournament was played in Nov 2022
     AGE_SCRAPE_TO_TOURNAMENT_YEARS = 2.5
 
@@ -274,17 +275,24 @@ class WorldCup2022Dataset(InMemoryDataset):
                 "`scripts/patch_dataset_period.py` (or rebuild it) first"
             )
         valid_period = pl.col("period").is_in([1, 2, 3, 4])
-        n_invalid = df.filter(~valid_period.fill_null(False)).height
-        if n_invalid:
-            # no attacking side (penalty shoot-out, missing period)
-            logger.warning("Dropping {} row(s) with no valid period", n_invalid)
-            df = df.filter(valid_period.fill_null(False))
+        invalid_chains = df.filter(~valid_period.fill_null(False))["chain_id"].unique()
+        if invalid_chains.len():
+            logger.warning(
+                "Dropping {} chain(s) with no valid period", invalid_chains.len()
+            )
+            df = df.filter(~pl.col("chain_id").is_in(invalid_chains.implode()))
         if "homeTeamStartLeftExtraTime" not in df.columns:
             df = df.with_columns(
                 pl.lit(None, dtype=pl.Boolean).alias("homeTeamStartLeftExtraTime")
             )
 
         df = self._disambiguate_chains(df)
+        expected_frames = (
+            df.filter(pl.col("possessionEventType").ne_missing("SH"))
+            .select("chain_id", *FRAME_KEYS, "index")
+            .unique()
+            .rename({"index": "event_index"})
+        )
         # the raw event index orders the frames of a chain (the game clock
         # has a 1 s resolution and is often tied within a chain)
         df = df.rename({"index": "event_index"})
@@ -340,7 +348,7 @@ class WorldCup2022Dataset(InMemoryDataset):
                     pl.col(c)
                     .filter(pl.col("team").is_null())
                     .first()
-                    .over("gameEventId", "possessionEventId")
+                    .over(FRAME_KEYS)
                     .alias(f"{c}_ball")
                     for c in ["x", "y", "z", "cos", "sin", "vx", "vy"]
                 ]
@@ -356,6 +364,10 @@ class WorldCup2022Dataset(InMemoryDataset):
 
         df = df.with_columns(
             [
+                (
+                    pl.col("jerseyNum").cast(pl.Int64)
+                    + (pl.col("team") == "away").cast(pl.Int64) * 1000
+                ).alias("node_id"),
                 # (mm:ss) → s
                 (
                     (
@@ -418,7 +430,7 @@ class WorldCup2022Dataset(InMemoryDataset):
                 pl.col("team")
                 .filter(pl.col("is_ball_carrier") == 1)
                 .first()
-                .over(["gameEventId", "possessionEventId"])
+                .over(FRAME_KEYS)
                 .alias("possession_team_tmp")
             )
             .with_columns(
@@ -429,11 +441,20 @@ class WorldCup2022Dataset(InMemoryDataset):
             .drop("possession_team_tmp")
         ).drop_nulls(["is_possession_team"])
 
+        position_cols = ["x", "y"]
+        if self.cfg.include_ball_features:
+            position_cols += ["x_ball", "y_ball", "z_ball"]
+        valid_positions = pl.all_horizontal(
+            [pl.col(c).is_finite().fill_null(False) for c in position_cols]
+        )
+        df = df.filter(valid_positions)
+        df = self._discard_broken_chains(df, expected_frames)
+
         # The goal that matters for a shot is the one attacked by the team in
         # possession: every node gets that goal (defenders included). A team
         # attacks to the right iff it is the home team and the home team
         # attacks to the right in the current period, or vice versa.
-        frame_key = ["gameEventId", "possessionEventId"]
+        frame_key = FRAME_KEYS
         attacks_right = (pl.col("team") == "home") == home_attacks_right_expr()
         possession_attacks_right = (
             pl.when(pl.col("is_possession_team") == 1)
@@ -498,6 +519,30 @@ class WorldCup2022Dataset(InMemoryDataset):
         )
 
     @staticmethod
+    def _discard_broken_chains(
+        df: pl.DataFrame, expected: pl.DataFrame
+    ) -> pl.DataFrame:
+        """Preserve the annotated sequence: never silently remove its frames."""
+        keys = ["chain_id", *FRAME_KEYS, "event_index"]
+        missing = expected.join(
+            df.select(keys).unique(), on=keys, how="anti", nulls_equal=True
+        )
+        invalid = (
+            df.group_by(["chain_id", *FRAME_KEYS])
+            .agg(
+                pl.len().alias("players"),
+                pl.col("is_ball_carrier").sum().alias("carriers"),
+            )
+            .filter((pl.col("players") != 22) | (pl.col("carriers") != 1))
+        )
+        broken = set(missing["chain_id"].to_list()) | set(invalid["chain_id"].to_list())
+        if broken:
+            logger.warning(
+                "Dropping {} chain(s) with missing or invalid frames", len(broken)
+            )
+        return df.filter(~pl.col("chain_id").is_in(sorted(broken)))
+
+    @staticmethod
     def _disambiguate_chains(df: pl.DataFrame) -> pl.DataFrame:
         """
         Make every frame belong to exactly one chain and every negative chain
@@ -509,13 +554,20 @@ class WorldCup2022Dataset(InMemoryDataset):
         a shot (possible when the shot's own chain was too short to be kept)
         are dropped as label noise.
         """
-        frame_key = ["gameEventId", "possessionEventId"]
+        bad_boundary = (
+            (pl.col("gameId").n_unique().over("chain_id") != 1)
+            | (pl.col("period").n_unique().over("chain_id") != 1)
+            | (pl.col("label").n_unique().over("chain_id") != 1)
+        )
+        df = df.filter(~bad_boundary)
+        frame_key = FRAME_KEYS
 
         chain_end = pl.col("index").max().over("chain_id")
         df = df.with_columns(chain_end.alias("_chain_end"))
         df = df.filter(
             pl.col("_chain_end") == pl.col("_chain_end").min().over(frame_key)
         ).drop("_chain_end")
+        df = df.filter(pl.col("chain_id") == pl.col("chain_id").min().over(frame_key))
 
         chain_has_shot = (pl.col("possessionEventType") == "SH").any().over("chain_id")
         return df.filter(~((pl.col("label") == 0) & chain_has_shot))
@@ -543,6 +595,7 @@ class WorldCup2022Dataset(InMemoryDataset):
             "gameId",
             "chain_id",
             "jerseyNum",
+            "node_id",
         ]
         pos_cols = ["x", "y"]
         goal_cols = ["x_goal", "y_goal"]
@@ -744,6 +797,8 @@ class WorldCup2022Dataset(InMemoryDataset):
             df = self._drop_games_without_negatives(df)
 
         train_df, val_df = self._split_games(df, all_game_ids)
+        if train_df.is_empty() or val_df.is_empty():
+            raise ValueError("Preprocessing left an empty training or validation split")
         self._log_split("train", train_df)
         self._log_split("val", val_df)
 
@@ -759,6 +814,10 @@ class WorldCup2022Dataset(InMemoryDataset):
         val_data_list, _ = self.converter.convert_dataframe_to_data_list(
             val_transformed
         )
+        if not train_data_list or not val_data_list:
+            raise ValueError(
+                "Graph conversion left an empty training or validation split"
+            )
 
         self.save(train_data_list, self.processed_paths[0])
         self.save(val_data_list, self.processed_paths[1])

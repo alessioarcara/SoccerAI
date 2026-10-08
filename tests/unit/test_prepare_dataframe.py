@@ -27,16 +27,16 @@ def _prepare(chains):
 def test_goal_side_follows_game_period(period, start_left, start_left_et, home_goal):
     df = _prepare(
         [
-            dict(
-                game_id=1,
-                chain_id=0,
-                label=1,
-                n_frames=1,
-                period=period,
-                home_start_left=start_left,
-                home_start_left_et=start_left_et,
-                possession="home",
-            )
+            {
+                "game_id": 1,
+                "chain_id": 0,
+                "label": 1,
+                "n_frames": 1,
+                "period": period,
+                "home_start_left": start_left,
+                "home_start_left_et": start_left_et,
+                "possession": "home",
+            }
         ]
     )
     # every node refers to the goal attacked by the possession (home) team
@@ -47,7 +47,9 @@ def test_goal_side_follows_game_period(period, start_left, start_left_et, home_g
 
 def test_prepare_dataframe_requires_period_column():
     ds = make_dataset_stub(make_data_cfg())
-    raw = make_raw_df([dict(game_id=1, chain_id=0, label=1, n_frames=1)]).drop("period")
+    raw = make_raw_df([{"game_id": 1, "chain_id": 0, "label": 1, "n_frames": 1}]).drop(
+        "period"
+    )
     with pytest.raises(ValueError, match="period"):
         ds._prepare_dataframe(raw)
 
@@ -55,13 +57,13 @@ def test_prepare_dataframe_requires_period_column():
 def test_prepare_dataframe_drops_ball_rows_and_shot_frames():
     df = _prepare(
         [
-            dict(
-                game_id=1,
-                chain_id=0,
-                label=1,
-                n_frames=3,
-                event_types=["PA", "CR", "SH"],
-            ),
+            {
+                "game_id": 1,
+                "chain_id": 0,
+                "label": 1,
+                "n_frames": 3,
+                "event_types": ["PA", "CR", "SH"],
+            },
         ]
     )
     # the shot frame is removed, the ball row is folded into per-player columns
@@ -71,8 +73,78 @@ def test_prepare_dataframe_drops_ball_rows_and_shot_frames():
     assert df.filter(pl.col("is_ball_carrier") == 1).height == 2
 
 
+@pytest.mark.parametrize("frame", [0, 1, 2])
+def test_missing_carrier_discards_whole_chain(frame):
+    raw = make_raw_df(
+        [
+            {"game_id": 1, "chain_id": 0, "label": 1, "n_frames": 3},
+            {"game_id": 1, "chain_id": 1, "label": 0, "n_frames": 1},
+        ]
+    ).with_columns(
+        pl.when(pl.col("index") == frame)
+        .then(pl.lit("Unknown actor"))
+        .otherwise(pl.col("playerName"))
+        .alias("playerName")
+    )
+    df = make_dataset_stub(make_data_cfg())._prepare_dataframe(raw)
+    assert df["chain_id"].unique().to_list() == [1]
+
+
+def test_missing_ball_position_discards_chain_only_when_ball_features_used():
+    raw = make_raw_df(
+        [
+            {"game_id": 1, "chain_id": 0, "label": 1, "n_frames": 2},
+            {"game_id": 1, "chain_id": 1, "label": 0, "n_frames": 1},
+        ]
+    ).with_columns(
+        pl.when((pl.col("index") == 1) & pl.col("team").is_null())
+        .then(None)
+        .otherwise(pl.col("x"))
+        .alias("x")
+    )
+    with_ball = make_dataset_stub(make_data_cfg())._prepare_dataframe(raw)
+    without_ball = make_dataset_stub(
+        make_data_cfg(include_ball_features=False)
+    )._prepare_dataframe(raw)
+    assert with_ball["chain_id"].unique().to_list() == [1]
+    assert set(without_ball["chain_id"].to_list()) == {0, 1}
+
+
+def test_chain_cannot_cross_period_boundary():
+    raw = make_raw_df(
+        [
+            {"game_id": 1, "chain_id": 0, "label": 0, "n_frames": 2},
+            {"game_id": 1, "chain_id": 1, "label": 0, "n_frames": 1},
+        ]
+    ).with_columns(
+        pl.when(pl.col("index") == 1)
+        .then(2)
+        .otherwise(pl.col("period"))
+        .alias("period")
+    )
+    df = make_dataset_stub(make_data_cfg())._prepare_dataframe(raw)
+    assert df["chain_id"].unique().to_list() == [1]
+
+
+def test_unknown_possession_frame_cannot_silently_shorten_chain():
+    raw = make_raw_df(
+        [
+            {
+                "game_id": 1,
+                "chain_id": 0,
+                "label": 0,
+                "n_frames": 3,
+                "event_types": ["PA", None, "PA"],
+            },
+            {"game_id": 1, "chain_id": 1, "label": 0, "n_frames": 1},
+        ]
+    )
+    df = make_dataset_stub(make_data_cfg())._prepare_dataframe(raw)
+    assert df["chain_id"].unique().to_list() == [1]
+
+
 def test_age_buckets_handle_missing_ages():
-    raw = make_raw_df([dict(game_id=1, chain_id=0, label=1, n_frames=1)])
+    raw = make_raw_df([{"game_id": 1, "chain_id": 0, "label": 1, "n_frames": 1}])
     # player with no age anywhere -> "unknown"; player 0 (null age) takes it from Age Info
     raw = raw.with_columns(
         pl.when((pl.col("jerseyNum") == "4") & (pl.col("team") == "home"))
@@ -97,21 +169,27 @@ def test_age_buckets_handle_missing_ages():
 def test_overlapping_positive_chains_are_disambiguated():
     base = make_raw_df(
         [
-            dict(
-                game_id=1,
-                chain_id=0,
-                label=1,
-                n_frames=3,
-                event_types=["PA", "PA", "SH"],
-            ),
-            dict(game_id=1, chain_id=1, label=1, n_frames=2, event_types=["PA", "SH"]),
-            dict(
-                game_id=1,
-                chain_id=2,
-                label=0,
-                n_frames=3,
-                event_types=["PA", "SH", "PA"],
-            ),
+            {
+                "game_id": 1,
+                "chain_id": 0,
+                "label": 1,
+                "n_frames": 3,
+                "event_types": ["PA", "PA", "SH"],
+            },
+            {
+                "game_id": 1,
+                "chain_id": 1,
+                "label": 1,
+                "n_frames": 2,
+                "event_types": ["PA", "SH"],
+            },
+            {
+                "game_id": 1,
+                "chain_id": 2,
+                "label": 0,
+                "n_frames": 3,
+                "event_types": ["PA", "SH", "PA"],
+            },
         ]
     )
     # chain 1 (second shot of the possession) also contains the frames of chain 0
@@ -157,7 +235,14 @@ def test_processed_file_names_depend_on_config():
 
 
 def test_attack_direction_normalisation_mirrors_frames_attacking_left():
-    spec = dict(game_id=1, chain_id=0, label=1, n_frames=1, period=2, possession="home")
+    spec = {
+        "game_id": 1,
+        "chain_id": 0,
+        "label": 1,
+        "n_frames": 1,
+        "period": 2,
+        "possession": "home",
+    }
     raw = make_raw_df([spec])
     plain = make_dataset_stub(make_data_cfg())._prepare_dataframe(raw).sort("jerseyNum")
     normed = (
@@ -180,7 +265,14 @@ def test_attack_direction_normalisation_mirrors_frames_attacking_left():
 
 
 def test_attack_direction_normalisation_keeps_frames_attacking_right():
-    spec = dict(game_id=1, chain_id=0, label=0, n_frames=1, period=2, possession="away")
+    spec = {
+        "game_id": 1,
+        "chain_id": 0,
+        "label": 0,
+        "n_frames": 1,
+        "period": 2,
+        "possession": "away",
+    }
     raw = make_raw_df([spec])
     plain = make_dataset_stub(make_data_cfg())._prepare_dataframe(raw)
     normed = make_dataset_stub(
@@ -192,7 +284,7 @@ def test_attack_direction_normalisation_keeps_frames_attacking_right():
 
 
 def _feature_names(cfg):
-    raw = make_raw_df([dict(game_id=1, chain_id=0, label=1, n_frames=2)])
+    raw = make_raw_df([{"game_id": 1, "chain_id": 0, "label": 1, "n_frames": 2}])
     ds = make_dataset_stub(cfg)
     df = ds._prepare_dataframe(raw)
     out = ds._create_preprocessor(df).fit_transform(df)
@@ -216,7 +308,7 @@ def test_roster_and_clock_features_are_optional():
 
 
 def test_event_index_orders_frames_of_a_chain():
-    raw = make_raw_df([dict(game_id=1, chain_id=0, label=1, n_frames=3)])
+    raw = make_raw_df([{"game_id": 1, "chain_id": 0, "label": 1, "n_frames": 3}])
     ds = make_dataset_stub(make_data_cfg())
     df = ds._prepare_dataframe(raw)
     assert "index" not in df.columns
