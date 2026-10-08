@@ -32,21 +32,18 @@ T = TypeVar("T")
 
 
 def chain_level_predictions(
-    preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Any
+    preds_probs: torch.Tensor, true_labels: torch.Tensor, masks: Any
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
-    Reduce per-frame predictions of a temporal batch to one prediction per
-    chain, taken at the last valid (non padded) frame.
+    Reduce per-frame predictions of a temporal batch, shape (T_max, B), to one
+    prediction per chain, taken at the last valid (non padded) frame.
 
     The training loss concentrates on the end of each chain and the label is
     a property of the whole chain, so scoring every frame (including the
     first ones, which are indistinguishable between classes) would measure
-    a different task. Non temporal batches are returned unchanged.
+    a different task.
     """
-    if not isinstance(batch, Discrete_Signal) or preds_probs.dim() != 2:
-        return preds_probs, true_labels
-
-    masks = torch.as_tensor(np.asarray(batch.masks), dtype=torch.bool)  # (T, B)
+    masks = torch.as_tensor(np.asarray(masks), dtype=torch.bool)  # (T, B)
     last_valid = masks.sum(dim=0) - 1  # (B,)
     chain_idx = torch.arange(masks.shape[1])
 
@@ -58,6 +55,10 @@ def chain_level_predictions(
 
 
 class Metric(ABC):
+    # True for metrics that need the per-frame outputs of a temporal batch;
+    # the others receive one prediction per chain (see `TemporalTrainer`)
+    frame_level: bool = False
+
     @abstractmethod
     def update(
         self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
@@ -95,9 +96,6 @@ class BinaryConfusionMatrix(Metric):
     def update(
         self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
     ) -> None:
-        preds_probs, true_labels = chain_level_predictions(
-            preds_probs, true_labels, batch
-        )
         preds_labels_flat = (preds_probs >= self.cfg.thr).view(-1).long().cpu()
         true_labels_flat = true_labels.view(-1).long().cpu()
 
@@ -168,9 +166,6 @@ class BinaryPrecisionRecallCurve(Metric):
     def update(
         self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
     ) -> None:
-        preds_probs, true_labels = chain_level_predictions(
-            preds_probs, true_labels, batch
-        )
         preds_flat = preds_probs.detach().view(-1).cpu()
         labels_flat = true_labels.detach().view(-1).cpu()
 
@@ -227,6 +222,8 @@ class BinaryPrecisionRecallCurve(Metric):
 
 
 class Collector(Metric, Generic[T]):
+    frame_level = True
+
     def __init__(self, target_label: int, cfg: Config, feature_names: Sequence[str]):
         self.cfg = cfg
         self.target_label = target_label

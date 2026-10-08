@@ -65,9 +65,7 @@ def test_prepare_dataframe_drops_ball_rows_and_shot_frames():
         ]
     )
     # the shot frame is removed, the ball row is folded into per-player columns
-    assert df["possessionEventType"].unique().to_list() == ["CR", "PA"] or set(
-        df["possessionEventType"].unique().to_list()
-    ) == {"PA", "CR"}
+    assert set(df["possessionEventType"].unique().to_list()) == {"PA", "CR"}
     assert df.height == 2 * 22
     assert "x_ball" in df.columns and "team" not in df.columns
     assert df.filter(pl.col("is_ball_carrier") == 1).height == 2
@@ -228,3 +226,23 @@ def test_event_index_orders_frames_of_a_chain():
         .sort("gameEventId")
     )
     assert per_frame["event_index"].to_list() == [0, 1, 2]
+
+
+@pytest.mark.parametrize("split_mode", ["chronological", "random"])
+def test_split_games_is_disjoint_and_covers_every_game(split_mode):
+    ds = make_dataset_stub(make_data_cfg(split_mode=split_mode))
+    df = pl.DataFrame({"gameId": [g for g in range(1, 9) for _ in range(3)]})
+    train, val = ds._split_games(df, list(range(1, 9)))
+    train_games = set(train["gameId"].to_list())
+    val_games = set(val["gameId"].to_list())
+    assert not train_games & val_games
+    assert train_games | val_games == set(range(1, 9))
+    assert len(val_games) == 2  # val_ratio = 0.25
+
+
+def test_random_split_ratio_ignores_dropped_games():
+    # 8 games known, only 4 left after dropping: val takes 25% of the 4
+    ds = make_dataset_stub(make_data_cfg(split_mode="random"))
+    df = pl.DataFrame({"gameId": [1, 2, 3, 4]})
+    train, val = ds._split_games(df, list(range(1, 9)))
+    assert val.height == 1 and train.height == 3

@@ -179,21 +179,17 @@ class GCNIIBackbone(nn.Module):
     ):
         h = h0 = self.node_proj(x)
 
-        for layer_idx, (conv, norm) in enumerate(zip(self.convs, self.norms)):
-            h = self.drop(
-                F.relu(
-                    norm(
-                        conv(
-                            h,
-                            x_0=h0,
-                            edge_index=edge_index,
-                            edge_weight=edge_weight,
-                        ),
-                        batch=batch,
-                        batch_size=batch_size,
-                    ),
-                    inplace=True,
-                )
+        for conv, norm in zip(self.convs, self.norms):
+            h = apply_layer(
+                conv,
+                norm,
+                self.drop,
+                h,
+                batch,
+                batch_size,
+                x_0=h0,
+                edge_index=edge_index,
+                edge_weight=edge_weight,
             )
 
         return h
@@ -241,11 +237,9 @@ class GraphSAGEBackbone(nn.Module):
     ):
         h = x
 
-        for layer_idx, (conv, norm) in enumerate(zip(self.convs, self.norms)):
-            h = self.drop(
-                F.relu(
-                    norm(conv(h, edge_index), batch=batch, batch_size=batch_size),
-                )
+        for conv, norm in zip(self.convs, self.norms):
+            h = apply_layer(
+                conv, norm, self.drop, h, batch, batch_size, edge_index=edge_index
             )
 
         return h

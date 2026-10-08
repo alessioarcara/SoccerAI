@@ -100,5 +100,6 @@ def test_diffpool_exposes_auxiliary_losses(tmp_path):
     model = build_model(cfg, DatasetStub())
     batch = TemporalChainsDataset.collate([make_chain(2, 1.0, 0)])
     run_chain(model, list(batch))
-    assert model.aux_loss.ndim == 0 and model.aux_loss.requires_grad
-    assert float(model.aux_loss) >= 0.0
+    assert model.aux_loss.shape == (1,) and model.aux_loss.requires_grad
+    assert float(model.aux_loss.min()) >= 0.0
+

@@ -26,6 +26,7 @@ import yaml
 from tabulate import tabulate
 
 from soccerai.training.checkpoint import load_checkpoint
+from soccerai.training.trainer_config import deep_merge
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -53,15 +54,6 @@ EXPERIMENTS: list[tuple[str, str, dict[str, Any], int]] = [
 ]
 
 
-def deep_update(d: dict[str, Any], u: dict[str, Any]) -> dict[str, Any]:
-    for k, v in u.items():
-        if isinstance(v, dict) and isinstance(d.get(k), dict):
-            deep_update(d[k], v)
-        else:
-            d[k] = v
-    return d
-
-
 def run_experiment(
     name: str,
     run_name: str,
@@ -75,7 +67,7 @@ def run_experiment(
     base = yaml.safe_load((cfg_dir / "base.yaml").read_text())
     base["run_name"] = run_name
     base["collector"]["n_frames"] = collector_frames
-    deep_update(base, overrides)
+    base = deep_merge(base, overrides)
     (cfg_dir / "base.yaml").write_text(yaml.safe_dump(base))
 
     ckpt_dir = ROOT / "checkpoints" / run_name

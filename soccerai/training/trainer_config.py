@@ -126,9 +126,10 @@ class TrainerConfig(StrictModel):
     bs: int
     lr: float
     # peak learning rate of the one-cycle schedule (None = lr)
-    max_lr: float | None = None
+    max_lr: Annotated[float, Field(gt=0)] | None = None
     # weight of the positive class in the BCE loss: a number, "auto" for
-    # #negatives / #positives of the training chains, or None
+    # #negatives / #positives of the training examples (chains with a temporal
+    # model, frames otherwise), or None
     pos_weight: float | Literal["auto"] | None = None
     wd: float
     n_epochs: int
@@ -162,7 +163,7 @@ class DataConfig(StrictModel):
     # mirror frames so that the possession team always attacks towards x = 105
     normalize_attack_direction: bool = True
     # keep only the last frames of every chain (None = whole chain)
-    max_chain_len: int | None = 12
+    max_chain_len: Annotated[int, Field(gt=0)] | None = 12
     # per-player scraped statistics (weight, market value, shooting record,
     # age); constant per player, they let the model identify players
     use_roster_features: bool = False
@@ -201,14 +202,14 @@ def _load_yaml(path: PathLike):
     return yaml.safe_load(Path(path).expanduser().read_text()) or {}
 
 
-def _deep_merge(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
+def deep_merge(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
     """
     Recursively merge dict `b` into dict `a`
     """
     result = a.copy()
     for k, v in b.items():
         if k in result and isinstance(result[k], dict) and isinstance(v, dict):
-            result[k] = _deep_merge(result[k], v)
+            result[k] = deep_merge(result[k], v)
         else:
             result[k] = v
     return result
@@ -230,5 +231,5 @@ def build_config(config_dir: Path) -> Config:
     model_yaml_path = config_dir / f"{base_cfg_dict['run_name']}.yaml"
     model_cfg_dict = _load_yaml(model_yaml_path)
 
-    merged_dict = _deep_merge(base_cfg_dict, model_cfg_dict)
+    merged_dict = deep_merge(base_cfg_dict, model_cfg_dict)
     return Config(**merged_dict)

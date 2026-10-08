@@ -17,7 +17,9 @@ CONFIG_DIR = Path("configs")
 
 
 def _dataset(split: str = "train") -> WorldCup2022Dataset:
-    cfg = build_config(CONFIG_DIR).data
+    # same arguments as scripts/train.py, so that the training cache is reused
+    full_cfg = build_config(CONFIG_DIR)
+    cfg = full_cfg.data
     converter = create_graph_converter(cfg.connection_mode, cfg.edge_length_scale)
     return WorldCup2022Dataset(
         root="soccerai/data/resources",
@@ -25,6 +27,7 @@ def _dataset(split: str = "train") -> WorldCup2022Dataset:
         force_reload=False,
         split=split,
         cfg=cfg,
+        random_state=full_cfg.seed,
     )
 
 
@@ -48,7 +51,8 @@ def test_augmentations_flip_the_pitch_width():
     assert torch.allclose(dataset[0].x, original)  # the stored data is untouched
 
 
-def test_splits_are_disjoint_and_balanced():
+def test_splits_are_balanced():
+    # disjointness of the games is tested on `_split_games` in the unit tests
     train, val = _dataset("train"), _dataset("val")
     train_rate = train._data.y.mean().item()
     val_rate = val._data.y.mean().item()

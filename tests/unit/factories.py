@@ -14,23 +14,11 @@ from collections.abc import Sequence
 import numpy as np
 import polars as pl
 
-PLAYERS_PER_TEAM = 11
-PITCH_LENGTH = 105.0
-PITCH_WIDTH = 68.0
+from soccerai.data.config import SHOOTING_STATS, X_GOAL_RIGHT, Y_GOAL
 
-SHOOTING_STATS = [
-    "goals",
-    "shots",
-    "shots_on_target",
-    "shots_on_target_pct",
-    "shots_per90",
-    "shots_on_target_per90",
-    "goals_per_shot",
-    "goals_per_shot_on_target",
-    "average_shot_distance",
-    "pens_made",
-    "pens_att",
-]
+PLAYERS_PER_TEAM = 11
+PITCH_LENGTH = X_GOAL_RIGHT
+PITCH_WIDTH = 2 * Y_GOAL
 
 ROLES = ["GK", "RCB", "LCB", "RB", "LB", "DM", "CM", "AM", "RW", "LW", "CF"]
 

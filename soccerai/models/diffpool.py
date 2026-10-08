@@ -63,6 +63,31 @@ class DenseSageGNN(torch.nn.Module):
         return x
 
 
+EPS = 1e-15
+
+
+def diffpool_aux_losses(
+    adj: torch.Tensor, s: torch.Tensor, mask: OptTensor = None
+) -> torch.Tensor:
+    """
+    Per-graph DiffPool regularisers: link-prediction loss plus assignment
+    entropy, shape (B,). Same terms as `dense_diff_pool`, which only returns
+    their batch mean, so that the trainer can drop padded frames.
+    """
+    s = torch.softmax(s, dim=-1)
+    if mask is not None:
+        s = s * mask.unsqueeze(-1).to(s.dtype)
+    n = adj.size(-1)
+    link = (adj - s @ s.transpose(1, 2)).flatten(1).norm(p=2, dim=1) / (n * n)
+    ent = (-s * torch.log(s + EPS)).sum(dim=-1)  # (B, N)
+    if mask is None:
+        ent = ent.mean(dim=-1)
+    else:
+        m = mask.to(ent.dtype)
+        ent = (ent * m).sum(dim=-1) / m.sum(dim=-1).clamp(min=1.0)
+    return link + ent
+
+
 class HierarchicalGNN(nn.Module):
     def __init__(self, din: int, glob_din: int, cfg: ModelConfig, head: nn.Module):
         super().__init__()
@@ -115,16 +140,18 @@ class HierarchicalGNN(nn.Module):
         s = self.gnn1_pool(x, adj, mask)
         x = self.gnn1_embed(x, adj, mask)
 
-        x, adj, link_loss1, ent_loss1 = pyg_nn.dense_diff_pool(x, adj, s, mask)
+        # link-prediction and assignment-entropy regularisers of DiffPool,
+        # one value per graph (B,); the trainer averages them over the real
+        # (non-padded) graphs and adds them to the classification loss
+        aux_loss = diffpool_aux_losses(adj, s, mask)
+        x, adj, _, _ = pyg_nn.dense_diff_pool(x, adj, s, mask)
 
         s = self.gnn2_pool(x, adj)
         x = self.gnn2_embed(x, adj)
 
-        x, adj, link_loss2, ent_loss2 = pyg_nn.dense_diff_pool(x, adj, s)
-
-        # link-prediction and assignment-entropy regularisers of DiffPool;
-        # the trainer adds them to the classification loss
-        self.aux_loss = link_loss1 + ent_loss1 + link_loss2 + ent_loss2
+        aux_loss = aux_loss + diffpool_aux_losses(adj, s)
+        x, adj, _, _ = pyg_nn.dense_diff_pool(x, adj, s)
+        self.aux_loss = aux_loss
 
         x = self.gnn3_embed(x, adj)
 

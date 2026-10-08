@@ -55,7 +55,7 @@ class WorldCup2022Dataset(InMemoryDataset):
     MAX_BALL_RELATIVE_SPEED = 35.0
     # Bump when the preprocessing code changes in a way that must invalidate
     # previously processed files.
-    PROCESSING_VERSION = 2
+    PROCESSING_VERSION = 3
     # rosters were scraped in spring 2025, the tournament was played in Nov 2022
     AGE_SCRAPE_TO_TOURNAMENT_YEARS = 2.5
 
@@ -103,11 +103,12 @@ class WorldCup2022Dataset(InMemoryDataset):
         """
         Short hash of everything that determines the processed files, so that
         a change of data configuration (or of the preprocessing code) can never
-        silently reuse stale caches.
+        silently reuse stale caches. Options applied only at load time
+        (augmentations) are left out, so toggling them reuses the cache.
         """
         payload = json.dumps(
             {
-                "data": self.cfg.model_dump(),
+                "data": self.cfg.model_dump(exclude={"use_augmentations"}),
                 "converter": type(self.converter).__name__,
                 "random_state": self.random_state,
                 "version": self.PROCESSING_VERSION,
@@ -140,14 +141,20 @@ class WorldCup2022Dataset(InMemoryDataset):
           time, so with 0.25 the 48 group-stage games train and the 16
           knock-out games validate), decided on `all_game_ids` before any
           game is dropped.
-        - "random": a seeded random subset of the games present in `df`.
+        - "random": a seeded random `val_ratio` subset of the games present
+          in `df` (after any game is dropped).
         """
         present = sorted(df.select("gameId").unique()["gameId"].to_list())
-        n_val = max(1, round(self.cfg.val_ratio * len(all_game_ids)))
 
         if self.cfg.split_mode == "chronological":
+            n_val = max(1, round(self.cfg.val_ratio * len(all_game_ids)))
             val_games = set(sorted(all_game_ids)[len(all_game_ids) - n_val :])
         elif self.cfg.split_mode == "random":
+            if len(present) < 2:
+                raise ValueError(f"Cannot split {len(present)} game(s) in two")
+            n_val = min(
+                max(1, round(self.cfg.val_ratio * len(present))), len(present) - 1
+            )
             rng = np.random.default_rng(self.random_state)
             val_games = set(rng.permutation(present)[:n_val].tolist())
         else:
@@ -195,12 +202,18 @@ class WorldCup2022Dataset(InMemoryDataset):
         kept = last_carrier.filter((pl.col("x_goal") - pl.col("x")).abs() <= window)[
             "chain_id"
         ]
-        dropped = last_carrier.height - kept.len()
+        n_positive = df.filter(pl.col("label") == 1)["chain_id"].n_unique()
+        no_carrier = n_positive - last_carrier.height
+        if no_carrier > 0:
+            logger.warning(
+                "Dropping {} positive chain(s) with no ball carrier in any frame",
+                no_carrier,
+            )
         logger.info(
             "Positive chains ending within {} m of the goal line: {} kept, {} dropped",
             window,
             kept.len(),
-            dropped,
+            n_positive - kept.len(),
         )
         return df.filter((pl.col("label") == 0) | pl.col("chain_id").is_in(kept))
 
@@ -222,6 +235,12 @@ class WorldCup2022Dataset(InMemoryDataset):
                 "The dataset has no `period` column: run "
                 "`scripts/patch_dataset_period.py` (or rebuild it) first"
             )
+        valid_period = pl.col("period").is_in([1, 2, 3, 4])
+        n_invalid = df.filter(~valid_period.fill_null(False)).height
+        if n_invalid:
+            # no attacking side (penalty shoot-out, missing period)
+            logger.warning("Dropping {} row(s) with no valid period", n_invalid)
+            df = df.filter(valid_period.fill_null(False))
         if "homeTeamStartLeftExtraTime" not in df.columns:
             df = df.with_columns(
                 pl.lit(None, dtype=pl.Boolean).alias("homeTeamStartLeftExtraTime")
@@ -287,7 +306,9 @@ class WorldCup2022Dataset(InMemoryDataset):
                     .alias(f"{c}_ball")
                     for c in ["x", "y", "z", "cos", "sin", "vx", "vy"]
                 ]
-            ).drop("z")
+            )
+        # the players' own height above the pitch is (near) constant noise
+        df = df.drop("z", strict=False)
 
         df = (
             df.filter(pl.col("team").is_not_null())
@@ -509,6 +530,9 @@ class WorldCup2022Dataset(InMemoryDataset):
         if self.cfg.include_ball_features:
             # the player height is consumed by the ball pipeline (`dz`)
             exclude_cols.update(ball_cols + ["height_cm"])
+        elif not self.cfg.use_roster_features:
+            # the nominal height is a constant, not a feature
+            exclude_cols.add("height_cm")
         num_cols = [c for c in df.columns if c not in exclude_cols]
 
         # Pipelines ------------------------------------------------------- #

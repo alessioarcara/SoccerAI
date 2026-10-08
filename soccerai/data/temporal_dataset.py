@@ -56,6 +56,9 @@ class TemporalChainsDataset(Dataset):
         mostly padding for the rest of the batch, and the chain length itself
         differs between classes (positive chains lose their shot frame).
         """
+        if max_chain_len is not None and max_chain_len < 1:
+            raise ValueError(f"max_chain_len must be >= 1 or None, got {max_chain_len}")
+
         tmp_transform = dataset.transform
         dataset.transform = None
 

@@ -171,6 +171,13 @@ class ClippedScaler(BaseTransformer):
     def __init__(self, max_abs: float = 1.0):
         self.max_abs = max_abs
 
+    def fit(self, X, y=None):
+        # arrays have no column names: name them like scikit-learn (x0, x1, ...)
+        width = np.asarray(X.to_numpy() if isinstance(X, pl.DataFrame) else X).shape[1]
+        fallback = [f"x{i}" for i in range(width)]
+        self.feature_names_in_ = np.asarray(_column_names(X, fallback), dtype=object)
+        return self
+
     def get_feature_names_out(self, input_features=None) -> np.ndarray:
         return np.asarray(self.feature_names_in_, dtype=object)
 

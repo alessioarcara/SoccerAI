@@ -7,7 +7,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import wandb
 from loguru import logger
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR
@@ -16,8 +15,9 @@ from torch_geometric.data import Batch
 from torch_geometric_temporal.signal import Discrete_Signal
 from tqdm import tqdm
 
+import wandb
 from soccerai.training.callbacks import Callback, EarlyStoppingCallback
-from soccerai.training.metrics import Metric
+from soccerai.training.metrics import Metric, chain_level_predictions
 from soccerai.training.trainer_config import Config
 
 BatchEvalResult = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
@@ -66,7 +66,9 @@ class BaseTrainer(ABC):
         # warm-up to `max_lr` over the first 10% of the steps, then anneal
         self.scheduler = OneCycleLR(
             self.optim,
-            max_lr=cfg.trainer.max_lr or cfg.trainer.lr,
+            max_lr=(
+                cfg.trainer.lr if cfg.trainer.max_lr is None else cfg.trainer.max_lr
+            ),
             total_steps=cfg.trainer.n_epochs * len(self.train_loader),
             pct_start=0.1,
         )
@@ -89,15 +91,22 @@ class BaseTrainer(ABC):
     def _get_data_iterable(self, split: str) -> TorchDataLoader | None:
         return self.train_loader if split == "train" else self.val_loader
 
-    def _aux_loss(self) -> torch.Tensor | float:
+    def _aux_loss(self) -> torch.Tensor:
         """
         Auxiliary loss exposed by the model after its forward pass (e.g. the
         DiffPool link/entropy regularisers), scaled by the configured weight.
+        Either a scalar or one value per graph of the batch, shape (B,).
         """
         aux = getattr(self.model, "aux_loss", None)
         if aux is None:
-            return 0.0
+            return torch.zeros((), device=self.device)
         return self.cfg.trainer.aux_loss_weight * aux
+
+    def _per_example(
+        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, item: Any
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """One prediction and label per training example (graph or chain)."""
+        return preds_probs, true_labels
 
     @staticmethod
     def _num_examples(item: Any) -> int:
@@ -202,8 +211,14 @@ class BaseTrainer(ABC):
             total_loss += loss.item() * n_examples
             total_examples += n_examples
 
+            example_preds, example_labels = self._per_example(
+                preds_probs, true_labels, item
+            )
             for m in self.metrics:
-                m.update(preds_probs, true_labels, item)
+                if m.frame_level:
+                    m.update(preds_probs, true_labels, item)
+                else:
+                    m.update(example_preds, example_labels, item)
 
         mean_loss = total_loss / max(total_examples, 1)
 
@@ -247,7 +262,7 @@ class Trainer(BaseTrainer):
             batch=batch.batch,
             batch_size=batch.num_graphs,
         )
-        loss: torch.Tensor = self.criterion(out, batch.y) + self._aux_loss()
+        loss: torch.Tensor = self.criterion(out, batch.y) + self._aux_loss().mean()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         self.optim.step()
@@ -264,13 +279,21 @@ class Trainer(BaseTrainer):
             batch=batch.batch,
             batch_size=batch.num_graphs,
         )
-        loss = self.criterion(out, batch.y) + self._aux_loss()
+        loss = self.criterion(out, batch.y) + self._aux_loss().mean()
         preds_probs = torch.sigmoid(out)
         true_labels = batch.y.cpu().long()
         return loss, preds_probs, true_labels
 
 
 class TemporalTrainer(BaseTrainer):
+    def _per_example(
+        self,
+        preds_probs: torch.Tensor,
+        true_labels: torch.Tensor,
+        item: Discrete_Signal,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        return chain_level_predictions(preds_probs, true_labels, item.masks)
+
     def _compute_signal_loss_and_last_pred(
         self, signal: Discrete_Signal
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -295,7 +318,7 @@ class TemporalTrainer(BaseTrainer):
 
         h = None
         c = None
-        aux_loss: torch.Tensor | float = 0.0
+        aux_per_timestep = torch.zeros_like(weights)
         for t, snapshot in enumerate(signal):
             snapshot.to(self.device, non_blocking=True)
 
@@ -315,9 +338,14 @@ class TemporalTrainer(BaseTrainer):
                 out, snapshot.y, reduction="none", pos_weight=self.pos_weight
             ).squeeze(1)
             pred_per_timestep[t] = out.squeeze(-1)
-            aux_loss = aux_loss + self._aux_loss()
+            aux_per_timestep[t] = self._aux_loss().expand(B)
 
-        loss = (loss_per_timestep * weights).sum(dim=0).mean() + aux_loss / T_max
+        # auxiliary loss averaged over the real frames of every chain, so that
+        # padded (all-zero) snapshots contribute neither loss nor gradient
+        valid = masks.T.to(aux_per_timestep.dtype)  # (T_max, B)
+        aux_loss = (aux_per_timestep * valid).sum(dim=0) / lengths.clamp(min=1)
+
+        loss = (loss_per_timestep * weights).sum(dim=0).mean() + aux_loss.mean()
 
         return loss, pred_per_timestep
 

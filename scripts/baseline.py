@@ -24,6 +24,7 @@ from sklearn.preprocessing import StandardScaler
 from tabulate import tabulate
 from torch_geometric_temporal.signal import DynamicGraphTemporalSignal
 
+from soccerai.data.config import X_GOAL_RIGHT, Y_GOAL
 from soccerai.data.converters import create_graph_converter
 from soccerai.data.dataset import WorldCup2022Dataset
 from soccerai.data.temporal_dataset import TemporalChainsDataset
@@ -31,7 +32,7 @@ from soccerai.training.trainer_config import build_config
 from soccerai.training.utils import fix_random
 
 CONFIG_DIR = Path("configs")
-PITCH = np.array([105.0, 68.0])
+PITCH = np.array([X_GOAL_RIGHT, 2 * Y_GOAL])  # length, width (metres)
 PITCH_DIAG = float(np.hypot(*PITCH))
 
 
@@ -46,7 +47,9 @@ def chain_features(
 
     possession = x[:, idx["is_possession_team_1"]] == 1
     carrier_mask = x[:, idx["is_ball_carrier_1"]] == 1
-    carrier = int(np.argmax(carrier_mask)) if carrier_mask.any() else 0
+    if not carrier_mask.any():
+        raise ValueError("The last frame of the chain has no ball carrier")
+    carrier = int(np.argmax(carrier_mask))
 
     xy = x[:, [idx["x"], idx["y"]]] * PITCH  # metres
     c_xy = xy[carrier]
@@ -76,7 +79,7 @@ def chain_features(
         "carrier_vx": float(x[carrier, idx["vx"]]),
         "carrier_vy": float(x[carrier, idx["vy"]]),
         "carrier_speed": float(np.hypot(x[carrier, idx["vx"]], x[carrier, idx["vy"]])),
-        "nearest_opp": float(opp_dist.min()),
+        "nearest_opp": float(opp_dist.min()) if opp_dist.size else PITCH_DIAG,
         "n_opp_3m": float((opp_dist < 3.0).sum()),
         "n_opp_6m": float((opp_dist < 6.0).sum()),
         "n_blockers": float(blockers.sum()),

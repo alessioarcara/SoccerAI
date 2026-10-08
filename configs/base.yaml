@@ -37,7 +37,7 @@ trainer:
   max_lr: null             # peak of the one-cycle schedule (null = lr)
   wd: 1e-2
   gamma: 0.1               # per-frame loss discount towards the end of the chain
-  pos_weight: "auto"       # balance the BCE with #neg / #pos of the training chains
+  pos_weight: "auto"       # balance the BCE with #neg / #pos of the training chains (frames for static models)
   eval_rate: 1
 
   early_stopping_callback:

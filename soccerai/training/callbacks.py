@@ -5,10 +5,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import wandb
 from loguru import logger
 from torch_geometric.explain import Explainer, GNNExplainer
 
+import wandb
 from soccerai.training.checkpoint import save_checkpoint
 from soccerai.training.metrics import Collector
 from soccerai.training.trainer_config import Config

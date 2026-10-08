@@ -66,11 +66,13 @@ def main(args):
 
     callbacks = build_callbacks(cfg)
 
-    pos_weight = cfg.trainer.pos_weight
-    if pos_weight == "auto":
-        pos_weight = compute_pos_weight(train_ds._data.y.view(-1).numpy())
-        logger.info("Positive class weight (auto): {:.3f}", pos_weight)
+    def collectors(collector_cls, feature_names):
+        # with n_frames = 0 nothing would be plotted: skip the extraction work
+        if cfg.collector.n_frames <= 0:
+            return []
+        return [collector_cls(label, cfg, feature_names) for label in (1, 0)]
 
+    pos_weight = cfg.trainer.pos_weight
     if cfg.model.use_temporal:
         train_ds = TemporalChainsDataset.from_worldcup_dataset(
             train_ds, cfg.data.max_chain_len
@@ -78,6 +80,11 @@ def main(args):
         val_ds = TemporalChainsDataset.from_worldcup_dataset(
             val_ds, cfg.data.max_chain_len
         )
+        if pos_weight == "auto":
+            # one loss term per chain: balance #negative / #positive chains
+            pos_weight = compute_pos_weight(
+                [chain.targets[-1].item() for chain in train_ds.temporal_chains]
+            )
 
         train_loader = TorchDataLoader(
             train_ds,
@@ -101,14 +108,16 @@ def main(args):
             metrics=[
                 BinaryConfusionMatrix(cfg.metrics, -1),
                 BinaryPrecisionRecallCurve(-1),
-                ChainCollector(1, cfg, train_ds.feature_names),
-                ChainCollector(0, cfg, train_ds.feature_names),
+                *collectors(ChainCollector, train_ds.feature_names),
             ],
             callbacks=callbacks,
             pos_weight=pos_weight,
         )
 
     else:
+        if pos_weight == "auto":
+            # one loss term per frame: balance #negative / #positive frames
+            pos_weight = compute_pos_weight(train_ds._data.y.view(-1).numpy())
         train_loader = PrefetchLoader(
             PyGDataLoader(
                 train_ds,
@@ -134,12 +143,14 @@ def main(args):
             metrics=[
                 BinaryConfusionMatrix(cfg.metrics),
                 BinaryPrecisionRecallCurve(),
-                FrameCollector(1, cfg, train_ds.feature_names),
-                FrameCollector(0, cfg, train_ds.feature_names),
+                *collectors(FrameCollector, train_ds.feature_names),
             ],
             callbacks=callbacks,
             pos_weight=pos_weight,
         )
+
+    if pos_weight is not None:
+        logger.info("Positive class weight: {:.3f}", pos_weight)
 
     print(
         summary(

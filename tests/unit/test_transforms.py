@@ -61,3 +61,8 @@ def test_clipped_scaler_is_odd_and_bounded():
     np.testing.assert_allclose(out[:, 0], [-1.0, -0.5, 0.0, 0.5, 1.0])
     np.testing.assert_allclose(scaler.transform(-df.to_numpy()), -out)
     assert list(scaler.get_feature_names_out()) == ["vx", "vy"]
+
+
+def test_clipped_scaler_names_array_columns():
+    scaler = ClippedScaler(max_abs=12.0).fit(np.zeros((3, 2)))
+    assert list(scaler.get_feature_names_out()) == ["x0", "x1"]

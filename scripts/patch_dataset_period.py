@@ -10,6 +10,9 @@ two columns in place instead.
 """
 
 import argparse
+import os
+import shutil
+from pathlib import Path
 
 import polars as pl
 from loguru import logger
@@ -30,8 +33,20 @@ def main(args: argparse.Namespace) -> None:
     )
     logger.info("Games with extra time: {}", sorted(extra_time_games))
 
-    out.write_parquet(args.dataset)
-    logger.success("Saved patched dataset to {}", args.dataset)
+    if out.height != df.height:
+        raise RuntimeError(
+            f"Patching changed the row count ({df.height} -> {out.height}): "
+            "dataset left untouched"
+        )
+
+    # write next to the original, keep a backup, then swap atomically
+    dataset = Path(args.dataset)
+    tmp = dataset.with_suffix(".parquet.tmp")
+    backup = dataset.with_suffix(".parquet.bak")
+    out.write_parquet(tmp)
+    shutil.copy2(dataset, backup)
+    os.replace(tmp, dataset)
+    logger.success("Saved patched dataset to {} (backup: {})", dataset, backup)
 
 
 if __name__ == "__main__":

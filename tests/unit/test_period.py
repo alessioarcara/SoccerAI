@@ -94,3 +94,9 @@ def test_add_period_columns_fails_on_unknown_event(tmp_path):
     df = pl.DataFrame({"gameId": [7], "gameEventId": [999]})
     with pytest.raises(ValueError, match="no period"):
         add_period_columns(df, str(event_dir), str(meta_dir))
+
+
+@pytest.mark.parametrize("period", [0, 5, None])
+def test_home_attacks_right_rejects_periods_without_a_side(period):
+    with pytest.raises(ValueError):
+        home_attacks_right(period, True, None)

@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 import polars as pl
 import torch
+from loguru import logger
 from torch_geometric.data import Data
 from torch_geometric.typing import (
     OptTensor,
@@ -23,11 +24,15 @@ class GraphConverter(ABC):
         self, df: pl.DataFrame
     ) -> tuple[list[Data], list[str]]:
         data_list: list[Data] = []
+        skipped_frames = 0
+        skipped_chains: set[int] = set()
 
         for _, event_df in df.group_by(
             ["gameEventId", "possessionEventId"], maintain_order=True
         ):
             if event_df.height != self.NUM_PLAYERS:
+                skipped_frames += 1
+                skipped_chains.add(int(event_df["chain_id"][0]))
                 continue
 
             global_feature_cols = [
@@ -76,6 +81,14 @@ class GraphConverter(ABC):
                     event_index=event_index,
                     jersey_numbers=jersey_numbers,
                 )
+            )
+
+        if skipped_frames:
+            logger.warning(
+                "Skipped {} frame(s) of {} chain(s) without exactly {} players",
+                skipped_frames,
+                len(skipped_chains),
+                self.NUM_PLAYERS,
             )
 
         return data_list, node_df.columns

@@ -143,8 +143,21 @@ def _is_within_range(
     `outer_distance` metres from the goal line attacked by `team_name`.
     """
     last_action_event_df = event_df.filter(pl.col("index") == last_action_idx)
+    if last_action_event_df.height != 1:
+        logger.warning(
+            "{} events with index {}: chain discarded",
+            last_action_event_df.height,
+            last_action_idx,
+        )
+        return False
     game_id = last_action_event_df.select("gameId").item()
-    period = int(last_action_event_df.select("period").item())
+    period = last_action_event_df.select("period").item()
+    if period not in (1, 2, 3, 4):
+        logger.debug(
+            "Event {} has period {!r}: chain discarded", last_action_idx, period
+        )
+        return False
+    period = int(period)
 
     metadata_rows = metadata_df.filter(pl.col("gameId").cast(int) == game_id)
     if metadata_rows.height == 0:

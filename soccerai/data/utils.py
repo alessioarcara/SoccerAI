@@ -23,8 +23,11 @@ def home_attacks_right(
     and `homeTeamStartLeftExtraTime` for the extra-time periods 3 and 4).
     Teams swap ends between the two periods of each pair, so the home team
     attacks to the right in periods 1/3 when it starts on the left, and in
-    periods 2/4 when it starts on the right.
+    periods 2/4 when it starts on the right. Other periods (penalty
+    shoot-out, missing values) have no attacking side and are rejected.
     """
+    if period not in (1, 2, 3, 4):
+        raise ValueError(f"No attacking side for period {period!r}")
     if period in (3, 4) and home_team_start_left_extra_time is not None:
         start_left = home_team_start_left_extra_time
     else:
