@@ -361,6 +361,8 @@ class ChainCollector(Collector[tuple[np.ndarray, list[Data]]]):
             linewidths=0.5,
             linecolor="white",
             square=True,
+            xticklabels=range(1, max_len + 1),
+            yticklabels=range(1, len(chain_predictions) + 1),
         )
         ax.set_xlabel("Time step")
         ax.set_ylabel("Chain #")
@@ -373,7 +375,11 @@ class ChainCollector(Collector[tuple[np.ndarray, list[Data]]]):
         fig.tight_layout()
 
         pitch_grid_fig = plot_pitch_frames_grid(
-            self.frames, self.feature_names, self.pitch_grid
+            self.frames,
+            self.feature_names,
+            self.pitch_grid,
+            item_name="Chain",
+            title=f"{self.positive_type} · Last valid frame of each chain",
         )
 
         scores_np, snapshots = self.highest_confidence_chain[1]
