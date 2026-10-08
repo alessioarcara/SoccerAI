@@ -16,13 +16,13 @@ from pathlib import Path
 
 import numpy as np
 from loguru import logger
-from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score, log_loss, roc_auc_score
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from tabulate import tabulate
 from torch_geometric_temporal.signal import DynamicGraphTemporalSignal
+from xgboost import XGBClassifier
 
 from soccerai.data.config import X_GOAL_RIGHT, Y_GOAL
 from soccerai.data.converters import create_graph_converter
@@ -156,13 +156,18 @@ def main(args: argparse.Namespace) -> None:
             StandardScaler(),
             LogisticRegression(C=0.5, class_weight="balanced", max_iter=2000),
         ),
-        "gradient boosting": HistGradientBoostingClassifier(
+        "xgboost": XGBClassifier(
+            n_estimators=300,
             max_depth=3,
             learning_rate=0.05,
-            max_iter=300,
-            l2_regularization=1.0,
-            class_weight="balanced",
+            subsample=0.8,
+            colsample_bytree=0.8,
+            reg_lambda=1.0,
+            # same class balancing as the logistic regression
+            scale_pos_weight=float((y_train == 0).sum() / max((y_train == 1).sum(), 1)),
+            eval_metric="aucpr",
             random_state=cfg.seed,
+            n_jobs=-1,
         ),
     }
 
@@ -182,7 +187,7 @@ def main(args: argparse.Namespace) -> None:
     )
 
     if args.importance:
-        gbm = models["gradient boosting"]
+        gbm = models["xgboost"]
         from sklearn.inspection import permutation_importance
 
         imp = permutation_importance(

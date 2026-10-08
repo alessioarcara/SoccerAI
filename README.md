@@ -173,11 +173,12 @@ chain at its last frame, consistently with the loss and with `eval.py`.
 python scripts/baseline.py --importance
 ```
 
-trains a logistic regression and a gradient-boosting model on hand-crafted
-features of the last frame of each chain (same processed data and split as
-the GNNs) and prints their validation AP / AUROC / log-loss: the numbers a
-GNN has to beat. On the current dataset logistic regression reaches an AP
-of about 0.60 and an AUROC of about 0.82 against a 0.24 positive rate.
+trains a logistic regression and an XGBoost model on hand-crafted features
+of the last frame of each chain (same processed data and split as the GNNs)
+and prints their validation AP / AUROC / log-loss: the numbers a GNN has to
+beat. On the current dataset logistic regression reaches an AP of about 0.60
+and an AUROC of about 0.82, XGBoost an AP of about 0.61 and an AUROC of about
+0.79, against a 0.24 positive rate.
 
 ### Evaluating a trained model
 
