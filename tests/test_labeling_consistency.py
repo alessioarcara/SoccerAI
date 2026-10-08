@@ -3,6 +3,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
+from soccerai.data.annotations import chain_errors
 from soccerai.data.data import (
     ACCEPTED_NEG_CHAINS_PATH,
     ACCEPTED_POS_CHAINS_PATH,
@@ -24,7 +25,8 @@ def test_labeling_consistenty(chains_path: str, expect_shot: bool):
     event_df, _ = load_and_process_soccer_events(
         EVENT_DATA_PATH, filter_invalid_events=True
     )
-    chains = _load_chains(chains_path)
+    chains = _load_chains(chains_path, event_df)
+    assert not chain_errors(chains, event_df, positive=expect_shot)
 
     for chain in chains:
         chain_df = event_df.filter(pl.col("index").is_in(chain))
@@ -32,6 +34,8 @@ def test_labeling_consistenty(chains_path: str, expect_shot: bool):
         possessionEventTypes = chain_df["possessionEventType"].to_list()
         if expect_shot:
             assert "SH" in possessionEventTypes[-1]
+        else:
+            assert "SH" not in possessionEventTypes
 
         unique_team_names = set(chain_df["teamName"].to_list())
         assert len(unique_team_names) == 1

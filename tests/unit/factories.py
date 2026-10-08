@@ -197,3 +197,19 @@ def make_raw_df(
         pl.col("index_right").cast(pl.UInt32),
         pl.col("label").cast(pl.Int32),
     )
+
+
+def make_event_df(teams, types, *, indices=None, games=None, periods=None):
+    """One event per entry of `teams`/`types`, as the labeling code sees them."""
+    n = len(teams)
+    return pl.DataFrame(
+        {
+            "index": indices if indices is not None else list(range(n)),
+            "gameId": games if games is not None else [1] * n,
+            "gameEventId": list(range(100, 100 + n)),
+            "possessionEventId": list(range(200, 200 + n)),
+            "period": periods if periods is not None else [1] * n,
+            "teamName": teams,
+            "possessionEventType": types,
+        }
+    )

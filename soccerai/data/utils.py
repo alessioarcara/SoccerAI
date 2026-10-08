@@ -8,6 +8,8 @@ from typing import Any
 import numpy as np
 import polars as pl
 
+from soccerai.data.annotations import chain_errors, encode_chains
+
 
 def balanced_pos_weight(labels: Sequence[float] | np.ndarray) -> float:
     """#negatives / #positives, the BCE weight that balances the classes."""
@@ -130,18 +132,34 @@ def download_video_frames(
 
 
 def save_accepted_chains(
-    accepted_chains: list[list[int]], dst_dir: str, are_positive: bool
+    accepted_chains: list[list[int]],
+    dst_dir: str,
+    are_positive: bool,
+    event_df: pl.DataFrame,
 ) -> None:
     output_file = os.path.join(
         dst_dir, f"accepted_{'pos' if are_positive else 'neg'}_chains.json"
     )
-    all_accepted = []
+    errors = chain_errors(accepted_chains, event_df, positive=are_positive)
+    if errors:
+        raise ValueError(f"Invalid accepted chains: {errors}")
+    payload = encode_chains(accepted_chains, event_df)
 
     if os.path.exists(output_file):
         with open(output_file, "r") as f:
-            all_accepted = json.load(f)
-
-    all_accepted.extend(accepted_chains)
+            existing = json.load(f)
+        if (
+            not isinstance(existing, dict)
+            or existing.get("version") != payload["version"]
+            or existing.get("event_key") != payload["event_key"]
+        ):
+            raise ValueError(
+                "Migrate existing legacy annotations before appending chains"
+            )
+        payload["chains"] = existing["chains"] + payload["chains"]
+    # Re-running a notebook cell must not duplicate its annotations.
+    unique = {json.dumps(chain): chain for chain in payload["chains"]}
+    payload["chains"] = list(unique.values())
 
     with open(output_file, "w") as f:
-        json.dump(all_accepted, f)
+        json.dump(payload, f, indent=2)

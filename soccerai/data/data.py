@@ -5,6 +5,7 @@ from typing import Any
 import polars as pl
 from loguru import logger
 
+from soccerai.data.annotations import FRAME_KEYS, chain_errors, decode_chains
 from soccerai.data.config import (
     ACCEPTED_NEG_CHAINS_PATH,
     ACCEPTED_POS_CHAINS_PATH,
@@ -109,7 +110,7 @@ def extract_player_info(player_info: dict[str, Any]) -> dict[str, Any]:
 def load_and_process_soccer_events(
     event_dir_path: str, filter_invalid_events: bool = False
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
-    event_files = [f for f in os.listdir(event_dir_path) if f.endswith(".json")]
+    event_files = sorted(f for f in os.listdir(event_dir_path) if f.endswith(".json"))
 
     all_events = []
     all_players = []
@@ -239,10 +240,9 @@ def load_and_process_rosters(rosters_dir_path: str) -> pl.DataFrame:
     return rosters_df
 
 
-def _load_chains(chain_path: str) -> list[list[int]]:
+def _load_chains(chain_path: str, event_df: pl.DataFrame) -> list[list[int]]:
     with open(chain_path, "r") as f:
-        chains = json.load(f)
-        return chains
+        return decode_chains(json.load(f), event_df)
 
 
 def _attach_indices_to_chains(
@@ -256,7 +256,7 @@ def _attach_indices_to_chains(
         for frame_id in chain
     ]
 
-    return pl.DataFrame(rows)
+    return pl.DataFrame(rows, schema={"chain_id": pl.Int64, "index": pl.UInt32})
 
 
 def _flatten_chains(chains: list[list[int]]) -> list[int]:
@@ -274,12 +274,20 @@ def create_dataset(
     logger.info("Loading event and player data from {}", event_data_path)
     event_df, players_df = load_and_process_soccer_events(event_data_path, True)
 
-    pos_chains = _load_chains(ACCEPTED_POS_CHAINS_PATH)
-    neg_chains = _load_chains(ACCEPTED_NEG_CHAINS_PATH)
+    pos_chains = _load_chains(ACCEPTED_POS_CHAINS_PATH, event_df)
+    neg_chains = _load_chains(ACCEPTED_NEG_CHAINS_PATH, event_df)
+    for positive, chains in [(True, pos_chains), (False, neg_chains)]:
+        errors = chain_errors(chains, event_df, positive=positive)
+        if errors:
+            raise ValueError(
+                f"Invalid {'positive' if positive else 'negative'} annotations: {errors}"
+            )
     chains_df = _attach_indices_to_chains(pos_chains, neg_chains)
 
     pos_indices = _flatten_chains(pos_chains)
     neg_indices = _flatten_chains(neg_chains)
+    if set(pos_indices) & set(neg_indices):
+        raise ValueError("Positive and negative annotations share events")
 
     labeled_events_df = (
         event_df.join(chains_df, on="index", how="left")
@@ -305,9 +313,12 @@ def create_dataset(
 
     result_df = labeled_events_df.join(
         players_df,
-        on=["gameEventId", "possessionEventId"],
+        on=FRAME_KEYS,
         coalesce=True,
+        nulls_equal=True,
     )
+    # Keep the raw schema's legacy suffix column for existing consumers.
+    result_df = result_df.with_columns(pl.col("gameId").alias("gameId_right"))
 
     if not skip_player_stats:
         logger.info("Adding player statistics")

@@ -252,6 +252,21 @@ metadata, rosters). The committed parquet already contains the `period`
 column; for an older parquet run `python scripts/patch_dataset_period.py`,
 which adds it from the raw event files without re-reading the tracking data.
 
+Accepted annotations use format version 2. Each frame is stored as
+`[gameId, gameEventId, possessionEventId]`, so directory order and loader row
+indices cannot change its label. `save_accepted_chains` needs the labeling
+`event_df` to persist those identities; `_load_chains(path, event_df)` resolves
+them to the current row indices. Empty chains, missing events, negative chains
+containing shots, and chains crossing possession or period boundaries are
+rejected. Positive chains can overlap in legacy annotations; preprocessing
+assigns shared frames to the earliest shot.
+
+For old annotations, run `python -m scripts.repair_dataset_annotations` with
+the original parquet and raw event files. The script verifies the historical
+indices, backs up all three files, migrates the annotations, removes invalid
+negative chains, and restores missing ball positions as nulls. It retains
+tracking velocities and does not re-read the tracking archive.
+
 ## Repository Structure
 ```bash
 configs/
