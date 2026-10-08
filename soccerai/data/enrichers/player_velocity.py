@@ -44,15 +44,16 @@ class PlayerVelocityEnricher:
             .to_list()
         )
 
-        velocities: list[np.floating | None] = []
-        directions: list[np.floating | None] = []
+        velocities: list[np.floating | None] = [None] * players_df.height
+        directions: list[np.floating | None] = [None] * players_df.height
+        indexed_players = players_df.with_row_index("_velocity_row")
 
         for gameId in tqdm(
             gameIds, total=len(gameIds), desc="Processing games", colour="blue"
         ):
             tracking_file = f"{self.tracking_dir_path}/{gameId}.jsonl"
             event_byte_map = self._create_event_byte_map(tracking_file)
-            players_per_game = players_df.filter(pl.col("gameId") == gameId)
+            players_per_game = indexed_players.filter(pl.col("gameId") == gameId)
             gameEventIds = (
                 players_per_game.select(pl.col("gameEventId"))
                 .unique(maintain_order=True)
@@ -67,13 +68,11 @@ class PlayerVelocityEnricher:
                 colour="green",
             ):
                 byte_pos = event_byte_map.get(gameEventId)
-                players_per_event = players_df.filter(
+                players_per_event = players_per_game.filter(
                     pl.col("gameEventId") == gameEventId
                 )
 
                 if byte_pos is None:
-                    velocities.extend([None] * players_per_event.height)
-                    directions.extend([None] * players_per_event.height)
                     continue
 
                 time_elapsed, ball_delta, home_players_deltas, away_players_deltas = (
@@ -85,23 +84,25 @@ class PlayerVelocityEnricher:
                     or home_players_deltas is None
                     or away_players_deltas is None
                     or ball_delta is None
+                    or not np.isfinite(time_elapsed)
+                    or time_elapsed <= 0
                 ):
-                    velocities.extend([None] * players_per_event.height)
-                    directions.extend([None] * players_per_event.height)
                     continue
 
                 for row in players_per_event.iter_rows(named=True):
                     delta = None
                     team = row["team"]
                     if team == "home":
-                        delta = home_players_deltas[row["jerseyNum"]]
+                        delta = home_players_deltas.get(row["jerseyNum"])
                     elif team == "away":
-                        delta = away_players_deltas[row["jerseyNum"]]
+                        delta = away_players_deltas.get(row["jerseyNum"])
                     else:
                         delta = ball_delta
+                    if delta is None or not np.isfinite(delta).all():
+                        continue
                     velocity, direction = self._compute_velocity(delta, time_elapsed)
-                    velocities.append(velocity)
-                    directions.append(direction)
+                    velocities[row["_velocity_row"]] = velocity
+                    directions[row["_velocity_row"]] = direction
 
         return players_df.with_columns(
             pl.Series("velocity", velocities),
@@ -112,7 +113,9 @@ class PlayerVelocityEnricher:
         self, positions_delta: NDArray[np.float64], time_elapsed: np.floating
     ) -> tuple[np.floating, np.floating]:
         velocity_vector = positions_delta / time_elapsed
-        velocity = np.linalg.norm(velocity_vector)
+        # The downstream vx/vy features are planar; vertical ball motion must
+        # not be reconstructed as horizontal speed.
+        velocity = np.linalg.norm(velocity_vector[:2])
         direction = np.rad2deg(np.arctan2(velocity_vector[1], velocity_vector[0]))
         return velocity, direction
 

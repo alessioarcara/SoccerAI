@@ -265,7 +265,10 @@ For old annotations, run `python -m scripts.repair_dataset_annotations` with
 the original parquet and raw event files. The script verifies the historical
 indices, backs up all three files, migrates the annotations, removes invalid
 negative chains, and restores missing ball positions as nulls. It retains
-tracking velocities and does not re-read the tracking archive.
+tracking velocities and does not re-read the tracking archive, so the committed
+ball speeds still include the vertical component, while `PlayerVelocityEnricher`
+now computes planar speeds: rebuild the parquet from the tracking data to make
+them consistent.
 
 ## Repository Structure
 ```bash
