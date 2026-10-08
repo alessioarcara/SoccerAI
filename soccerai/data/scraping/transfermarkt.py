@@ -132,7 +132,7 @@ def get_players_from_roster(roster_url: str) -> list:
             continue
         if price_pattern.match(name):
             continue
-        href = a["href"]
+        href = str(a["href"])
         parts = href.strip("/").split("/")
         player_id = None
         for part in parts:

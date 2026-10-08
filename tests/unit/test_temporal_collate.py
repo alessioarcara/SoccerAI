@@ -25,7 +25,7 @@ def make_chain(n_frames: int, label: float, seed: int) -> DynamicGraphTemporalSi
     return DynamicGraphTemporalSignal(
         edge_indices=[ei.copy() for _ in range(n_frames)],
         edge_weights=[
-            rng.random(ei.shape[1]).astype(np.float32) for _ in range(n_frames)
+            rng.random((ei.shape[1],)).astype(np.float32) for _ in range(n_frames)
         ],
         features=[
             rng.random((N_NODES, N_FEAT)).astype(np.float32) for _ in range(n_frames)

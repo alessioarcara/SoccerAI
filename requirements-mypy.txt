@@ -11,3 +11,4 @@ wandb==0.21.0
 mypy==1.16.1
 types-requests==2.32.4.20250611
 types-PyYAML==6.0.12.20250516
+types-tabulate
