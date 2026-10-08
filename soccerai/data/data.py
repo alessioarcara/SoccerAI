@@ -44,8 +44,8 @@ def extract_players(
 
     def extract_entity(
         team: str | None,
-        x: float,
-        y: float,
+        x: float | None,
+        y: float | None,
         z: float,
         jerseyNum: str | None,
         visibility: str | None,

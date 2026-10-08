@@ -17,8 +17,8 @@ def balanced_pos_weight(labels: Sequence[float] | np.ndarray) -> float:
     return n_neg / max(n_pos, 1.0)
 
 
-def offset_x(x: float) -> float:
-    return (x or 0.0) + 52.5
+def offset_x(x: float | None) -> float | None:
+    return None if x is None else x + 52.5
 
 
 def home_attacks_right(
@@ -46,8 +46,8 @@ def home_attacks_right(
     return bool(start_left) == first_period_of_pair
 
 
-def offset_y(y: float) -> float:
-    return (y or 0.0) + 34.0
+def offset_y(y: float | None) -> float | None:
+    return None if y is None else y + 34.0
 
 
 def download_video_frame(
