@@ -20,8 +20,16 @@ def bipartite_edges(n_nodes: int) -> np.ndarray:
 
 
 def make_chain(n_frames: int, label: float, seed: int) -> DynamicGraphTemporalSignal:
+    """
+    A chain of `n_frames` random frames with constant target `label`; positive
+    chains shoot 1 s after their last frame, frames are 2 s apart.
+    """
     rng = np.random.default_rng(seed)
     ei = bipartite_edges(N_NODES)
+    time_to_shot = [
+        np.full((1,), 1.0 + 2.0 * (n_frames - 1 - t) if label else np.inf, np.float32)
+        for t in range(n_frames)
+    ]
     return DynamicGraphTemporalSignal(
         edge_indices=[ei.copy() for _ in range(n_frames)],
         edge_weights=[
@@ -33,6 +41,8 @@ def make_chain(n_frames: int, label: float, seed: int) -> DynamicGraphTemporalSi
         targets=[np.full((1, 1), label, dtype=np.float32) for _ in range(n_frames)],
         u=[rng.random((1, 3)).astype(np.float32) for _ in range(n_frames)],
         jersey_numbers=[np.arange(N_NODES, dtype=np.int64) for _ in range(n_frames)],
+        chain_label=[np.full((1,), label, np.float32) for _ in range(n_frames)],
+        time_to_shot=time_to_shot,
     )
 
 

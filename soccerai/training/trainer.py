@@ -47,7 +47,7 @@ class BaseTrainer(EpochTrainer, ABC):
         model: nn.Module,
         optimizer: Optimizer,
         scheduler: LRScheduler,
-        pos_weight: float | None = None,
+        pos_weight: float | Sequence[float] | None = None,
         aux_loss_weight: float = 1.0,
         feature_names: Sequence[str] | None = None,
         device: str = "auto",
@@ -67,7 +67,7 @@ class BaseTrainer(EpochTrainer, ABC):
         self.pos_weight = (
             None
             if pos_weight is None
-            else torch.tensor(float(pos_weight), device=self.device)
+            else torch.as_tensor(pos_weight, dtype=torch.float32, device=self.device)
         )
         self.criterion = nn.BCEWithLogitsLoss(pos_weight=self.pos_weight)
         self._loss_sum = 0.0
@@ -201,12 +201,22 @@ class TemporalTrainer(BaseTrainer):
     """
     Trainer over batches of chains. `gamma` discounts the per-frame losses
     towards the start of a chain (the last frame weighs 1, the one before
-    `gamma`, ...).
+    `gamma`, ...; 1 weighs every frame alike).
+
+    `rank_loss_weight` adds the ranking loss of Ma, Sigal and Sclaroff
+    (CVPR 2016) on the positive chains: the predicted probability should
+    never drop as a dangerous action unfolds, so every frame is penalised by
+    how far it falls below the highest probability of the frames before it.
+    Negative chains are left free, since an action can become dangerous and
+    then be stopped.
     """
 
-    def __init__(self, *, gamma: float = 0.1, **kwargs: Any) -> None:
+    def __init__(
+        self, *, gamma: float = 0.1, rank_loss_weight: float = 0.0, **kwargs: Any
+    ) -> None:
         super().__init__(**kwargs)
         self.gamma = gamma
+        self.rank_loss_weight = rank_loss_weight
 
     def _per_example(
         self,
@@ -214,22 +224,88 @@ class TemporalTrainer(BaseTrainer):
         true_labels: torch.Tensor,
         item: Discrete_Signal,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        return chain_level_predictions(preds_probs, true_labels, item.masks)
+        return chain_level_predictions(preds_probs, item.chain_label, item.masks)
+
+    def _frame_loss(
+        self, out: torch.Tensor, y: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Per-graph loss and shot logit of one time step; unknown targets (-1)
+        are clamped here and weighed 0 by the caller.
+
+        One output: BCE on the shot target. Three outputs (box decomposition,
+        targets [box, shot]): logits of P(box), P(shot | box) and
+        P(shot | no box), each head trained on the frames it conditions on;
+        the shot logit returned combines them,
+        P(shot) = P(box) P(shot | box) + (1 - P(box)) P(shot | no box),
+        after removing the bias of the positive-class weights.
+        """
+        y = y.clamp(min=0)
+        pw = self.pos_weight
+        if out.shape[-1] == 1:
+            loss = F.binary_cross_entropy_with_logits(
+                out, y, reduction="none", pos_weight=pw
+            ).squeeze(1)
+            return loss, out.squeeze(-1)
+
+        box, shot = y[:, 0], y[:, 1]
+        head_pw = [None] * 3 if pw is None else list(pw.reshape(-1))
+
+        def bce(logit: torch.Tensor, target: torch.Tensor, i: int) -> torch.Tensor:
+            return F.binary_cross_entropy_with_logits(
+                logit, target, reduction="none", pos_weight=head_pw[i]
+            )
+
+        loss = (
+            bce(out[:, 0], box, 0)
+            + box * bce(out[:, 1], shot, 1)
+            + (1 - box) * bce(out[:, 2], shot, 2)
+        )
+        # a head trained with weight w on its positives predicts w times the
+        # true odds: undo it before combining the probabilities
+        if pw is not None:
+            out = out - torch.log(pw.reshape(-1))
+        p_box, p_shot_box, p_shot_no_box = torch.sigmoid(out).unbind(-1)
+        p_shot = p_box * p_shot_box + (1 - p_box) * p_shot_no_box
+        return loss, torch.logit(p_shot, eps=1e-6)
+
+    @staticmethod
+    def _rank_loss(
+        logits: torch.Tensor, masks: torch.Tensor, positive: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Mean over the frames of every positive chain of
+        `max(0, max_{s<t} p_s - p_t)`, averaged over the chains of the batch
+        (negative chains count as zero). Shapes: logits and masks (T_max, B),
+        positive (B,).
+        """
+        probs = torch.sigmoid(logits)
+        # padded frames sit at the end of a chain: they never raise the
+        # running maximum of a real frame
+        prev_max = torch.cummax(probs, dim=0).values[:-1]
+        drops = F.relu(prev_max - probs[1:]) * masks[1:]
+        per_chain = drops.sum(dim=0) / masks.sum(dim=0).clamp(min=1)
+        return (per_chain * positive).mean()
 
     def _compute_signal_loss_and_last_pred(
         self, signal: Discrete_Signal
     ) -> tuple[torch.Tensor, torch.Tensor]:
         masks = torch.tensor(signal.masks, dtype=torch.bool, device=self.device).T
         B, T_max = masks.shape
+        # frames with a known target (-1: padding, or a future past the end
+        # of the period); censored frames sit at the end of a chain
+        targets = np.asarray(signal.targets)  # (T_max, B, n_targets)
+        known = masks & torch.as_tensor(targets[..., 0] >= 0, device=self.device).T
 
         # ----------------- Computing discount weights --------------------
         lengths = masks.sum(dim=1)  # (B,)
+        n_known = known.sum(dim=1)  # (B,)
         T = torch.arange(T_max, device=self.device)  # (T_max,)
 
         # (B, 1) − (T_max,) => (B, T_max) tramite broadcasting
-        exps = (lengths - 1).unsqueeze(1) - T
+        exps = (n_known - 1).unsqueeze(1) - T
 
-        weights = torch.where(masks, self.gamma ** exps.float(), 0.0)
+        weights = torch.where(known, self.gamma ** exps.float(), 0.0)
         weights /= weights.sum(dim=1, keepdim=True).clamp(min=1e-12)
 
         weights = weights.T.contiguous()  # (T_max, B)
@@ -256,10 +332,9 @@ class TemporalTrainer(BaseTrainer):
                 prev_c=c,
             )
 
-            loss_per_timestep[t] = F.binary_cross_entropy_with_logits(
-                out, snapshot.y, reduction="none", pos_weight=self.pos_weight
-            ).squeeze(1)
-            pred_per_timestep[t] = out.squeeze(-1)
+            loss_per_timestep[t], pred_per_timestep[t] = self._frame_loss(
+                out, snapshot.y
+            )
             aux_per_timestep[t] = self._aux_loss().expand(B)
 
         # auxiliary loss averaged over the real frames of every chain, so that
@@ -268,6 +343,13 @@ class TemporalTrainer(BaseTrainer):
         aux_loss = (aux_per_timestep * valid).sum(dim=0) / lengths.clamp(min=1)
 
         loss = (loss_per_timestep * weights).sum(dim=0).mean() + aux_loss.mean()
+        if self.rank_loss_weight:
+            positive = torch.as_tensor(
+                np.asarray(signal.chain_label)[0] == 1, device=self.device
+            )
+            loss = loss + self.rank_loss_weight * self._rank_loss(
+                pred_per_timestep, known.T.to(pred_per_timestep.dtype), positive
+            )
 
         return loss, pred_per_timestep
 

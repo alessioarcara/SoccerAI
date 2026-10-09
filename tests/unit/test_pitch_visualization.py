@@ -119,6 +119,8 @@ def visual_chain(length, label):
         targets=[np.array([[label]], dtype=np.float32)] * length,
         u=[np.zeros((1, 1), dtype=np.float32)] * length,
         jersey_numbers=[frame().jersey_numbers.numpy()] * length,
+        chain_label=[np.array([label], dtype=np.float32)] * length,
+        time_to_shot=[np.array([np.inf], dtype=np.float32)] * length,
     )
 
 

@@ -73,6 +73,34 @@ def test_prepare_dataframe_drops_ball_rows_and_shot_frames():
     assert df.filter(pl.col("is_ball_carrier") == 1).height == 2
 
 
+def test_time_to_shot_counts_the_seconds_to_the_chain_shot():
+    # factory frames start 1 s apart (startTime = 100 + event index)
+    df = _prepare(
+        [
+            {
+                "game_id": 1,
+                "chain_id": 0,
+                "label": 1,
+                "n_frames": 4,
+                "event_types": ["PA", "PA", "CR", "SH"],
+            },
+            {"game_id": 1, "chain_id": 1, "label": 0, "n_frames": 2},
+        ]
+    )
+    per_frame = (
+        df.group_by("chain_id", "event_index")
+        .agg(pl.col("time_to_shot").first())
+        .sort("event_index")
+    )
+    assert per_frame.filter(pl.col("chain_id") == 0)["time_to_shot"].to_list() == [
+        3.0,
+        2.0,
+        1.0,
+    ]
+    negative = per_frame.filter(pl.col("chain_id") == 1)["time_to_shot"]
+    assert negative.is_infinite().all()
+
+
 @pytest.mark.parametrize("frame", [0, 1, 2])
 def test_missing_carrier_discards_whole_chain(frame):
     raw = make_raw_df(

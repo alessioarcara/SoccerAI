@@ -1,0 +1,25 @@
+# Early warning on every possession of every game (timeline targets).
+# Build the data first:
+#   python scripts/create_dataset.py \
+#       soccerai/data/resources/possessions/raw/dataset.parquet --possessions
+# then combine with base and a model:
+#   python scripts/train.py --configs configs/base.yaml configs/models/gcn.yaml \
+#       configs/possessions.yaml
+
+run_name: gcn_possessions
+
+data_config:
+  goal_window_for_positives: null   # no selection: every possession is kept
+  box_decomposition: true           # heads: P(box), P(shot | box), P(shot | no box)
+
+train_ds:
+  _init_args_:
+    root: soccerai/data/resources/possessions
+
+val_ds:
+  _init_args_:
+    root: soccerai/data/resources/possessions
+
+head:
+  _init_args_:
+    dout: 3

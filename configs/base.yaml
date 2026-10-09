@@ -39,7 +39,9 @@ data_config:
   use_roster_features: false        # per-player constants let the model identify players
   use_match_clock: false
   normalize_attack_direction: true
-  max_chain_len: 12                 # last frames of every chain (null = whole chain)
+  max_chain_len: null               # last frames of every chain (null = whole chain)
+  shot_horizon: 8.0                 # frame target: shot within this many seconds (null = chain label)
+  box_decomposition: false          # targets [box, shot]: P(box) P(shot | box) + ... (timeline data)
 
 converter:
   _target_type_: soccerai.data.converters:BipartiteGraphConverter
@@ -71,6 +73,8 @@ train_chains:
   _init_args_:
     dataset: ${train_ds}
     max_chain_len: ${data_config.max_chain_len}
+    shot_horizon: ${data_config.shot_horizon}
+    box_decomposition: ${data_config.box_decomposition}
 
 val_chains:
   _target_type_: soccerai.data.temporal_dataset:TemporalChainsDataset
@@ -78,6 +82,8 @@ val_chains:
   _init_args_:
     dataset: ${val_ds}
     max_chain_len: ${data_config.max_chain_len}
+    shot_horizon: ${data_config.shot_horizon}
+    box_decomposition: ${data_config.box_decomposition}
 
 train_loader:
   _target_type_: torch.utils.data:DataLoader
@@ -105,7 +111,8 @@ val_loader:
 
 steps_per_epoch: ${train_loader.__len__()}
 
-# one loss term per chain: balance #negative / #positive chains (null = off)
+# balance the positive and negative frame targets, every chain weighing 1
+# (#negative / #positive chains with chain-level targets; null = off)
 pos_weight: ${train_chains.positive_weight()}
 
 # --------------------------------------------------------------- model ---- #
@@ -169,6 +176,10 @@ metrics:
       - _target_type_: soccerai.training.metrics:BinaryPrecisionRecallCurve
         _init_args_:
           ignore_value: -1
+      - _target_type_: soccerai.training.metrics:EarlyWarning
+        _init_args_:
+          false_alarm_rate: 0.1      # of the negative chains
+          min_lead: 3.0              # seconds before the shot
       - _id_: tp_chains
         _target_type_: soccerai.training.metrics:ChainCollector
         _init_args_:
@@ -224,7 +235,8 @@ trainer:
     run_name: ${run_name}
     resume_from: ${resume_from}
     pos_weight: ${pos_weight}
-    gamma: 0.1               # per-frame loss discount towards the start of the chain
+    gamma: 1.0               # per-frame loss discount towards the start of the chain
+    rank_loss_weight: 1.0    # positive chains: penalise drops of the probability
     aux_loss_weight: 1.0     # auxiliary loss exposed by some models (DiffPool)
     feature_names: ${train_ds.feature_names}
     device: ${device}

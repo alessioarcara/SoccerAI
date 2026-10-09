@@ -58,7 +58,7 @@ def evaluate(
             assert last_preds is not None
 
             preds_probs = torch.sigmoid(last_preds)
-            true_labels = torch.tensor(signal.targets[0], device=device)
+            true_labels = torch.tensor(signal.chain_label[0], device=device)
 
             cm.update(preds_probs, true_labels, snapshot)
             ap.update(preds_probs, true_labels, snapshot)

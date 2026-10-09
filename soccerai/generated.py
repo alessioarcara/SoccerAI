@@ -29,6 +29,8 @@ class DataConfig(BaseModel):
     mask_non_possession_shooting_stats: bool = Field(...)
     normalize_attack_direction: bool = Field(True)
     max_chain_len: int | None = Field(None)
+    shot_horizon: float | None = Field(None)
+    box_decomposition: bool = Field(False)
     use_roster_features: bool = Field(False)
     use_match_clock: bool = Field(False)
 
@@ -59,7 +61,7 @@ class ConfigModel(BaseModel):
     val_chains: TemporalChainsDataset = Field(...)
     train_loader: DataLoader = Field(...)
     val_loader: DataLoader = Field(...)
-    pos_weight: float | None = Field(None)
+    pos_weight: float | list[float] | None = Field(None)
     backbone: Module = Field(...)
     neck: Module = Field(...)
     head: Module = Field(...)
