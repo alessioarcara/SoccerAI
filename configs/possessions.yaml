@@ -28,6 +28,11 @@ head:
   _init_args_:
     dout: 3
 
+# no class weights: the heads stay calibrated, which their product needs,
+# and early warnings improve (2 seeds: flagged >= 3 s ahead at 5 false
+# alarms per game 0.04 -> 0.07; with lead_weight 2, 0.09)
+pos_weight: null
+
 # select and stop on the per-frame AP of "shot within the horizon": the
 # validation loss bottoms out early, long before the ranking does
 callbacks:
@@ -46,5 +51,5 @@ callbacks:
 
 trainer:
   _init_args_:
-    lead_weight: 0.0                          # > 0: favour early warnings
+    lead_weight: 2.0                          # favour early warnings
     lead_horizon: ${data_config.shot_horizon}
