@@ -11,6 +11,7 @@ from soccerai.data.config import (
     ACCEPTED_POS_CHAINS_PATH,
     PLAYER_STATS_PATH,
 )
+from soccerai.data.possessions import segment_possessions, timeline_targets
 from soccerai.data.utils import (
     offset_x,
     offset_y,
@@ -263,17 +264,8 @@ def _flatten_chains(chains: list[list[int]]) -> list[int]:
     return [idx for chain in chains for idx in chain]
 
 
-def create_dataset(
-    output_path: str,
-    event_data_path: str = "/home/soccerdata/FIFA_WorldCup_2022/Event Data",
-    tracking_data_path: str = "/home/soccerdata/FIFA_WorldCup_2022/Tracking Data",
-    meta_data_path: str = "/home/soccerdata/FIFA_WorldCup_2022/Metadata",
-    skip_velocity: bool = False,
-    skip_player_stats: bool = False,
-) -> None:
-    logger.info("Loading event and player data from {}", event_data_path)
-    event_df, players_df = load_and_process_soccer_events(event_data_path, True)
-
+def _annotated_events(event_df: pl.DataFrame) -> pl.DataFrame:
+    """Events of the hand-annotated chains, labelled by how the chain ends."""
     pos_chains = _load_chains(ACCEPTED_POS_CHAINS_PATH, event_df)
     neg_chains = _load_chains(ACCEPTED_NEG_CHAINS_PATH, event_df)
     for positive, chains in [(True, pos_chains), (False, neg_chains)]:
@@ -289,7 +281,7 @@ def create_dataset(
     if set(pos_indices) & set(neg_indices):
         raise ValueError("Positive and negative annotations share events")
 
-    labeled_events_df = (
+    return (
         event_df.join(chains_df, on="index", how="left")
         .with_columns(
             pl.when(pl.col("index").is_in(pos_indices))
@@ -302,6 +294,73 @@ def create_dataset(
         .filter(pl.col("label").is_not_null())
     )
 
+
+def _possession_events(
+    event_df: pl.DataFrame, players_df: pl.DataFrame, meta_data_path: str
+) -> pl.DataFrame:
+    """
+    Events of every possession of every game, with the chain label "the
+    possession contains a shot" and the timeline targets of
+    `soccerai.data.possessions.timeline_targets`.
+    """
+    possessions = segment_possessions(event_df)
+    chains_df = pl.DataFrame(
+        [
+            {"chain_id": chain_id, "index": idx}
+            for chain_id, chain in enumerate(possessions)
+            for idx in chain
+        ],
+        schema={"chain_id": pl.Int64, "index": pl.UInt32},
+    )
+    targets = timeline_targets(
+        event_df, players_df, load_and_process_metadata(meta_data_path)
+    )
+    return (
+        event_df.join(chains_df, on="index", how="inner")
+        .with_columns(
+            (pl.col("possessionEventType") == "SH")
+            .any()
+            .over("chain_id")
+            .cast(pl.Int32)
+            .alias("label")
+        )
+        .join(targets, on="index", how="left")
+    )
+
+
+def create_dataset(
+    output_path: str,
+    event_data_path: str = "/home/soccerdata/FIFA_WorldCup_2022/Event Data",
+    tracking_data_path: str = "/home/soccerdata/FIFA_WorldCup_2022/Tracking Data",
+    meta_data_path: str = "/home/soccerdata/FIFA_WorldCup_2022/Metadata",
+    skip_velocity: bool = False,
+    skip_player_stats: bool = False,
+    possessions: bool = False,
+    players_path: str | None = None,
+    n_jobs: int = 1,
+) -> None:
+    """
+    Build the raw dataset parquet.
+
+    By default it holds the hand-annotated chains. With `possessions` it
+    holds every possession of every game instead, with per-event timeline
+    targets (early-warning task). `players_path` reuses players with
+    velocities already computed by `PlayerVelocityEnricher` (a parquet of the
+    players of every event); `n_jobs` parallelises their computation.
+    """
+    logger.info("Loading event and player data from {}", event_data_path)
+    event_df, players_df = load_and_process_soccer_events(event_data_path, True)
+
+    labeled_events_df = (
+        _possession_events(event_df, players_df, meta_data_path)
+        if possessions
+        else _annotated_events(event_df)
+    )
+
+    if players_path is not None:
+        logger.info("Loading players with velocities from {}", players_path)
+        players_df = pl.read_parquet(players_path)
+        skip_velocity = True
     if not skip_velocity:
         # imported lazily: the enrichers pull in the scraping stack (selenium,
         # bs4), which is not needed to merely read or patch a dataset
@@ -309,7 +368,7 @@ def create_dataset(
 
         logger.info("Adding player velocities from {}", tracking_data_path)
         enricher = PlayerVelocityEnricher(tracking_data_path)
-        players_df = enricher.add_velocity_per_player(players_df)
+        players_df = enricher.add_velocity_per_player(players_df, n_jobs=n_jobs)
 
     result_df = labeled_events_df.join(
         players_df,

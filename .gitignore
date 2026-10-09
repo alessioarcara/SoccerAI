@@ -181,3 +181,6 @@ soccerai/data/resources/processed/
 
 # outputs of scripts/run_experiments.py
 experiments/
+
+# every-possession dataset (scripts/create_dataset.py --possessions)
+soccerai/data/resources/possessions/
