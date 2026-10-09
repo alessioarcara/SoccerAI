@@ -421,6 +421,7 @@ class EarlyWarning(Metric):
     - `early_recall_<min_lead>s`: fraction flagged at least `min_lead`
       seconds before the shot;
     - `early_median_lead_s`: median warning time of the flagged chains;
+    - `frame_average_precision`, `frame_auroc`: of the per-frame targets;
     - `auroc_lead_<lo>-<hi>s`: frame-level AUROC of the positive frames
       `lo`-`hi` seconds before their shot against every negative frame, i.e.
       how separable the classes are that far ahead.
@@ -448,6 +449,9 @@ class EarlyWarning(Metric):
     def reset(self) -> None:
         # one (label, per-frame probabilities, per-frame time to shot) per chain
         self.chains: list[tuple[int, np.ndarray, np.ndarray]] = []
+        # per-frame probabilities and shot targets of the frames with a target
+        self.frame_probs: list[np.ndarray] = []
+        self.frame_targets: list[np.ndarray] = []
 
     def update(
         self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
@@ -460,6 +464,13 @@ class EarlyWarning(Metric):
             self.chains.append(
                 (int(chain_labels[b]), probs[:length, b], time_to_shot[:length, b])
             )
+        # the shot target is the last column (box decomposition: [box, shot])
+        targets = true_labels.detach().cpu().numpy()
+        if targets.ndim == 3:
+            targets = targets[..., -1]
+        known = targets >= 0  # padding and censored frames are -1
+        self.frame_probs.append(probs[known])
+        self.frame_targets.append(targets[known])
 
     def _threshold(self) -> float | None:
         peaks = [p.max() for label, p, _ in self.chains if label == 0]
@@ -493,6 +504,14 @@ class EarlyWarning(Metric):
             if flagged.any()
             else 0.0,
         }
+
+        frame_probs = torch.from_numpy(np.concatenate(self.frame_probs))
+        frame_targets = torch.from_numpy(np.concatenate(self.frame_targets)).long()
+        if 0 < int(frame_targets.sum()) < len(frame_targets):
+            results["frame_average_precision"] = binary_average_precision(
+                frame_probs, frame_targets
+            ).item()
+            results["frame_auroc"] = binary_auroc(frame_probs, frame_targets).item()
 
         neg_probs = np.concatenate([p for label, p, _ in self.chains if label == 0])
         pos_probs = np.concatenate([p for label, p, _ in self.chains if label == 1])

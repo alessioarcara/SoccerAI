@@ -26,8 +26,12 @@ class TemporalChainsDataset(Dataset):
         num_global_features: int,
         feature_names: Sequence[str],
         transform: Callable | None = None,
+        chain_ids: Sequence[int] | None = None,
     ):
         self.temporal_chains = temporal_chains
+        # dataset chain id of every temporal chain (to match chains across
+        # datasets built from the same possessions)
+        self.chain_ids = list(chain_ids) if chain_ids is not None else None
         self.num_features = num_features
         self.num_global_features = num_global_features
         self.feature_names = feature_names
@@ -165,6 +169,7 @@ class TemporalChainsDataset(Dataset):
             dataset.num_global_features,
             dataset.feature_names,
             tmp_transform,
+            chain_ids=list(buckets),
         )
 
     @staticmethod

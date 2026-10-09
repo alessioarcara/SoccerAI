@@ -81,4 +81,7 @@ def test_early_warning_measures_how_early_positives_are_flagged():
     # frames 0-2 s before the shot (0.9, 0.1) against the negative frames
     # (0.3, 0.2, 0.1, 0.2): 4 wins, 1 tie out of 8 pairs
     assert results["auroc_lead_0-2s"] == pytest.approx(4.5 / 8)
+    # frame targets of make_chain: the chain label on every frame
+    assert 0 < results["frame_average_precision"] <= 1
+    assert 0 <= results["frame_auroc"] <= 1
     assert set(m.plot()) == {"early_warning_curve"}
