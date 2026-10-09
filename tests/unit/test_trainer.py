@@ -206,3 +206,15 @@ def test_box_decomposition_removes_the_class_weights_before_combining():
     odds = torch.tensor([0.25 * 4, 1.0, (1 / 9) * 9])
     _, logit = trainer._frame_loss(torch.log(odds).unsqueeze(0), torch.zeros(1, 2))
     assert torch.sigmoid(logit).item() == pytest.approx(0.2 * 0.5 + 0.8 * 0.1, rel=1e-5)
+
+
+def test_lead_multiplier_favours_frames_far_from_the_shot():
+    trainer = TemporalTrainer.__new__(TemporalTrainer)
+    trainer.lead_weight, trainer.lead_horizon, trainer.device = 2.0, 8.0, "cpu"
+    batch = TemporalChainsDataset.collate(
+        [make_chain(3, 1.0, 0), make_chain(1, 0.0, 1)]
+    )
+    # chain 0: shot 5, 3 and 1 s ahead; chain 1: no shot, then padding (NaN)
+    m = trainer._lead_multiplier(batch)
+    assert m[:, 0].tolist() == pytest.approx([1 + 2 * 5 / 8, 1 + 2 * 3 / 8, 1 + 2 / 8])
+    assert m[:, 1].tolist() == [1.0, 1.0, 1.0]

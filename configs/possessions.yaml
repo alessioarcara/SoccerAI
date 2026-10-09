@@ -43,3 +43,8 @@ callbacks:
         _init_args_:
           monitor: val/frame_average_precision
           mode: max
+
+trainer:
+  _init_args_:
+    lead_weight: 0.0                          # > 0: favour early warnings
+    lead_horizon: ${data_config.shot_horizon}

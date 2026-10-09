@@ -209,14 +209,27 @@ class TemporalTrainer(BaseTrainer):
     how far it falls below the highest probability of the frames before it.
     Negative chains are left free, since an action can become dangerous and
     then be stopped.
+
+    `lead_weight` (per-frame shot targets) multiplies the loss of a frame
+    whose team shoots within `lead_horizon` seconds by
+    1 + lead_weight * time_to_shot / lead_horizon: the earliest warnings,
+    the hardest and most useful ones, weigh the most.
     """
 
     def __init__(
-        self, *, gamma: float = 0.1, rank_loss_weight: float = 0.0, **kwargs: Any
+        self,
+        *,
+        gamma: float = 0.1,
+        rank_loss_weight: float = 0.0,
+        lead_weight: float = 0.0,
+        lead_horizon: float = 8.0,
+        **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self.gamma = gamma
         self.rank_loss_weight = rank_loss_weight
+        self.lead_weight = lead_weight
+        self.lead_horizon = lead_horizon
 
     def _per_example(
         self,
@@ -268,6 +281,14 @@ class TemporalTrainer(BaseTrainer):
         p_box, p_shot_box, p_shot_no_box = torch.sigmoid(out).unbind(-1)
         p_shot = p_box * p_shot_box + (1 - p_box) * p_shot_no_box
         return loss, torch.logit(p_shot, eps=1e-6)
+
+    def _lead_multiplier(self, signal: Discrete_Signal) -> torch.Tensor:
+        """(T_max, B) loss multipliers favouring the frames far from the shot."""
+        time_to_shot = torch.as_tensor(
+            np.asarray(signal.time_to_shot), dtype=torch.float32, device=self.device
+        )
+        ahead = (time_to_shot / self.lead_horizon).nan_to_num(nan=2.0)
+        return torch.where(ahead <= 1, 1 + self.lead_weight * ahead.clamp(min=0), 1.0)
 
     @staticmethod
     def _rank_loss(
@@ -342,6 +363,8 @@ class TemporalTrainer(BaseTrainer):
         valid = masks.T.to(aux_per_timestep.dtype)  # (T_max, B)
         aux_loss = (aux_per_timestep * valid).sum(dim=0) / lengths.clamp(min=1)
 
+        if self.lead_weight:
+            loss_per_timestep = loss_per_timestep * self._lead_multiplier(signal)
         loss = (loss_per_timestep * weights).sum(dim=0).mean() + aux_loss.mean()
         if self.rank_loss_weight:
             positive = torch.as_tensor(
