@@ -48,6 +48,8 @@ schema:
     mask_non_possession_shooting_stats: bool
     normalize_attack_direction: bool = true
     max_chain_len: int?
+    shot_horizon: float?
+    box_decomposition: bool = false
     use_roster_features: bool = false
     use_match_clock: bool = false
 
@@ -58,7 +60,7 @@ schema:
   val_chains: ChainsDataset
   train_loader: DataLoader
   val_loader: DataLoader
-  pos_weight: float?
+  pos_weight: float | list[float]?   # one per head with the box decomposition
 
   backbone: TorchModule
   neck: TorchModule

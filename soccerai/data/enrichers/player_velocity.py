@@ -1,5 +1,7 @@
 import json
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
+from multiprocessing import get_context
 from typing import Any
 
 import numpy as np
@@ -33,9 +35,13 @@ class PlayerVelocityEnricher:
     def __init__(self, tracking_dir_path: str):
         self.tracking_dir_path = tracking_dir_path
 
-    def add_velocity_per_player(self, players_df: pl.DataFrame) -> pl.DataFrame:
+    def add_velocity_per_player(
+        self, players_df: pl.DataFrame, n_jobs: int = 1
+    ) -> pl.DataFrame:
         """
-        Add velocity and direction columns to the players dataframe.
+        Add velocity and direction columns to the players dataframe. Games are
+        independent (one tracking file each): `n_jobs` processes them in
+        parallel.
         """
         gameIds = (
             players_df.select(pl.col("gameId"))
@@ -47,67 +53,88 @@ class PlayerVelocityEnricher:
         velocities: list[np.floating | None] = [None] * players_df.height
         directions: list[np.floating | None] = [None] * players_df.height
         indexed_players = players_df.with_row_index("_velocity_row")
+        games = [
+            (gameId, indexed_players.filter(pl.col("gameId") == gameId))
+            for gameId in gameIds
+        ]
 
-        for gameId in tqdm(
-            gameIds, total=len(gameIds), desc="Processing games", colour="blue"
-        ):
-            tracking_file = f"{self.tracking_dir_path}/{gameId}.jsonl"
-            event_byte_map = self._create_event_byte_map(tracking_file)
-            players_per_game = indexed_players.filter(pl.col("gameId") == gameId)
-            gameEventIds = (
-                players_per_game.select(pl.col("gameEventId"))
-                .unique(maintain_order=True)
-                .to_series()
-                .to_list()
-            )
-            for gameEventId in tqdm(
-                gameEventIds,
-                total=len(gameEventIds),
-                desc=f"Game {gameId}",
-                leave=False,
-                colour="green",
+        if n_jobs > 1:
+            # polars' thread pool deadlocks in forked children: spawn them
+            with ProcessPoolExecutor(
+                max_workers=n_jobs, mp_context=get_context("spawn")
+            ) as pool:
+                results = pool.map(self._game_velocities, *zip(*games, strict=True))
+                game_results = list(
+                    tqdm(results, total=len(games), desc="Processing games")
+                )
+        else:
+            game_results = [
+                self._game_velocities(gameId, players_per_game)
+                for gameId, players_per_game in tqdm(
+                    games, total=len(games), desc="Processing games", colour="blue"
+                )
+            ]
+
+        for rows, game_velocities, game_directions in game_results:
+            for row, velocity, direction in zip(
+                rows, game_velocities, game_directions, strict=True
             ):
-                byte_pos = event_byte_map.get(gameEventId)
-                players_per_event = players_per_game.filter(
-                    pl.col("gameEventId") == gameEventId
-                )
-
-                if byte_pos is None:
-                    continue
-
-                time_elapsed, ball_delta, home_players_deltas, away_players_deltas = (
-                    self._extract_tracking_data(tracking_file, byte_pos)
-                )
-
-                if (
-                    time_elapsed is None
-                    or home_players_deltas is None
-                    or away_players_deltas is None
-                    or ball_delta is None
-                    or not np.isfinite(time_elapsed)
-                    or time_elapsed <= 0
-                ):
-                    continue
-
-                for row in players_per_event.iter_rows(named=True):
-                    delta = None
-                    team = row["team"]
-                    if team == "home":
-                        delta = home_players_deltas.get(row["jerseyNum"])
-                    elif team == "away":
-                        delta = away_players_deltas.get(row["jerseyNum"])
-                    else:
-                        delta = ball_delta
-                    if delta is None or not np.isfinite(delta).all():
-                        continue
-                    velocity, direction = self._compute_velocity(delta, time_elapsed)
-                    velocities[row["_velocity_row"]] = velocity
-                    directions[row["_velocity_row"]] = direction
+                velocities[row] = velocity
+                directions[row] = direction
 
         return players_df.with_columns(
             pl.Series("velocity", velocities),
             pl.Series("direction", directions),
         )
+
+    def _game_velocities(
+        self, gameId: int, players_per_game: pl.DataFrame
+    ) -> tuple[list[int], list[np.floating], list[np.floating]]:
+        """Rows of `players_per_game` with a velocity, and their values."""
+        rows: list[int] = []
+        velocities: list[np.floating] = []
+        directions: list[np.floating] = []
+
+        tracking_file = f"{self.tracking_dir_path}/{gameId}.jsonl"
+        event_byte_map = self._create_event_byte_map(tracking_file)
+        for players_per_event in players_per_game.partition_by(
+            "gameEventId", maintain_order=True
+        ):
+            byte_pos = event_byte_map.get(players_per_event["gameEventId"][0])
+            if byte_pos is None:
+                continue
+
+            time_elapsed, ball_delta, home_players_deltas, away_players_deltas = (
+                self._extract_tracking_data(tracking_file, byte_pos)
+            )
+
+            if (
+                time_elapsed is None
+                or home_players_deltas is None
+                or away_players_deltas is None
+                or ball_delta is None
+                or not np.isfinite(time_elapsed)
+                or time_elapsed <= 0
+            ):
+                continue
+
+            for row in players_per_event.iter_rows(named=True):
+                delta = None
+                team = row["team"]
+                if team == "home":
+                    delta = home_players_deltas.get(row["jerseyNum"])
+                elif team == "away":
+                    delta = away_players_deltas.get(row["jerseyNum"])
+                else:
+                    delta = ball_delta
+                if delta is None or not np.isfinite(delta).all():
+                    continue
+                velocity, direction = self._compute_velocity(delta, time_elapsed)
+                rows.append(row["_velocity_row"])
+                velocities.append(velocity)
+                directions.append(direction)
+
+        return rows, velocities, directions
 
     def _compute_velocity(
         self, positions_delta: NDArray[np.float64], time_elapsed: np.floating

@@ -1,0 +1,55 @@
+# Early warning on every possession of every game (timeline targets).
+# Build the data first:
+#   python scripts/create_dataset.py \
+#       soccerai/data/resources/possessions/raw/dataset.parquet --possessions
+# then combine with base and a model:
+#   python scripts/train.py --configs configs/base.yaml configs/models/gcn.yaml \
+#       configs/possessions.yaml
+
+run_name: gcn_possessions
+
+data_config:
+  goal_window_for_positives: null   # no selection: every possession is kept
+  box_decomposition: true           # heads: P(box), P(shot | box), P(shot | no box)
+
+# the dataset preprocessing does not follow the training seed, so that
+# seeds share the processed files and differ only in the model
+train_ds:
+  _init_args_:
+    root: soccerai/data/resources/possessions
+    random_state: 42
+
+val_ds:
+  _init_args_:
+    root: soccerai/data/resources/possessions
+    random_state: 42
+
+head:
+  _init_args_:
+    dout: 3
+
+# no class weights: the heads stay calibrated, which their product needs,
+# and early warnings improve (2 seeds: flagged >= 3 s ahead at 5 false
+# alarms per game 0.04 -> 0.07; with lead_weight 2, 0.09)
+pos_weight: null
+
+# select and stop on the per-frame AP of "shot within the horizon": the
+# validation loss bottoms out early, long before the ranking does
+callbacks:
+  - ...
+  - _id_: early_stopping
+    _init_args_:
+      monitor: val/frame_average_precision
+      mode: max
+      patience: 15
+  - _id_: checkpoint
+    _init_args_:
+      checkpointer:
+        _init_args_:
+          monitor: val/frame_average_precision
+          mode: max
+
+trainer:
+  _init_args_:
+    lead_weight: 2.0                          # favour early warnings
+    lead_horizon: ${data_config.shot_horizon}

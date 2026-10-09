@@ -44,7 +44,9 @@ class StubChains(TemporalChainsDataset):
     """Four short synthetic chains (two per class) per split."""
 
     @staticmethod
-    def from_worldcup_dataset(dataset, max_chain_len=None) -> TemporalChainsDataset:
+    def from_worldcup_dataset(
+        dataset, max_chain_len=None, shot_horizon=None, box_decomposition=False
+    ) -> TemporalChainsDataset:
         offset = 0 if dataset.split == "train" else 10
         chains = [
             make_chain(3, 1.0, offset),

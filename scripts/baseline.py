@@ -38,7 +38,7 @@ def chain_features(
     idx = {name: i for i, name in enumerate(feature_names)}
     x = chain.features[-1]
     u = chain.u[-1].reshape(-1)
-    label = float(chain.targets[-1].reshape(-1)[0])
+    label = float(chain.chain_label[-1].reshape(-1)[0])
 
     possession = x[:, idx["is_possession_team_1"]] == 1
     carrier_mask = x[:, idx["is_ball_carrier_1"]] == 1

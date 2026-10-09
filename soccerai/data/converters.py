@@ -10,6 +10,10 @@ from torch_geometric.typing import (
     OptTensor,
 )
 
+# per-frame seconds to the next shot / penalty-area touch of the possession
+# team and to the end of the period, carried to the graphs as attributes
+TIMELINE_COLUMNS = ["time_to_shot", "time_to_box", "time_to_period_end"]
+
 
 class GraphConverter(ABC):
     NUM_PLAYERS = 22
@@ -23,6 +27,7 @@ class GraphConverter(ABC):
         "possessionEventId",
         "event_index",
         "label",
+        *TIMELINE_COLUMNS,
         "chain_id",
         "gameId",
         "jerseyNum",
@@ -108,6 +113,11 @@ class GraphConverter(ABC):
             u = torch.tensor(global_df.to_numpy(), dtype=torch.float32)
             y = torch.tensor(label, dtype=torch.float32).view(1, 1)
             jersey_numbers = torch.tensor(jersey_series.to_numpy(), dtype=torch.long)
+            timeline = {
+                c: float(event_df[c][0])
+                for c in TIMELINE_COLUMNS
+                if c in event_df.columns
+            }
 
             data_list.append(
                 Data(
@@ -120,6 +130,7 @@ class GraphConverter(ABC):
                     chain_id=chain_id,
                     event_index=event_index,
                     jersey_numbers=jersey_numbers,
+                    **timeline,
                 )
             )
 

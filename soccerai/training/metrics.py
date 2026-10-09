@@ -32,16 +32,17 @@ T = TypeVar("T")
 
 
 def chain_level_predictions(
-    preds_probs: torch.Tensor, true_labels: torch.Tensor, masks: Any
+    preds_probs: torch.Tensor, chain_labels: Any, masks: Any
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Reduce per-frame predictions of a temporal batch, shape (T_max, B), to one
-    prediction per chain, taken at the last valid (non padded) frame.
+    prediction per chain, taken at the last valid (non padded) frame, paired
+    with the chain labels (shape (T_max, B), constant along a chain).
 
-    The training loss concentrates on the end of each chain and the label is
-    a property of the whole chain, so scoring every frame (including the
-    first ones, which are indistinguishable between classes) would measure
-    a different task.
+    The chain label is a property of the whole chain, so scoring every frame
+    (including the first ones, which are indistinguishable between classes)
+    would measure a different task: `EarlyWarning` measures how early the
+    prediction rises instead.
     """
     masks = torch.as_tensor(np.asarray(masks), dtype=torch.bool)  # (T, B)
     last_valid = masks.sum(dim=0) - 1  # (B,)
@@ -50,7 +51,8 @@ def chain_level_predictions(
     preds_last = preds_probs[
         last_valid.to(preds_probs.device), chain_idx.to(preds_probs.device)
     ]
-    labels_last = true_labels[0]  # chain label, always valid at t = 0
+    # chain label, always valid at t = 0
+    labels_last = torch.as_tensor(np.asarray(chain_labels))[0].long()
     return preds_last, labels_last
 
 
@@ -315,14 +317,14 @@ class ChainCollector(Collector[tuple[np.ndarray, list[Data]]]):
         if self.storage.k == 0:
             return
         probs_np = preds_probs.detach().cpu().numpy()
-        labels_np = true_labels.detach().cpu().numpy()
+        chain_labels = np.asarray(batch.chain_label)[0]
 
         last_t = batch.masks.sum(axis=0)  # (B,)
 
         for i, t in enumerate(last_t):
             conf = probs_np[t - 1, i]
 
-            if (conf >= self.threshold) & (labels_np[0, i] == self.target_label):
+            if (conf >= self.threshold) & (chain_labels[i] == self.target_label):
                 chain_predictions = probs_np[:t, i]
                 chain = extract_chain(batch[:t], i)
                 self.storage.add(
@@ -404,3 +406,182 @@ class ChainCollector(Collector[tuple[np.ndarray, list[Data]]]):
             return
 
         return entries[0]
+
+
+def frames_before_first_shot(time_to_shot: np.ndarray) -> int:
+    """
+    Number of leading frames of a chain that precede its first shot: the time
+    to the shot is finite and keeps falling until the shot, then jumps to the
+    next shot (or +inf).
+    """
+    if len(time_to_shot) == 0 or not np.isfinite(time_to_shot[0]):
+        return 0
+    rises = np.flatnonzero(
+        ~np.isfinite(time_to_shot[1:]) | (np.diff(time_to_shot) > 1e-6)
+    )
+    return int(rises[0]) + 1 if rises.size else len(time_to_shot)
+
+
+class EarlyWarning(Metric):
+    """
+    How early the prediction flags the actions that end in a shot.
+
+    An alarm fires at the first frame whose probability exceeds a threshold;
+    the threshold is set on the negative chains so that at most
+    `false_alarm_rate` of them ever raise one. On the positive chains this
+    gives:
+
+    - `early_recall`: fraction of chains flagged before their shot;
+    - `early_recall_<min_lead>s`: fraction flagged at least `min_lead`
+      seconds before the shot;
+    - `early_median_lead_s`: median warning time of the flagged chains;
+    - `frame_average_precision`, `frame_auroc`: of the per-frame targets;
+    - `auroc_lead_<lo>-<hi>s`: frame-level AUROC of the positive frames
+      `lo`-`hi` seconds before their shot against every negative frame, i.e.
+      how separable the classes are that far ahead.
+
+    Needs the per-frame `time_to_shot` and `chain_label` of the batch.
+    """
+
+    frame_level = True
+
+    def __init__(
+        self,
+        false_alarm_rate: float = 0.1,
+        min_lead: float = 3.0,
+        lead_bins: Sequence[float] = (0, 2, 4, 6, 10, 15, 30),
+    ):
+        if not 0 < false_alarm_rate < 1:
+            raise ValueError(
+                f"false_alarm_rate must be in (0, 1), got {false_alarm_rate}"
+            )
+        self.false_alarm_rate = false_alarm_rate
+        self.min_lead = min_lead
+        self.lead_bins = list(lead_bins)
+        self.reset()
+
+    def reset(self) -> None:
+        # one (label, per-frame probabilities, per-frame time to shot) per chain
+        self.chains: list[tuple[int, np.ndarray, np.ndarray]] = []
+        # per-frame probabilities and shot targets of the frames with a target
+        self.frame_probs: list[np.ndarray] = []
+        self.frame_targets: list[np.ndarray] = []
+
+    def update(
+        self, preds_probs: torch.Tensor, true_labels: torch.Tensor, batch: Batch
+    ) -> None:
+        probs = preds_probs.detach().cpu().numpy()  # (T_max, B)
+        lengths = np.asarray(batch.masks).sum(axis=0)
+        chain_labels = np.asarray(batch.chain_label)[0]
+        time_to_shot = np.asarray(batch.time_to_shot)
+        for b, length in enumerate(lengths):
+            self.chains.append(
+                (int(chain_labels[b]), probs[:length, b], time_to_shot[:length, b])
+            )
+        # the shot target is the last column (box decomposition: [box, shot])
+        targets = true_labels.detach().cpu().numpy()
+        if targets.ndim == 3:
+            targets = targets[..., -1]
+        known = targets >= 0  # padding and censored frames are -1
+        self.frame_probs.append(probs[known])
+        self.frame_targets.append(targets[known])
+
+    def _threshold(self) -> float | None:
+        peaks = [p.max() for label, p, _ in self.chains if label == 0]
+        if not peaks:
+            return None
+        return float(np.quantile(peaks, 1 - self.false_alarm_rate))
+
+    def _leads(self, threshold: float) -> np.ndarray:
+        """
+        Warning time of every positive chain (NaN when never flagged). Only
+        the frames before the first shot of the chain can raise the alarm:
+        later frames (the shot in flight, a rebound) would otherwise count
+        as warnings of the next shot, or of none, with an infinite lead.
+        """
+        leads = []
+        for label, probs, time_to_shot in self.chains:
+            if label != 1:
+                continue
+            n = frames_before_first_shot(time_to_shot)
+            alarms = np.flatnonzero(probs[:n] > threshold)
+            leads.append(time_to_shot[alarms[0]] if alarms.size else np.nan)
+        return np.asarray(leads, dtype=float)
+
+    def compute(self) -> dict[str, float]:
+        threshold = self._threshold()
+        if threshold is None or not any(label == 1 for label, _, _ in self.chains):
+            return {}
+        leads = self._leads(threshold)
+        flagged = ~np.isnan(leads)
+        results = {
+            "early_threshold": threshold,
+            "early_recall": float(flagged.mean()),
+            f"early_recall_{self.min_lead:g}s": float(
+                (np.nan_to_num(leads, nan=-1.0) >= self.min_lead).mean()
+            ),
+            "early_median_lead_s": float(np.median(leads[flagged]))
+            if flagged.any()
+            else 0.0,
+        }
+
+        frame_probs = torch.from_numpy(np.concatenate(self.frame_probs))
+        frame_targets = torch.from_numpy(np.concatenate(self.frame_targets)).long()
+        if 0 < int(frame_targets.sum()) < len(frame_targets):
+            results["frame_average_precision"] = binary_average_precision(
+                frame_probs, frame_targets
+            ).item()
+            results["frame_auroc"] = binary_auroc(frame_probs, frame_targets).item()
+
+        neg_probs = np.concatenate([p for label, p, _ in self.chains if label == 0])
+        pos_probs = np.concatenate([p for label, p, _ in self.chains if label == 1])
+        pos_lead = np.concatenate([t for label, _, t in self.chains if label == 1])
+        for lo, hi in zip(self.lead_bins[:-1], self.lead_bins[1:]):
+            in_bin = pos_probs[(pos_lead >= lo) & (pos_lead < hi)]
+            if in_bin.size == 0:
+                continue
+            preds = torch.from_numpy(np.concatenate([in_bin, neg_probs]))
+            labels = torch.cat(
+                [torch.ones(in_bin.size), torch.zeros(neg_probs.size)]
+            ).long()
+            results[f"auroc_lead_{lo:g}-{hi:g}s"] = binary_auroc(preds, labels).item()
+        return results
+
+    def plot(self) -> dict[str, Image | Video]:
+        threshold = self._threshold()
+        if threshold is None:
+            return {}
+        leads = self._leads(threshold)
+        if leads.size == 0:
+            return {}
+
+        grid = np.linspace(0.0, self.lead_bins[-1], 121)
+        recall = [(np.nan_to_num(leads, nan=-1.0) >= g).mean() for g in grid]
+
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.plot(grid, recall, color="#2a78d6", linewidth=2, drawstyle="steps-post")
+        ax.axvline(self.min_lead, color="#52514e", linewidth=1, linestyle="--")
+        at_min = (np.nan_to_num(leads, nan=-1.0) >= self.min_lead).mean()
+        ax.annotate(
+            f"{at_min:.0%} flagged ≥ {self.min_lead:g} s ahead",
+            xy=(self.min_lead, at_min),
+            xytext=(8, 8),
+            textcoords="offset points",
+            fontsize=12,
+            color="#0b0b0b",
+        )
+        ax.set_xlabel("Warning time before the shot (s)", fontsize=16)
+        ax.set_ylabel("Shot chains flagged", fontsize=16)
+        ax.set_title(
+            f"Early warning at {self.false_alarm_rate:.0%} false alarms",
+            fontsize=14,
+        )
+        ax.set_xlim(0, self.lead_bins[-1])
+        ax.set_ylim(0, 1)
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0%}"))
+        ax.grid(True, color="#e5e5e3", linewidth=0.8)
+        ax.tick_params(axis="both", which="major", labelsize=12)
+        for side in ("top", "right"):
+            ax.spines[side].set_visible(False)
+        plt.tight_layout()
+        return {"early_warning_curve": Image(fig)}

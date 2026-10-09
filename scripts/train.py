@@ -1,6 +1,7 @@
 import argparse
 from typing import Any
 
+import numpy as np
 import torch
 from loguru import logger
 from torch_geometric.nn import summary
@@ -25,7 +26,8 @@ def main(args: argparse.Namespace) -> None:
         len(cfg.val_chains),
     )
     if cfg.pos_weight is not None:
-        logger.info("Positive class weight: {:.3f}", cfg.pos_weight)
+        weights = np.atleast_1d(cfg.pos_weight)
+        logger.info("Positive class weight(s): {}", np.round(weights, 3).tolist())
 
     trainer = cfg.trainer
     print(

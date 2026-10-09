@@ -22,7 +22,7 @@ from torch_geometric.transforms import Compose
 
 from soccerai.data.annotations import FRAME_KEYS
 from soccerai.data.config import SHOOTING_STATS, X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
-from soccerai.data.converters import GraphConverter
+from soccerai.data.converters import TIMELINE_COLUMNS, GraphConverter
 from soccerai.data.transformers import (
     BallLocationTransformer,
     ClippedScaler,
@@ -72,7 +72,7 @@ class WorldCup2022Dataset(InMemoryDataset):
     MAX_BALL_RELATIVE_SPEED = 35.0
     # Bump when the preprocessing code changes in a way that must invalidate
     # previously processed files.
-    PROCESSING_VERSION = 4
+    PROCESSING_VERSION = 5
     # rosters were scraped in spring 2025, the tournament was played in Nov 2022
     AGE_SCRAPE_TO_TOURNAMENT_YEARS = 2.5
 
@@ -127,13 +127,18 @@ class WorldCup2022Dataset(InMemoryDataset):
         Short hash of everything that determines the processed files, so that
         a change of data configuration (or of the preprocessing code) can never
         silently reuse stale caches. Options applied only at load time
-        (augmentations, chain window) are left out, so toggling them reuses
+        (augmentations, chain window, shot horizon) are left out, so toggling them reuses
         the cache.
         """
         payload = json.dumps(
             {
                 "data": self.cfg.model_dump(
-                    exclude={"use_augmentations", "max_chain_len"}
+                    exclude={
+                        "use_augmentations",
+                        "max_chain_len",
+                        "shot_horizon",
+                        "box_decomposition",
+                    }
                 ),
                 "converter": {
                     "type": type(self.converter).__name__,
@@ -296,6 +301,10 @@ class WorldCup2022Dataset(InMemoryDataset):
         # the raw event index orders the frames of a chain (the game clock
         # has a 1 s resolution and is often tied within a chain)
         df = df.rename({"index": "event_index"})
+        if "time_to_shot" not in df.columns:
+            # annotated chains: the shot that ends the chain; the possessions
+            # dataset carries timeline targets computed on the whole match
+            df = self._add_time_to_shot(df)
 
         cols_to_drop = [
             "gameEventType",
@@ -497,6 +506,41 @@ class WorldCup2022Dataset(InMemoryDataset):
         return df
 
     @staticmethod
+    def _add_time_to_shot(df: pl.DataFrame) -> pl.DataFrame:
+        """
+        `time_to_shot`: seconds from the start of every frame to the start of
+        the next shot of its chain (video time, `startTime`), the quantity
+        behind the per-frame "shot within the horizon" targets. Frames of
+        negative chains never reach a shot and get +inf.
+        """
+        frames = df.select("chain_id", "event_index", "startTime").unique(
+            ["chain_id", "event_index"]
+        )
+        shots = (
+            df.filter(pl.col("possessionEventType") == "SH")
+            .select("chain_id", pl.col("startTime").alias("_shot_time"))
+            .unique()
+        )
+        # first shot of the chain at or after the frame (a few chains hold
+        # two shots)
+        next_shot = (
+            frames.join(shots, on="chain_id")
+            .filter(pl.col("_shot_time") >= pl.col("startTime"))
+            .group_by("chain_id", "event_index")
+            .agg(
+                (pl.col("_shot_time") - pl.col("startTime")).min().alias("time_to_shot")
+            )
+        )
+        frames = frames.join(
+            next_shot, on=["chain_id", "event_index"], how="left"
+        ).select(
+            "chain_id",
+            "event_index",
+            pl.col("time_to_shot").fill_null(float("inf")),
+        )
+        return df.join(frames, on=["chain_id", "event_index"], how="left")
+
+    @staticmethod
     def _normalize_attack_direction(df: pl.DataFrame) -> pl.DataFrame:
         """
         Mirror the frames in which the possession team attacks to the left so
@@ -592,6 +636,7 @@ class WorldCup2022Dataset(InMemoryDataset):
             "possessionEventId",
             "event_index",
             "label",
+            *[c for c in TIMELINE_COLUMNS if c in df.columns],
             "gameId",
             "chain_id",
             "jerseyNum",
