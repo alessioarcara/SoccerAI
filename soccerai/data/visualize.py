@@ -1,4 +1,4 @@
-from typing import Any, List, Tuple
+from typing import Any
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -27,7 +27,7 @@ def plot_players_with_numbers(
     s: int,
     zorder: int,
     label_color: str = "white",
-) -> List[Any]:
+) -> list[Any]:
     scat = ax.scatter(x_coords, y_coords, color=color, alpha=alpha, s=s, zorder=zorder)
     texts = []
 
@@ -108,7 +108,7 @@ def visualize_frame(
     event_df: pl.DataFrame,
     frames_df: pl.DataFrame,
     metadata_df: pl.DataFrame,
-    ball_trajectory: List[Tuple[float]],
+    ball_trajectory: list[tuple[float]],
 ) -> None:
     frame_df = frames_df.filter(pl.col("index") == frame_index)
     match_id = event_df[frame_index]["gameId"].item()
@@ -203,7 +203,7 @@ def visualize_frame(
 
 
 def shot_frames_navigator(
-    frames: List[int],
+    frames: list[int],
     event_df: pl.DataFrame,
     players_df: pl.DataFrame,
     metadata_df: pl.DataFrame,

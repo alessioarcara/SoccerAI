@@ -1,5 +1,4 @@
 from math import ceil
-from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -11,8 +10,8 @@ from torch_geometric.utils import (
     to_dense_batch,
 )
 
-from soccerai.models.necks import RNN_CELLS
-from soccerai.training.trainer_config import DiffPoolConfig, ModelConfig
+from soccerai.models.necks import TemporalFusion
+from soccerai.models.typings import ReadoutType
 
 
 class DenseSageGNN(torch.nn.Module):
@@ -64,39 +63,121 @@ class DenseSageGNN(torch.nn.Module):
         return x
 
 
-class HierarchicalGNN(nn.Module):
-    def __init__(self, din: int, glob_din: int, cfg: ModelConfig, head: nn.Module):
+EPS = 1e-15
+
+
+def diffpool_aux_losses(
+    adj: torch.Tensor, s: torch.Tensor, mask: OptTensor = None
+) -> torch.Tensor:
+    """
+    Per-graph DiffPool regularisers: link-prediction loss plus assignment
+    entropy, shape (B,). Same terms as `dense_diff_pool`, which only returns
+    their batch mean, so that the trainer can drop padded frames.
+    """
+    s = torch.softmax(s, dim=-1)
+    if mask is not None:
+        s = s * mask.unsqueeze(-1).to(s.dtype)
+    n = adj.size(-1)
+    link = (adj - s @ s.transpose(1, 2)).flatten(1).norm(p=2, dim=1) / (n * n)
+    ent = (-s * torch.log(s + EPS)).sum(dim=-1)  # (B, N)
+    if mask is None:
+        ent = ent.mean(dim=-1)
+    else:
+        m = mask.to(ent.dtype)
+        ent = (ent * m).sum(dim=-1) / m.sum(dim=-1).clamp(min=1.0)
+    return link + ent
+
+
+class DiffPoolBackbone(nn.Module):
+    """
+    Two DiffPool levels over a dense SAGE stack, then a readout of the
+    clusters: returns one embedding per graph, shape (B, out_dim).
+
+    The link-prediction and assignment-entropy regularisers of every graph
+    (shape (B,)) are left in `aux_loss` after each forward pass.
+    """
+
+    def __init__(
+        self,
+        din: int,
+        dhid: int,
+        pooling_ratio: float = 0.25,
+        dhid_multiplier: int = 1,
+        readout: ReadoutType = "mean",
+        num_nodes: int = 22,
+    ):
         super().__init__()
+        dhid1, dhid2, dhid3 = (
+            max(1, int(dhid * (dhid_multiplier**i))) for i in range(3)
+        )
+        self.readout = readout
 
-        assert isinstance(cfg.backbone, DiffPoolConfig)
-        pooling_ratio = cfg.backbone.pooling_ratio
-        base_dhid = cfg.backbone.dhid
-        factor = cfg.backbone.dhid_multiplier
-        self.readout = cfg.neck.readout
-
-        # Backbone
-        dhid_levels = [max(1, int(base_dhid * (factor**i))) for i in range(3)]
-        dhid1, dhid2, dhid3 = dhid_levels
-
-        num_nodes = ceil(pooling_ratio * 22)
-        self.gnn1_pool = DenseSageGNN(din, dhid1, num_nodes)
+        n_clusters = ceil(pooling_ratio * num_nodes)
+        self.gnn1_pool = DenseSageGNN(din, dhid1, n_clusters)
         self.gnn1_embed = DenseSageGNN(din, dhid1, dhid1, lin=False)
 
-        num_nodes = ceil(pooling_ratio * num_nodes)
-        self.gnn2_pool = DenseSageGNN(3 * dhid1, dhid2, num_nodes)
+        n_clusters = ceil(pooling_ratio * n_clusters)
+        self.gnn2_pool = DenseSageGNN(3 * dhid1, dhid2, n_clusters)
         self.gnn2_embed = DenseSageGNN(3 * dhid1, dhid2, dhid2, lin=False)
 
         self.gnn3_embed = DenseSageGNN(3 * dhid2, dhid3, dhid3, lin=False)
+        # the dense SAGE stack concatenates its three layers
+        self.out_dim = 3 * dhid3
+        self.aux_loss: torch.Tensor | None = None
 
-        # Neck
-        self.global_proj = pyg_nn.Linear(glob_din, cfg.neck.glob_dout)
+    def forward(
+        self,
+        x: torch.Tensor,
+        edge_index: Adj,
+        edge_weight: OptTensor = None,
+        edge_attr: OptTensor = None,
+        batch: OptTensor = None,
+        batch_size: int | None = None,
+    ) -> torch.Tensor:
+        x, mask = to_dense_batch(x, batch)
+        adj = to_dense_adj(edge_index, batch=batch, edge_attr=edge_attr)
 
-        self.rnn = RNN_CELLS[cfg.neck.rnn_type](
-            input_size=cfg.neck.rnn_din, hidden_size=cfg.neck.rnn_dout
-        )
+        s = self.gnn1_pool(x, adj, mask)
+        x = self.gnn1_embed(x, adj, mask)
 
-        # Head
+        # one value per graph (B,); the trainer averages them over the real
+        # (non-padded) graphs and adds them to the classification loss
+        aux_loss = diffpool_aux_losses(adj, s, mask)
+        x, adj, _, _ = pyg_nn.dense_diff_pool(x, adj, s, mask)
+
+        s = self.gnn2_pool(x, adj)
+        x = self.gnn2_embed(x, adj)
+
+        aux_loss = aux_loss + diffpool_aux_losses(adj, s)
+        x, adj, _, _ = pyg_nn.dense_diff_pool(x, adj, s)
+        self.aux_loss = aux_loss
+
+        x = self.gnn3_embed(x, adj)
+
+        if self.readout == "mean":
+            return x.mean(dim=1)
+        if self.readout == "sum":
+            return x.sum(dim=1)
+        return x.max(dim=1).values
+
+
+class HierarchicalGNN(nn.Module):
+    """
+    Temporal model over a backbone that pools the graph itself (DiffPool):
+    same interface and neck/head as `TemporalGNN`.
+    """
+
+    def __init__(
+        self, backbone: DiffPoolBackbone, neck: TemporalFusion, head: nn.Module
+    ):
+        super().__init__()
+        self.backbone = backbone
+        self.neck = neck
         self.head = head
+
+    @property
+    def aux_loss(self) -> torch.Tensor | None:
+        return self.backbone.aux_loss
 
     def forward(
         self,
@@ -106,44 +187,12 @@ class HierarchicalGNN(nn.Module):
         edge_weight: OptTensor = None,
         edge_attr: OptTensor = None,
         batch: OptTensor = None,
-        batch_size: Optional[int] = None,
+        batch_size: int | None = None,
         prev_h: OptTensor = None,
         prev_c: OptTensor = None,
     ):
-        x, mask = to_dense_batch(x, batch)
-        adj = to_dense_adj(edge_index, batch=batch, edge_attr=edge_attr)
-
-        s = self.gnn1_pool(x, adj, mask)
-        x = self.gnn1_embed(x, adj, mask)
-
-        x, adj, _, _ = pyg_nn.dense_diff_pool(x, adj, s, mask)
-
-        s = self.gnn2_pool(x, adj)
-        x = self.gnn2_embed(x, adj)
-
-        x, adj, _, _ = pyg_nn.dense_diff_pool(x, adj, s)
-
-        x = self.gnn3_embed(x, adj)
-
-        if self.readout == "mean":
-            graph_emb = x.mean(dim=1)
-        elif self.readout == "sum":
-            graph_emb = x.sum(dim=1)
-        else:  # "max"
-            graph_emb, _ = x.max(dim=1)
-
-        glob_emb = F.relu(self.global_proj(u), inplace=True)
-        fused = torch.cat([graph_emb, glob_emb], dim=-1)
-
-        if isinstance(self.rnn, nn.LSTMCell):
-            state: Optional[Tuple[OptTensor, OptTensor]] = (
-                prev_h,
-                prev_c,
-            )
-            h, c = self.rnn(fused, state if prev_h is not None else None)
-        else:  # GRUCell
-            h = self.rnn(fused, prev_h)
-            c = None
-
-        logits = self.head(h)
-        return logits, h, c
+        graph_emb = self.backbone(
+            x, edge_index, edge_weight, edge_attr, batch, batch_size
+        )
+        fused, h, c = self.neck.forward_pooled(graph_emb, u, prev_h, prev_c)
+        return self.head(fused), h, c

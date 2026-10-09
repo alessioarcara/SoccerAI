@@ -1,6 +1,6 @@
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 import numpy as np
 import polars as pl
@@ -10,10 +10,10 @@ from tqdm.notebook import tqdm
 
 @dataclass
 class FrameData:
-    ball_positions: List[List[float]]
-    home_players_positions: Dict[str, List[List[float]]]
-    away_players_positions: Dict[str, List[List[float]]]
-    timestamps: List[List[float]]
+    ball_positions: list[list[float]]
+    home_players_positions: dict[str, list[list[float]]]
+    away_players_positions: dict[str, list[list[float]]]
+    timestamps: list[list[float]]
 
     def has_sufficient_data(self) -> bool:
         return len(self.ball_positions) >= 2
@@ -44,15 +44,16 @@ class PlayerVelocityEnricher:
             .to_list()
         )
 
-        velocities: List[Optional[np.floating]] = []
-        directions: List[Optional[np.floating]] = []
+        velocities: list[np.floating | None] = [None] * players_df.height
+        directions: list[np.floating | None] = [None] * players_df.height
+        indexed_players = players_df.with_row_index("_velocity_row")
 
         for gameId in tqdm(
             gameIds, total=len(gameIds), desc="Processing games", colour="blue"
         ):
             tracking_file = f"{self.tracking_dir_path}/{gameId}.jsonl"
             event_byte_map = self._create_event_byte_map(tracking_file)
-            players_per_game = players_df.filter(pl.col("gameId") == gameId)
+            players_per_game = indexed_players.filter(pl.col("gameId") == gameId)
             gameEventIds = (
                 players_per_game.select(pl.col("gameEventId"))
                 .unique(maintain_order=True)
@@ -67,13 +68,11 @@ class PlayerVelocityEnricher:
                 colour="green",
             ):
                 byte_pos = event_byte_map.get(gameEventId)
-                players_per_event = players_df.filter(
+                players_per_event = players_per_game.filter(
                     pl.col("gameEventId") == gameEventId
                 )
 
                 if byte_pos is None:
-                    velocities.extend([None] * players_per_event.height)
-                    directions.extend([None] * players_per_event.height)
                     continue
 
                 time_elapsed, ball_delta, home_players_deltas, away_players_deltas = (
@@ -85,23 +84,25 @@ class PlayerVelocityEnricher:
                     or home_players_deltas is None
                     or away_players_deltas is None
                     or ball_delta is None
+                    or not np.isfinite(time_elapsed)
+                    or time_elapsed <= 0
                 ):
-                    velocities.extend([None] * players_per_event.height)
-                    directions.extend([None] * players_per_event.height)
                     continue
 
                 for row in players_per_event.iter_rows(named=True):
                     delta = None
                     team = row["team"]
                     if team == "home":
-                        delta = home_players_deltas[row["jerseyNum"]]
+                        delta = home_players_deltas.get(row["jerseyNum"])
                     elif team == "away":
-                        delta = away_players_deltas[row["jerseyNum"]]
+                        delta = away_players_deltas.get(row["jerseyNum"])
                     else:
                         delta = ball_delta
+                    if delta is None or not np.isfinite(delta).all():
+                        continue
                     velocity, direction = self._compute_velocity(delta, time_elapsed)
-                    velocities.append(velocity)
-                    directions.append(direction)
+                    velocities[row["_velocity_row"]] = velocity
+                    directions[row["_velocity_row"]] = direction
 
         return players_df.with_columns(
             pl.Series("velocity", velocities),
@@ -110,18 +111,20 @@ class PlayerVelocityEnricher:
 
     def _compute_velocity(
         self, positions_delta: NDArray[np.float64], time_elapsed: np.floating
-    ) -> Tuple[np.floating, np.floating]:
+    ) -> tuple[np.floating, np.floating]:
         velocity_vector = positions_delta / time_elapsed
-        velocity = np.linalg.norm(velocity_vector)
+        # The downstream vx/vy features are planar; vertical ball motion must
+        # not be reconstructed as horizontal speed.
+        velocity = np.linalg.norm(velocity_vector[:2])
         direction = np.rad2deg(np.arctan2(velocity_vector[1], velocity_vector[0]))
         return velocity, direction
 
-    def _create_event_byte_map(self, tracking_file: str) -> Dict[int, int]:
+    def _create_event_byte_map(self, tracking_file: str) -> dict[int, int]:
         """
         Create a mapping of game event IDs to byte positions in the tracking file.
         """
-        event_byte_map: Dict[int, int] = {}
-        pending_events: Dict[int, int] = {}
+        event_byte_map: dict[int, int] = {}
+        pending_events: dict[int, int] = {}
 
         with open(tracking_file, "r") as tracking_data:
             byte_pos = tracking_data.tell()
@@ -164,15 +167,15 @@ class PlayerVelocityEnricher:
 
     def _extract_tracking_data(
         self, tracking_file: str, byte_pos: int
-    ) -> Union[
-        Tuple[
+    ) -> (
+        tuple[
             np.floating,
             NDArray[np.float64],
-            Dict[str, NDArray[np.float64]],
-            Dict[str, NDArray[np.float64]],
-        ],
-        Tuple[None, ...],
-    ]:
+            dict[str, NDArray[np.float64]],
+            dict[str, NDArray[np.float64]],
+        ]
+        | tuple[None, ...]
+    ):
         """
         Extract tracking data from a file at a specific byte position
         """
@@ -196,7 +199,7 @@ class PlayerVelocityEnricher:
         return self._compute_deltas_avoiding_outliers(frame_data)
 
     def _process_frames(
-        self, frames: List[str], frame_data: FrameData, check_game_event: bool = True
+        self, frames: list[str], frame_data: FrameData, check_game_event: bool = True
     ):
         previous_frame = -1
 
@@ -219,7 +222,7 @@ class PlayerVelocityEnricher:
                 self._extract_frame_info(frame_data, frame_info)
             previous_frame = frame_info["frameNum"]
 
-    def _is_valid_frame(self, frame_info: Dict[str, Any], previous_frame: int) -> bool:
+    def _is_valid_frame(self, frame_info: dict[str, Any], previous_frame: int) -> bool:
         return (
             frame_info["frameNum"] != previous_frame
             and frame_info["ballsSmoothed"] is not None
@@ -230,7 +233,7 @@ class PlayerVelocityEnricher:
         )
 
     def _extract_players_data(
-        self, players: List[Dict[str, Any]], players_dict: Dict[str, List[List[float]]]
+        self, players: list[dict[str, Any]], players_dict: dict[str, list[list[float]]]
     ) -> None:
         for player in players:
             jersey_num = player["jerseyNum"]
@@ -241,7 +244,7 @@ class PlayerVelocityEnricher:
     def _extract_frame_info(
         self,
         frame_data: FrameData,
-        frame_info: Dict[str, Any],
+        frame_info: dict[str, Any],
     ) -> None:
         ball = frame_info["ballsSmoothed"]
         frame_data.ball_positions.append([ball["x"], ball["y"], ball["z"]])
@@ -257,11 +260,11 @@ class PlayerVelocityEnricher:
 
     def _compute_deltas_avoiding_outliers(
         self, frame_data: FrameData
-    ) -> Tuple[
+    ) -> tuple[
         np.floating,
         NDArray[np.float64],
-        Dict[str, NDArray[np.float64]],
-        Dict[str, NDArray[np.float64]],
+        dict[str, NDArray[np.float64]],
+        dict[str, NDArray[np.float64]],
     ]:
         def compute_pairwise_differences(x):
             return np.array([x[i + 1] - x[i] for i in range(0, len(x) - 1, 2)])
@@ -291,8 +294,8 @@ class PlayerVelocityEnricher:
 
     def _read_frames_backward(
         self, filename: str, start_pos: int, max_lines: int = 60, block_size: int = 4096
-    ) -> List[str]:
-        lines: List[bytes] = []
+    ) -> list[str]:
+        lines: list[bytes] = []
         with open(filename, "rb") as f:
             f.seek(start_pos)
             f.readline()
@@ -325,7 +328,7 @@ class PlayerVelocityEnricher:
 
     def _read_frames_forward(
         self, filename: str, start_pos: int, max_lines: int = 4
-    ) -> List[str]:
+    ) -> list[str]:
         frames = []
         with open(filename, "r") as f:
             f.seek(start_pos)

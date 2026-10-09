@@ -1,7 +1,13 @@
-import json
-from pathlib import Path
-from typing import List, Sequence, Union
+from __future__ import annotations
 
+import hashlib
+import json
+from collections.abc import Callable, Sequence
+from enum import StrEnum
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import numpy as np
 import polars as pl
 from loguru import logger
 from sklearn.compose import ColumnTransformer
@@ -10,24 +16,65 @@ from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.experimental import enable_iterative_imputer  # noqa: F401
 from sklearn.impute import IterativeImputer, KNNImputer, SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, PowerTransformer, QuantileTransformer
+from sklearn.preprocessing import OneHotEncoder, QuantileTransformer
 from torch_geometric.data import InMemoryDataset
 from torch_geometric.transforms import Compose
 
+from soccerai.data.annotations import FRAME_KEYS
 from soccerai.data.config import SHOOTING_STATS, X_GOAL_LEFT, X_GOAL_RIGHT, Y_GOAL
 from soccerai.data.converters import GraphConverter
 from soccerai.data.transformers import (
     BallLocationTransformer,
+    ClippedScaler,
     GoalLocationTransformer,
     NonPossessionShootingStatsMask,
     PlayerLocationTransformer,
 )
-from soccerai.training.trainer_config import DataConfig
+from soccerai.data.utils import balanced_pos_weight
 from soccerai.training.transforms import RandomHorizontalFlip, RandomVerticalFlip
+
+if TYPE_CHECKING:
+    from soccerai.generated import DataConfig
+
+CARRIER_FEATURE = "is_ball_carrier_1"
+
+
+class SplitMode(StrEnum):
+    # last `val_ratio` of the games (group stage trains, knock-outs validate)
+    CHRONOLOGICAL = "chronological"
+    # seeded random subset of the games
+    RANDOM = "random"
+
+
+def home_attacks_right_expr() -> pl.Expr:
+    """
+    Polars counterpart of `soccerai.data.utils.home_attacks_right`: whether the
+    home team attacks towards x = pitch length in the row's game period.
+    """
+    start_left_extra_time = pl.col("homeTeamStartLeftExtraTime").fill_null(
+        pl.col("homeTeamStartLeft")
+    )
+    start_left = (
+        pl.when(pl.col("period").is_in([3, 4]))
+        .then(start_left_extra_time)
+        .otherwise(pl.col("homeTeamStartLeft"))
+        .cast(pl.Boolean)
+    )
+    first_period_of_pair = pl.col("period").is_in([1, 3])
+    return start_left == first_period_of_pair
 
 
 class WorldCup2022Dataset(InMemoryDataset):
-    FEATURE_NAMES_FILE = "feature_names.json"
+    # player height used for the ball `dz` feature when roster data is unused
+    NOMINAL_HEIGHT_CM = 180.0
+    # velocities are clipped at these speeds (m/s) and scaled to [-1, 1]
+    MAX_PLAYER_SPEED = 12.0
+    MAX_BALL_RELATIVE_SPEED = 35.0
+    # Bump when the preprocessing code changes in a way that must invalidate
+    # previously processed files.
+    PROCESSING_VERSION = 4
+    # rosters were scraped in spring 2025, the tournament was played in Nov 2022
+    AGE_SCRAPE_TO_TOURNAMENT_YEARS = 2.5
 
     def __init__(
         self,
@@ -42,32 +89,78 @@ class WorldCup2022Dataset(InMemoryDataset):
         self.split = split
         self.cfg = cfg
         self.random_state = random_state
+        raw_path = Path(root) / "raw" / "dataset.parquet"
+        self.raw_digest = (
+            hashlib.sha256(raw_path.read_bytes()).hexdigest()
+            if raw_path.exists()
+            else None
+        )
         super().__init__(root=root, transform=None, force_reload=force_reload)
 
         data_path_idx = 0 if self.split == "train" else 1
         self.load(self.processed_paths[data_path_idx])
 
-        fp = Path(self.processed_dir) / self.FEATURE_NAMES_FILE
+        fp = Path(self.processed_paths[2])
         self.feature_names: Sequence[str] = json.loads(fp.read_text(encoding="utf-8"))
 
         self.transform = (
-            Compose(
-                [
-                    RandomHorizontalFlip(self.feature_names, 0.5),
-                    RandomVerticalFlip(self.feature_names, 0.5),
-                ]
-            )
+            Compose(self._build_augmentations())
             if split == "train" and self.cfg.use_augmentations
             else None
         )
 
+    def _build_augmentations(self) -> list[Callable]:
+        augmentations: list[Callable] = [RandomVerticalFlip(self.feature_names, 0.5)]
+        # mirroring the pitch along its length would reverse the attacking
+        # direction, which is fixed once the frames are normalised
+        if not self.cfg.normalize_attack_direction:
+            augmentations.append(RandomHorizontalFlip(self.feature_names, 0.5))
+        return augmentations
+
     @property
-    def raw_file_names(self) -> List[str]:
+    def raw_file_names(self) -> list[str]:
         return ["dataset.parquet"]
 
     @property
-    def processed_file_names(self) -> List[str]:
-        return ["train_data.pt", "val_data.pt"]
+    def config_tag(self) -> str:
+        """
+        Short hash of everything that determines the processed files, so that
+        a change of data configuration (or of the preprocessing code) can never
+        silently reuse stale caches. Options applied only at load time
+        (augmentations, chain window) are left out, so toggling them reuses
+        the cache.
+        """
+        payload = json.dumps(
+            {
+                "data": self.cfg.model_dump(
+                    exclude={"use_augmentations", "max_chain_len"}
+                ),
+                "converter": {
+                    "type": type(self.converter).__name__,
+                    **vars(self.converter),
+                },
+                "random_state": self.random_state,
+                "version": self.PROCESSING_VERSION,
+                "raw_digest": getattr(self, "raw_digest", None),
+            },
+            sort_keys=True,
+            default=str,
+        )
+        return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:10]
+
+    @property
+    def processed_file_names(self) -> list[str]:
+        tag = self.config_tag
+        return [f"train_{tag}.pt", f"val_{tag}.pt", f"feature_names_{tag}.json"]
+
+    @property
+    def carrier_feature_idx(self) -> int:
+        """Column of the node features flagging the ball carrier."""
+        return list(self.feature_names).index(CARRIER_FEATURE)
+
+    def positive_weight(self) -> float:
+        """#negative / #positive frames: the BCE weight balancing frames."""
+        return balanced_pos_weight(self._data.y.view(-1).numpy())
 
     @property
     def num_global_features(self) -> int:
@@ -76,33 +169,136 @@ class WorldCup2022Dataset(InMemoryDataset):
         except (IndexError, AttributeError):
             return 0
 
-    def _split_by_worldcup_phase(
-        self, df: pl.DataFrame, val_ratio: float
+    def _split_games(
+        self, df: pl.DataFrame, all_game_ids: Sequence[int]
     ) -> tuple[pl.DataFrame, pl.DataFrame]:
         """
-        Split the DataFrame into training and validation sets.
+        Split the frames into training and validation sets by game, so that
+        no chain (and no frame) of a game can appear in both.
 
-        The split accounts the two phases of a FIFA World Cup:
-            * 48 group-stage games -> training set
-            * 16 knock-out games -> validation set
+        - "chronological": the last `val_ratio` of the games (ids grow with
+          time, so with 0.25 the 48 group-stage games train and the 16
+          knock-out games validate), decided on `all_game_ids` before any
+          game is dropped.
+        - "random": a seeded random `val_ratio` subset of the games present
+          in `df` (after any game is dropped).
         """
-        game_ids_df = df.select(["gameId"]).unique().sort("gameId")
-        n_games = game_ids_df.height
+        present = sorted(df.select("gameId").unique()["gameId"].to_list())
 
-        n_train_games = int((1.0 - val_ratio) * n_games)
+        if self.cfg.split_mode == SplitMode.CHRONOLOGICAL:
+            n_val = max(1, round(self.cfg.val_ratio * len(all_game_ids)))
+            val_games = set(sorted(all_game_ids)[len(all_game_ids) - n_val :])
+        elif self.cfg.split_mode == SplitMode.RANDOM:
+            if len(present) < 2:
+                raise ValueError(f"Cannot split {len(present)} game(s) in two")
+            n_val = min(
+                max(1, round(self.cfg.val_ratio * len(present))), len(present) - 1
+            )
+            rng = np.random.default_rng(self.random_state)
+            val_games = set(rng.permutation(present)[:n_val].tolist())
+        else:
+            raise ValueError(f"Unknown split mode: {self.cfg.split_mode}")
 
-        train_game_ids = game_ids_df.slice(0, n_train_games)
-        val_game_ids = game_ids_df.slice(n_train_games, n_games)
-
-        train_df = df.join(train_game_ids, on="gameId", how="semi")
-        val_df = df.join(val_game_ids, on="gameId", how="semi")
-
+        train_df = df.filter(~pl.col("gameId").is_in(list(val_games)))
+        val_df = df.filter(pl.col("gameId").is_in(list(val_games)))
         return train_df, val_df
 
+    @staticmethod
+    def _drop_games_without_negatives(df: pl.DataFrame) -> pl.DataFrame:
+        """
+        Games whose chains are all positive would only shift the class prior
+        of their split (this happened to the extra-time matches, for which
+        the negative-chain selection used to fail).
+        """
+        has_negatives = (pl.col("label") == 0).any().over("gameId")
+        dropped = df.filter(~has_negatives).select("gameId").unique()["gameId"]
+        if dropped.len() > 0:
+            logger.warning(
+                "Dropping {} game(s) without negative chains: {}",
+                dropped.len(),
+                sorted(dropped.to_list()),
+            )
+        return df.filter(has_negatives)
+
+    def _filter_positive_chains(self, df: pl.DataFrame) -> pl.DataFrame:
+        """
+        Apply to the positive chains the same selection used for the
+        negatives: the ball carrier of the last frame (the action before the
+        shot) must be within `goal_window_for_positives` metres of the
+        attacked goal line. Without it "last action far from goal" is a
+        shortcut for the positive class.
+        """
+        window = self.cfg.goal_window_for_positives
+        if window is None:
+            return df
+
+        last_carrier = (
+            df.filter((pl.col("label") == 1) & (pl.col("is_ball_carrier") == 1))
+            .sort("event_index")
+            .group_by("chain_id")
+            .last()
+        )
+        kept = last_carrier.filter((pl.col("x_goal") - pl.col("x")).abs() <= window)[
+            "chain_id"
+        ]
+        n_positive = df.filter(pl.col("label") == 1)["chain_id"].n_unique()
+        no_carrier = n_positive - last_carrier.height
+        if no_carrier > 0:
+            logger.warning(
+                "Dropping {} positive chain(s) with no ball carrier in any frame",
+                no_carrier,
+            )
+        logger.info(
+            "Positive chains ending within {} m of the goal line: {} kept, {} dropped",
+            window,
+            kept.len(),
+            n_positive - kept.len(),
+        )
+        return df.filter((pl.col("label") == 0) | pl.col("chain_id").is_in(kept))
+
+    @staticmethod
+    def _log_split(name: str, df: pl.DataFrame) -> None:
+        chains = df.group_by("chain_id").agg(pl.col("label").first())
+        logger.info(
+            "{} split: {} games, {} frames, {} chains ({:.1%} positive)",
+            name,
+            df.select("gameId").n_unique(),
+            df.select(["gameEventId", "possessionEventId"]).n_unique(),
+            chains.height,
+            chains["label"].mean() if chains.height else float("nan"),
+        )
+
     def _prepare_dataframe(self, df: pl.DataFrame) -> pl.DataFrame:
+        if "period" not in df.columns:
+            raise ValueError(
+                "The dataset has no `period` column: run "
+                "`scripts/patch_dataset_period.py` (or rebuild it) first"
+            )
+        valid_period = pl.col("period").is_in([1, 2, 3, 4])
+        invalid_chains = df.filter(~valid_period.fill_null(False))["chain_id"].unique()
+        if invalid_chains.len():
+            logger.warning(
+                "Dropping {} chain(s) with no valid period", invalid_chains.len()
+            )
+            df = df.filter(~pl.col("chain_id").is_in(invalid_chains.implode()))
+        if "homeTeamStartLeftExtraTime" not in df.columns:
+            df = df.with_columns(
+                pl.lit(None, dtype=pl.Boolean).alias("homeTeamStartLeftExtraTime")
+            )
+
+        df = self._disambiguate_chains(df)
+        expected_frames = (
+            df.filter(pl.col("possessionEventType").ne_missing("SH"))
+            .select("chain_id", *FRAME_KEYS, "index")
+            .unique()
+            .rename({"index": "event_index"})
+        )
+        # the raw event index orders the frames of a chain (the game clock
+        # has a 1 s resolution and is often tied within a chain)
+        df = df.rename({"index": "event_index"})
+
         cols_to_drop = [
             "gameEventType",
-            "index",
             "startTime",
             "endTime",
             "index_right",
@@ -111,7 +307,6 @@ class WorldCup2022Dataset(InMemoryDataset):
             "videoUrl",
             "homeTeamName",
             "awayTeamName",
-            "Age Info",
             "Full Name",
             "Height",
             "birth_date",
@@ -119,6 +314,21 @@ class WorldCup2022Dataset(InMemoryDataset):
             "playerId",
         ]
         df = df.drop(cols_to_drop)
+
+        # `age` is only available for the players found on Transfermarkt; the
+        # FBref "Age Info" string ("(Age: 27-172d)") covers most of the others.
+        # Both are ages at scraping time, so they are shifted back to the
+        # tournament date before bucketing. Unknown ages get their own bucket
+        # instead of silently falling into the oldest one.
+        age_from_info = (
+            pl.col("Age Info").str.extract(r"Age:\s*(\d+)", 1).cast(pl.Float64)
+        )
+        df = df.with_columns(
+            (
+                pl.col("age").fill_null(age_from_info)
+                - self.AGE_SCRAPE_TO_TOURNAMENT_YEARS
+            ).alias("age")
+        ).drop("Age Info")
 
         df = (
             df.with_columns(
@@ -138,11 +348,13 @@ class WorldCup2022Dataset(InMemoryDataset):
                     pl.col(c)
                     .filter(pl.col("team").is_null())
                     .first()
-                    .over("gameEventId", "possessionEventId")
+                    .over(FRAME_KEYS)
                     .alias(f"{c}_ball")
                     for c in ["x", "y", "z", "cos", "sin", "vx", "vy"]
                 ]
-            ).drop("z")
+            )
+        # the players' own height above the pitch is (near) constant noise
+        df = df.drop("z", strict=False)
 
         df = (
             df.filter(pl.col("team").is_not_null())
@@ -152,6 +364,10 @@ class WorldCup2022Dataset(InMemoryDataset):
 
         df = df.with_columns(
             [
+                (
+                    pl.col("jerseyNum").cast(pl.Int64)
+                    + (pl.col("team") == "away").cast(pl.Int64) * 1000
+                ).alias("node_id"),
                 # (mm:ss) → s
                 (
                     (
@@ -168,7 +384,9 @@ class WorldCup2022Dataset(InMemoryDataset):
                 (pl.col("Weight").str.replace("kg", "").cast(pl.Float64)),
                 (pl.col("height_cm").cast(pl.Float64)),
                 (
-                    pl.when(pl.col("age") < 20)
+                    pl.when(pl.col("age").is_null())
+                    .then(pl.lit("unknown"))
+                    .when(pl.col("age") < 20)
                     .then(pl.lit("Under 20"))
                     .when(pl.col("age") < 29)
                     .then(pl.lit("20-28"))
@@ -179,6 +397,17 @@ class WorldCup2022Dataset(InMemoryDataset):
                 ),
             ]
         ).drop(["playerName", "playerName_right"])
+
+        if not self.cfg.use_match_clock:
+            df = df.drop("frameTime")
+
+        if not self.cfg.use_roster_features:
+            # per-player constants (weight, market value, shooting record, age)
+            # identify the player: without them the model has to rely on what
+            # happens on the pitch. The height only feeds the ball `dz`
+            # feature, so a nominal height is kept.
+            df = df.drop(["Weight", "Market Value", "age", *SHOOTING_STATS])
+            df = df.with_columns(pl.lit(self.NOMINAL_HEIGHT_CM).alias("height_cm"))
 
         if self.cfg.use_macro_roles:
             df = df.with_columns(
@@ -201,7 +430,7 @@ class WorldCup2022Dataset(InMemoryDataset):
                 pl.col("team")
                 .filter(pl.col("is_ball_carrier") == 1)
                 .first()
-                .over(["gameEventId", "possessionEventId"])
+                .over(FRAME_KEYS)
                 .alias("possession_team_tmp")
             )
             .with_columns(
@@ -212,69 +441,189 @@ class WorldCup2022Dataset(InMemoryDataset):
             .drop("possession_team_tmp")
         ).drop_nulls(["is_possession_team"])
 
-        is_home_team = df["team"] == "home"
-        is_second_half = df["frameTime"] > df["startPeriod2"]
-
-        is_goal_right = (
-            (is_home_team & df["homeTeamStartLeft"] & ~is_second_half)
-            | (is_home_team & ~df["homeTeamStartLeft"] & is_second_half)
-            | (~is_home_team & ~df["homeTeamStartLeft"] & ~is_second_half)
-            | (~is_home_team & df["homeTeamStartLeft"] & is_second_half)
+        position_cols = ["x", "y"]
+        if self.cfg.include_ball_features:
+            position_cols += ["x_ball", "y_ball", "z_ball"]
+        valid_positions = pl.all_horizontal(
+            [pl.col(c).is_finite().fill_null(False) for c in position_cols]
         )
+        df = df.filter(valid_positions)
+        df = self._discard_broken_chains(df, expected_frames)
+
+        # The goal that matters for a shot is the one attacked by the team in
+        # possession: every node gets that goal (defenders included). A team
+        # attacks to the right iff it is the home team and the home team
+        # attacks to the right in the current period, or vice versa.
+        frame_key = FRAME_KEYS
+        attacks_right = (pl.col("team") == "home") == home_attacks_right_expr()
+        possession_attacks_right = (
+            pl.when(pl.col("is_possession_team") == 1)
+            .then(attacks_right)
+            .max()
+            .over(frame_key)
+            .alias("possession_attacks_right")
+        )
+        df = df.with_columns(possession_attacks_right)
+
+        if self.cfg.normalize_attack_direction:
+            df = self._normalize_attack_direction(df)
+
         df = df.with_columns(
             [
-                pl.when(is_goal_right)
+                pl.when(pl.col("possession_attacks_right"))
                 .then(X_GOAL_RIGHT)
                 .otherwise(X_GOAL_LEFT)
                 .alias("x_goal"),
                 pl.lit(Y_GOAL).alias("y_goal"),
             ]
-        )
+        ).drop("possession_attacks_right")
 
-        df = df.drop(["team", "homeTeamStartLeft", "startPeriod2"])
+        df = self._filter_positive_chains(df)
+
+        df = df.drop(
+            [
+                c
+                for c in [
+                    "team",
+                    "homeTeamStartLeft",
+                    "homeTeamStartLeftExtraTime",
+                    "startPeriod2",
+                    "period",
+                ]
+                if c in df.columns
+            ]
+        )
 
         return df
 
-    def _create_preprocessor(
-        self, df: pl.DataFrame
-    ) -> Union[ColumnTransformer, Pipeline]:
+    @staticmethod
+    def _normalize_attack_direction(df: pl.DataFrame) -> pl.DataFrame:
+        """
+        Mirror the frames in which the possession team attacks to the left so
+        that the attack always goes towards x = pitch length: positions,
+        headings and velocities of players and ball are flipped together.
+        """
+        flip = ~pl.col("possession_attacks_right")
+        mirrored = [
+            pl.when(flip).then(X_GOAL_RIGHT - pl.col(c)).otherwise(pl.col(c)).alias(c)
+            for c in ["x", "x_ball"]
+            if c in df.columns
+        ]
+        negated = [
+            pl.when(flip).then(-pl.col(c)).otherwise(pl.col(c)).alias(c)
+            for c in ["cos", "vx", "cos_ball", "vx_ball"]
+            if c in df.columns
+        ]
+        return df.with_columns(mirrored + negated).with_columns(
+            pl.lit(True).alias("possession_attacks_right")
+        )
+
+    @staticmethod
+    def _discard_broken_chains(
+        df: pl.DataFrame, expected: pl.DataFrame
+    ) -> pl.DataFrame:
+        """Preserve the annotated sequence: never silently remove its frames."""
+        keys = ["chain_id", *FRAME_KEYS, "event_index"]
+        missing = expected.join(
+            df.select(keys).unique(), on=keys, how="anti", nulls_equal=True
+        )
+        invalid = (
+            df.group_by(["chain_id", *FRAME_KEYS])
+            .agg(
+                pl.len().alias("players"),
+                pl.col("is_ball_carrier").sum().alias("carriers"),
+            )
+            .filter((pl.col("players") != 22) | (pl.col("carriers") != 1))
+        )
+        broken = set(missing["chain_id"].to_list()) | set(invalid["chain_id"].to_list())
+        if broken:
+            logger.warning(
+                "Dropping {} chain(s) with missing or invalid frames", len(broken)
+            )
+        return df.filter(~pl.col("chain_id").is_in(sorted(broken)))
+
+    @staticmethod
+    def _disambiguate_chains(df: pl.DataFrame) -> pl.DataFrame:
+        """
+        Make every frame belong to exactly one chain and every negative chain
+        shot-free.
+
+        Two positive chains overlap when a possession contains two shots (the
+        second chain extends back past the first shot); the shared frames are
+        kept in the chain whose shot comes first. Negative chains that contain
+        a shot (possible when the shot's own chain was too short to be kept)
+        are dropped as label noise.
+        """
+        bad_boundary = (
+            (pl.col("gameId").n_unique().over("chain_id") != 1)
+            | (pl.col("period").n_unique().over("chain_id") != 1)
+            | (pl.col("label").n_unique().over("chain_id") != 1)
+        )
+        df = df.filter(~bad_boundary)
+        frame_key = FRAME_KEYS
+
+        chain_end = pl.col("index").max().over("chain_id")
+        df = df.with_columns(chain_end.alias("_chain_end"))
+        df = df.filter(
+            pl.col("_chain_end") == pl.col("_chain_end").min().over(frame_key)
+        ).drop("_chain_end")
+        df = df.filter(pl.col("chain_id") == pl.col("chain_id").min().over(frame_key))
+
+        chain_has_shot = (pl.col("possessionEventType") == "SH").any().over("chain_id")
+        return df.filter(~((pl.col("label") == 0) & chain_has_shot))
+
+    def _create_preprocessor(self, df: pl.DataFrame) -> ColumnTransformer | Pipeline:
         # Column groups --------------------------------------------------- #
         cat_cols = [
-            "possessionEventType",
-            "playerRole",
-            "is_possession_team",
-            "is_ball_carrier",
-            "age",
+            c
+            for c in [
+                "possessionEventType",
+                "playerRole",
+                "is_possession_team",
+                "is_ball_carrier",
+                "age",
+            ]
+            if c in df.columns
+        ]
+        # Identifier columns are passed through untouched; the converter uses
+        # them to group rows into graphs and then drops them.
+        id_cols = [
+            "gameEventId",
+            "possessionEventId",
+            "event_index",
+            "label",
+            "gameId",
+            "chain_id",
+            "jerseyNum",
+            "node_id",
         ]
         pos_cols = ["x", "y"]
         goal_cols = ["x_goal", "y_goal"]
         angle_cols = ["cos", "sin"]
         velocity_cols = ["vx", "vy"]
+        ball_cols = [
+            "x_ball",
+            "y_ball",
+            "z_ball",
+            "cos_ball",
+            "sin_ball",
+            "vx_ball",
+            "vy_ball",
+        ]
         exclude_cols: set[str] = {
             *cat_cols,
+            *id_cols,
             *pos_cols,
             *goal_cols,
             *angle_cols,
             *velocity_cols,
-            "gameEventId",
-            "possessionEventId",
-            "label",
-            "gameId",
-            "chain_id",
-            "jerseyNum",
         }
         if self.cfg.include_ball_features:
-            ball_cols = [
-                "x_ball",
-                "y_ball",
-                "z_ball",
-                "height_cm",
-                "cos_ball",
-                "sin_ball",
-                "vx_ball",
-                "vy_ball",
-            ]
-            exclude_cols.update(ball_cols)
+            # the player height is consumed by the ball pipeline (`dz`)
+            exclude_cols.update(ball_cols + ["height_cm"])
+        elif not self.cfg.use_roster_features:
+            # the nominal height is a constant, not a feature
+            exclude_cols.add("height_cm")
         num_cols = [c for c in df.columns if c not in exclude_cols]
 
         # Pipelines ------------------------------------------------------- #
@@ -304,7 +653,8 @@ class WorldCup2022Dataset(InMemoryDataset):
             ),
         ]
 
-        if self.cfg.use_pca_on_roster_cols:
+        use_shooting_stats = self.cfg.use_roster_features
+        if self.cfg.use_pca_on_roster_cols and use_shooting_stats:
             numeric_steps.append(
                 (
                     "shooting_stats_pca",
@@ -343,7 +693,7 @@ class WorldCup2022Dataset(InMemoryDataset):
                 (
                     "speed_norm",
                     ColumnTransformer(
-                        [("pow", PowerTransformer(), ["vx", "vy"])],
+                        [("clip", ClippedScaler(self.MAX_PLAYER_SPEED), ["vx", "vy"])],
                         remainder="passthrough",
                         verbose_feature_names_out=False,
                     ),
@@ -355,11 +705,8 @@ class WorldCup2022Dataset(InMemoryDataset):
         transformers = [
             ("num", num_pipe, num_cols),
             ("cat", cat_pipe, cat_cols),
-            (
-                "player_loc",
-                player_pipe,
-                pos_cols + angle_cols + velocity_cols + goal_cols,
-            ),
+            ("player_loc", player_pipe, pos_cols + angle_cols + velocity_cols),
+            ("ids", "passthrough", id_cols),
         ]
 
         if self.cfg.include_goal_features:
@@ -378,7 +725,13 @@ class WorldCup2022Dataset(InMemoryDataset):
                     (
                         "diff_speed_norm",
                         ColumnTransformer(
-                            [("pow", PowerTransformer(), ["dvx", "dvy"])],
+                            [
+                                (
+                                    "clip",
+                                    ClippedScaler(self.MAX_BALL_RELATIVE_SPEED),
+                                    ["dvx", "dvy"],
+                                )
+                            ],
                             remainder="passthrough",
                             verbose_feature_names_out=False,
                         ),
@@ -390,20 +743,23 @@ class WorldCup2022Dataset(InMemoryDataset):
                 (
                     "ball_pipe",
                     ball_loc_pipe,
-                    pos_cols + angle_cols + velocity_cols + ball_cols,
+                    pos_cols + ["height_cm"] + angle_cols + velocity_cols + ball_cols,
                 )
             )
 
+        # Every column that reaches the model must be produced by one of the
+        # transformers above: unlisted columns (e.g. raw goal coordinates when
+        # goal features are disabled) are dropped instead of leaking through.
         prep = ColumnTransformer(
             transformers,
-            remainder="passthrough",
+            remainder="drop",
             verbose_feature_names_out=False,  # No prefixes
         )
 
-        if self.cfg.mask_non_possession_shooting_stats:
+        if self.cfg.mask_non_possession_shooting_stats and use_shooting_stats:
             if self.cfg.use_pca_on_roster_cols:
 
-                def cols_to_mask(df: pl.DataFrame) -> List[str]:
+                def cols_to_mask(df: pl.DataFrame) -> list[str]:
                     pca_cols = [c for c in df.columns if c.startswith("pca")]
                     return pca_cols + ["is_possession_team_1"]
             else:
@@ -433,15 +789,18 @@ class WorldCup2022Dataset(InMemoryDataset):
         return prep
 
     def process(self):
-        df = self._prepare_dataframe(pl.read_parquet(self.raw_paths[0]))
+        raw_df = pl.read_parquet(self.raw_paths[0])
+        all_game_ids = sorted(raw_df.select("gameId").unique()["gameId"].to_list())
 
-        train_df, val_df = self._split_by_worldcup_phase(df, self.cfg.val_ratio)
+        df = self._prepare_dataframe(raw_df)
+        if self.cfg.drop_games_without_negatives:
+            df = self._drop_games_without_negatives(df)
 
-        logger.info(
-            "DataFrame split → train: {} rows, val: {} rows",
-            train_df.height,
-            val_df.height,
-        )
+        train_df, val_df = self._split_games(df, all_game_ids)
+        if train_df.is_empty() or val_df.is_empty():
+            raise ValueError("Preprocessing left an empty training or validation split")
+        self._log_split("train", train_df)
+        self._log_split("val", val_df)
 
         preprocessor = self._create_preprocessor(train_df)
 
@@ -455,9 +814,13 @@ class WorldCup2022Dataset(InMemoryDataset):
         val_data_list, _ = self.converter.convert_dataframe_to_data_list(
             val_transformed
         )
+        if not train_data_list or not val_data_list:
+            raise ValueError(
+                "Graph conversion left an empty training or validation split"
+            )
 
         self.save(train_data_list, self.processed_paths[0])
         self.save(val_data_list, self.processed_paths[1])
 
-        fp = Path(self.processed_dir) / self.FEATURE_NAMES_FILE
+        fp = Path(self.processed_paths[2])
         fp.write_text(json.dumps(feature_names, ensure_ascii=False, indent=4))

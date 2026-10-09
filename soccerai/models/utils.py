@@ -1,35 +1,6 @@
-from typing import Callable, Optional, Tuple
+from collections.abc import Callable
 
-import torch
 import torch.nn as nn
-
-from soccerai.models.typings import ResidualSumMode
-
-
-def sum_residual(
-    h: torch.Tensor,
-    residual: Optional[torch.Tensor],
-    mode: ResidualSumMode,
-    layer_idx: int,
-    n_layers: int,
-) -> torch.Tensor:
-    """
-    Apply residual tensor according to sum strategy.
-
-    - 'none' : no residual connection
-    - 'every': add residual at all layers except the first (layer_idx > 0)
-    - 'last' : add residual only before the final layer (layer_idx == n_layers - 1)
-    """
-    if residual is None or mode == "none":
-        return h
-
-    if mode == "every" and layer_idx > 0:
-        return h + residual
-
-    if mode == "last" and layer_idx == n_layers - 1:
-        return h + residual
-
-    return h
 
 
 def build_layers(
@@ -38,7 +9,7 @@ def build_layers(
     dout: int,
     conv_factory: Callable[[int, int], nn.Module],
     norm_factory: Callable[[int], nn.Module],
-) -> Tuple[nn.ModuleList, nn.ModuleList]:
+) -> tuple[nn.ModuleList, nn.ModuleList]:
     convs = nn.ModuleList()
     norms = nn.ModuleList()
     for i in range(n_layers):
@@ -48,7 +19,7 @@ def build_layers(
     return convs, norms
 
 
-def build_mlp(din: int, dmid: int, dout: Optional[int] = None) -> nn.Sequential:
+def build_mlp(din: int, dmid: int, dout: int | None = None) -> nn.Sequential:
     if dout is None:
         dout = dmid
     return nn.Sequential(nn.Linear(din, dmid), nn.ReLU(), nn.Linear(dmid, dout))

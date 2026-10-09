@@ -1,6 +1,5 @@
 import unicodedata
 from functools import lru_cache
-from typing import Dict, Optional
 
 import requests
 from selenium import webdriver
@@ -20,7 +19,7 @@ def normalize(text: str) -> str:
     )
 
 
-def get_api_data(url: str, headers: Optional[Dict[str, str]] = None) -> Optional[dict]:
+def get_api_data(url: str, headers: dict[str, str] | None = None) -> dict | None:
     try:
         response = requests.get(url, headers=headers)
     except Exception as e:

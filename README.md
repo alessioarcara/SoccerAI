@@ -32,6 +32,15 @@ In this work, we benchmark several graph-neural-network (GNN) architectures to e
 * **Training set:** 48 group-stage matches
 * **Validation set:** 16 knockout-stage matches
 
+
+> [!NOTE]
+> Five knock-out matches went to extra time and had no negative chains in
+> the labelled data, so they are excluded by default; the validation split
+> is therefore the 11 remaining knock-out games (341 chains, about 25% positive).
+> The attacked goal is derived from the game period (`gameEvents.period`),
+> and positive chains are kept only if the action before the shot happens
+> within 25 m of the goal line, the same criterion used to select negatives.
+
 Two available data streams:
 
 | Stream               | Granularity                   | Contents                    | Usage                                                                          |
@@ -103,110 +112,210 @@ End-to-End alternatives:
 
 ## Installation
 
-<details>
-<summary>Click to expand</summary>
-
-Before running the code, you need to install PyTorch and its dependencies. You can choose either the GPU or CPU build depending on your setup. The code has been tested with:
-
-* **PyTorch 2.7.1**
-* **CUDA 12.8**
-* Optional PyTorch Geometric libraries
-
-### 1. Install PyTorch
-
-| Build               | Command                                                                                     |
-| ------------------- | ------------------------------------------------------------------------------------------- |
-| **GPU (CUDA 12.8)** | `pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu128`         |
-| **CPU-only**        | `pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cpu`                 |
-
-*Note: Be aware of potential mismatches between CUDA versions when installing.*
-
----
-### 2. PyTorch Geometric stack
-
-Install PyTorch Geometric companion wheels **after** PyTorch:
-
-| Build               | Command                                                                                                                                           |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **GPU (CUDA 12.8)** | `pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.7.1+cu128.html`               |
-| **CPU-only**        | `pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.7.1+cpu.html`                 |
-
----
-
-### 3. Install project dependencies
+The project pins the stack it was validated with (PyTorch 2.7.1 + CUDA 12.8,
+PyTorch Geometric 2.6.1, torch_geometric_temporal 0.56.0, polars 1.x) and
+ships a `uv.lock`, so a working environment is one command away:
 
 ```bash
-pip install .
+uv sync --extra dev          # creates .venv with the exact locked versions
+source .venv/bin/activate
 ```
 
-That’s it—you’re ready to run the code!
-
-</details>
+`pyproject.toml` configures the PyTorch (`cu128`) and PyG wheel indexes for
+`uv`; on a machine without a GPU the same wheels install and run on CPU.
+Without `uv`, install PyTorch 2.7.1 from the `cu128` index, the
+`torch_scatter`/`torch_sparse` wheels from `https://data.pyg.org/whl/torch-2.7.0+cu128.html`
+and then `pip install -e ".[dev]"`.
 
 ## Usage
 
 ### Training a model
 
-1. **Set the model name**
-   
-   Open `config/base.yaml` and fill in the `run_name` field with your chosen model identifier.
+The configuration is managed with [EzConfy](https://github.com/alessioarcara/EzConfy):
+YAML files are deep-merged in order, validated against `configs/schema.yaml`
+and every component (converter, datasets, chains, loaders, backbone, neck,
+head, model, optimizer, scheduler, metrics, callbacks, trainer) is built from
+YAML via `_target_type_` / `_init_args_`, wired by `${...}` references.
 
-2. **Launch training**
+* `configs/base.yaml` is the shared experiment: everything except the backbone.
+* `configs/models/<name>.yaml` defines `backbone` (and `run_name`) for `gcn`,
+  `gcn2`, `graphsage`, `gatv2`, `gine`, `graphgps`, `diffpool`; a few also
+  adjust the neck or the model.
+* Widths are derived, never written by hand: the neck reads
+  `${backbone.out_dim}`, the head `${neck.out_dim}`.
 
-   ```bash
-   python ./scripts/train.py
-   ```
+```bash
+python scripts/train.py   # base.yaml + models/gcn.yaml
+python scripts/train.py --configs configs/base.yaml configs/models/gine.yaml
+python scripts/train.py --configs configs/base.yaml configs/models/gcn.yaml my_ablation.yaml
+```
 
-   * Add `--reload` **only** if you have changed any dataset-related entries in the YAML file; this forces the dataset to be rebuilt so the changes take effect.
+An ablation is a small YAML with only the keys it changes, passed last, e.g.
 
----
+```yaml
+seed: 1
+data_config:
+  use_roster_features: true
+neck:
+  _init_args_:
+    carrier_readout: true
+```
+
+Lists of objects (metrics, callbacks) can be patched element by element with
+EzConfy's `...` marker and the `_id_` of the element. Note that EzConfy
+accepts unknown keys, so a typo in a key is not reported. After changing the
+schema, regenerate the typed models used by the editor and by mypy:
+
+```bash
+uv run ezconfy configs/schema.yaml -o soccerai/generated.py
+```
+
+The training loop is [EzTrain](https://github.com/alessioarcara/EzTrain)'s
+`EpochTrainer`: epochs, evaluation, callbacks (early stopping, checkpoint
+schedule), W&B logging and run identity come from it; `TemporalTrainer`
+only implements the discounted per-frame loss and the evaluation step.
+Every run gets an id `<run_name>_<timestamp>`, shared by its checkpoint
+folder and the W&B run:
+
+```bash
+python scripts/train.py --resume-from gcn_20261008_111531      # continue that run
+python scripts/train.py --configs configs/base.yaml configs/models/gcn.yaml fork.yaml \
+  --resume-from gcn_20261008_111531   # fork.yaml sets a new run_name: new run, same weights
+```
+
+Processed datasets live in `soccerai/data/resources/processed/` under a name
+that hashes `data_config`, the graph converter, and the raw parquet contents,
+so changing a data option or replacing the raw data rebuilds them automatically
+(`--reload` only forces it). Runs log to
+W&B (`WANDB_MODE=offline` keeps them local).
+
+### Key configuration options
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `data_config.normalize_attack_direction` | `true` | mirror frames so the possession team always attacks towards `x = 105`; goal features refer to the attacked goal for every node |
+| `data_config.max_chain_len` | `12` | keep only the last frames of every chain |
+| `data_config.use_roster_features` | `false` | scraped per-player statistics (weight, market value, shooting record, age); constant per player, they let the model identify players |
+| `data_config.use_match_clock` | `false` | match clock as a global feature |
+| `data_config.split_mode` / `val_ratio` | `chronological` / `0.25` | the 48 group-stage games train, the knock-out games validate (`random` draws a seeded game subset) |
+| `data_config.drop_games_without_negatives` | `true` | drop games whose chains are all positive (the five extra-time matches) |
+| `data_config.goal_window_for_positives` | `25.0` | keep positive chains only if their last action is within 25 m of the goal line, like the negatives (`null` keeps all) |
+| `converter.length_scale` | `10.0` | metres; bipartite edge weight `exp(-distance / scale)` |
+| `max_lr` | `${lr}` | peak of the one-cycle schedule |
+| `pos_weight` | `${train_chains.positive_weight()}` | positive-class weight of the BCE (`#neg / #pos` training chains; `null` disables it) |
+| `trainer.gamma` | `0.1` | per-frame loss discount towards the start of the chain |
+| `neck.carrier_readout` | `false` | concatenate the ball-carrier embedding to the readout |
+
+Validation metrics (loss, AP, AUROC, accuracy, F-beta) are computed once per
+chain at its last frame, consistently with the loss and with `eval.py`.
+
+### Tabular baseline
+
+```bash
+python scripts/baseline.py --importance
+```
+
+trains a logistic regression and an XGBoost model on hand-crafted features
+of the last frame of each chain (same processed data and split as the GNNs)
+and prints their validation AP / AUROC / log-loss: the numbers a GNN has to
+beat. On the repaired dataset logistic regression reaches an AP of about 0.60
+and an AUROC of about 0.81, XGBoost an AP of about 0.59 and an AUROC of about
+0.77, against a 0.25 positive rate.
 
 ### Evaluating a trained model
 
 ```bash
-python ./scripts/eval.py --name <model_name>
+python scripts/eval.py --name <run_name>
 ```
 
-* The script automatically picks the best checkpoint from `./checkpoints/<model_name>/`.
-* If you want to evaluate a specific checkpoint, move or delete any other checkpoints in that directory before running the command.
+* Picks the checkpoint with the lowest monitored value among
+  `./checkpoints/<run_name>/<run_id>/best_<monitor>_<value>.pth`; next to it,
+  `last.pth` holds the full state used to resume the run.
+* Checkpoints are self-contained (weights, the merged YAML of the run,
+  feature names, best-epoch metrics): evaluation rebuilds the run from the
+  stored YAML, offline. Checkpoints written before the EzConfy configuration
+  are skipped.
+
+### Tests
+
+```bash
+pytest tests/unit               # synthetic data, a few seconds
+pytest tests/test_graph_creation.py   # builds the dataset from the committed parquet
+```
+
+Tests that need the raw PFF data are skipped when it is not mounted.
+
+### Rebuilding the dataset
+
+`soccerai/data/resources/raw/dataset.parquet` is built by
+`soccerai.data.data.create_dataset` from the raw PFF files (events, tracking,
+metadata, rosters). The committed parquet already contains the `period`
+column; for an older parquet run `python scripts/patch_dataset_period.py`,
+which adds it from the raw event files without re-reading the tracking data.
+
+Accepted annotations use format version 2. Each frame is stored as
+`[gameId, gameEventId, possessionEventId]`, so directory order and loader row
+indices cannot change its label. `save_accepted_chains` needs the labeling
+`event_df` to persist those identities; `_load_chains(path, event_df)` resolves
+them to the current row indices. Empty chains, missing events, negative chains
+containing shots, and chains crossing possession or period boundaries are
+rejected. Positive chains can overlap in legacy annotations; preprocessing
+assigns shared frames to the earliest shot.
+
+For old annotations, run `python -m scripts.repair_dataset_annotations` with
+the original parquet and raw event files. The script verifies the historical
+indices, backs up all three files, migrates the annotations, removes invalid
+negative chains, and restores missing ball positions as nulls. It retains
+tracking velocities and does not re-read the tracking archive, so the committed
+ball speeds still include the vertical component, while `PlayerVelocityEnricher`
+now computes planar speeds: rebuild the parquet from the tracking data to make
+them consistent.
+
+Preprocessing and graph conversion discard a whole chain when required frames
+are missing or invalid, rather than shortening it while retaining its label.
+Missing ball coordinates remain null; chains needing those coordinates are
+discarded when ball features are enabled. Players are ordered by team and
+shirt number consistently across frames, and chains with changing lineups are
+discarded.
 
 ## Repository Structure
 ```bash
-configs/                         # Default and per-model configs
-scripts/ 
-├── preload_video_frames.py      # Pre-downloads video frames needed for labelling to avoid repeated I/O
-├── train.py                     # Trains a selected model
-└── eval.py                      # Selects the best checkpoint of a model type and computes accuracy/F1/AP
+configs/
+├── schema.yaml                  # EzConfy schema of the configuration
+├── base.yaml                    # Shared experiment, wired with ${...} references
+└── models/                      # One file per backbone
+scripts/
+├── train.py                     # Builds the configuration and trains
+├── eval.py                      # Evaluates the best checkpoint of a run offline
+├── baseline.py                  # Tabular reference models on last-frame features
+├── run_experiments.py           # Sequential ablations, one override file each
+├── patch_dataset_period.py      # Adds the game period to an existing dataset.parquet
+└── preload_video_frames.py      # Pre-downloads video frames used for labelling
 notebooks/
-└── data_collection.ipynb        # Used for manually filtering the unwanted chains and to build the Shot-Prediction dataset
-soccerai/              
-└── data/              
-│   ├── converters.py            # Turns tabular data into sparse PyG graphs (bipartite / FC)
-│   ├── data.py                  # Loads World Cup 2022 data and exports Parquet.
-│   ├── dataset.py               # PyG-style dataset class; handles preprocessing, imputing, normalisation & splits
-│   ├── transformers.py          # scikit-learn transformers for feature engineering & normalization
-│   ├── visualize.py             # Pitch frame visualizer (players, ball, side video)
-│   ├── temporal_dataset.py      # Torch dataset that groups all frames of each chain into a sequence and pads/collates them so multiple chains can be batched together.
-│   ├── enrichers/
-│   │   ├── player_velocity.py   # Adds direction & velocity from the last 60 tracking data frames
-│   │   └── rosters.py           # Scrapes FBref & Transfermarkt to build player-stat CSV for the World Cup
-│   └── label.py                 # Builds positive/negative chains and includes a visual function to filter low-quality ones
-└── models/                      # Modular architecture that let's you specify a configurable backbone, neck & head 
-│   ├── backbones.py 
-│   ├── diffpool.py
-│   ├── heads.py
-│   ├── layers.py
-│   ├── models.py
-│   ├── necks.py
-│   ├── typings.py
-│   └── utils.py       
-└── training/                    # Modular training loop with callbacks, metrics & augmentations
-    ├── callbacks.py
-    ├── metrics.py
-    ├── trainer.py
-    ├── trainer_config.py        # Schema for configs
-    ├── transforms.py
-    └── utils.py      
+└── data_collection.ipynb        # Manual filtering of chains and dataset creation
+soccerai/
+├── config.py                    # Seeds, then builds and validates the configuration
+├── generated.py                 # Typed models generated from configs/schema.yaml
+└── data/
+│   ├── converters.py            # Tabular frames -> PyG graphs (bipartite / fully connected)
+│   ├── data.py                  # Loads World Cup 2022 data and exports the parquet
+│   ├── dataset.py               # PyG dataset: preprocessing, split, config-hashed cache
+│   ├── transformers.py          # Name-based feature transformers (player, goal, ball)
+│   ├── temporal_dataset.py      # Chains of frames, padding and per-graph batching
+│   ├── visualize.py             # Pitch frame visualizer
+│   ├── enrichers/               # Player velocities from tracking data, roster scraping
+│   ├── utils.py                 # Pitch offsets, attacking-direction rule, helpers
+│   └── label.py                 # Positive / negative chain extraction and manual filter
+└── models/                      # Backbones, temporal necks, heads, DiffPool
+└── training/
+    ├── trainer.py               # EzTrain epoch trainer (per-frame discounted loss)
+    ├── metrics.py               # Chain-level metrics (AP, AUROC, confusion matrix) and collectors
+    ├── callbacks.py             # GNNExplainer callback for per-frame models
+    ├── checkpoint.py            # Self-contained checkpoints, EzTrain checkpointer
+    └── transforms.py            # Non-mutating pitch-flip augmentations
+tests/
+├── unit/                        # Synthetic-data tests of every pipeline stage
+└── test_*.py                    # Integration tests on the committed parquet / raw data
 ```
 
 ## Acknowledgments

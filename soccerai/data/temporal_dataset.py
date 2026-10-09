@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Callable, List, Optional, Sequence, Tuple
+from collections.abc import Callable, Sequence
 
 import numpy as np
 from torch.utils.data import Dataset
@@ -11,6 +11,7 @@ from torch_geometric_temporal.signal import (
 )
 
 from soccerai.data.dataset import WorldCup2022Dataset
+from soccerai.data.utils import balanced_pos_weight
 
 
 class TemporalChainsDataset(Dataset):
@@ -21,11 +22,11 @@ class TemporalChainsDataset(Dataset):
 
     def __init__(
         self,
-        temporal_chains: List[DynamicGraphTemporalSignal],
+        temporal_chains: list[DynamicGraphTemporalSignal],
         num_features: int,
         num_global_features: int,
         feature_names: Sequence[str],
-        transform: Optional[Callable] = None,
+        transform: Callable | None = None,
     ):
         self.temporal_chains = temporal_chains
         self.num_features = num_features
@@ -36,6 +37,12 @@ class TemporalChainsDataset(Dataset):
     def __len__(self) -> int:
         return len(self.temporal_chains)
 
+    def positive_weight(self) -> float:
+        """#negative / #positive chains: the BCE weight balancing chains."""
+        return balanced_pos_weight(
+            [chain.targets[-1].item() for chain in self.temporal_chains]
+        )
+
     def __getitem__(self, idx: int) -> DynamicGraphTemporalSignal:
         temporal_chain = self.temporal_chains[idx]
 
@@ -45,24 +52,48 @@ class TemporalChainsDataset(Dataset):
         return temporal_chain
 
     @staticmethod
-    def from_worldcup_dataset(dataset: WorldCup2022Dataset) -> TemporalChainsDataset:
+    def from_worldcup_dataset(
+        dataset: WorldCup2022Dataset, max_chain_len: int | None = None
+    ) -> TemporalChainsDataset:
+        """
+        Group the frames of `dataset` by chain, in chronological order.
+
+        With `max_chain_len` only the last frames of each chain are kept: the
+        label is decided by how a chain ends, early frames of long chains are
+        mostly padding for the rest of the batch, and the chain length itself
+        differs between classes (positive chains lose their shot frame).
+        """
+        if max_chain_len is not None and max_chain_len < 1:
+            raise ValueError(f"max_chain_len must be >= 1 or None, got {max_chain_len}")
+
         tmp_transform = dataset.transform
         dataset.transform = None
 
-        buckets = defaultdict(list)
-        for data in dataset:
-            chain_id = int(data.chain_id.item())
-            buckets[chain_id].append(data)
+        try:
+            buckets = defaultdict(list)
+            for data in dataset:
+                chain_id = int(data.chain_id.item())
+                buckets[chain_id].append(data)
+        finally:
+            dataset.transform = tmp_transform
 
         chains = []
         for chain_id, frames in buckets.items():
-            ordered = sorted(frames, key=lambda f: float(f.frame_time.item()))
+            ordered = sorted(frames, key=lambda f: int(f.event_index.item()))
+            if max_chain_len is not None:
+                ordered = ordered[-max_chain_len:]
 
             edge_indices = [f.edge_index.numpy() for f in ordered]
             node_features = [f.x.numpy() for f in ordered]
             global_features = [f.u.numpy() for f in ordered]
             targets = [f.y.numpy() for f in ordered]
-            edge_weights = [f.edge_weight.numpy() for f in ordered]
+            # unweighted graphs (e.g. fully connected) get unit weights
+            edge_weights = [
+                f.edge_weight.numpy()
+                if f.edge_weight is not None
+                else np.ones(f.edge_index.shape[1], dtype=np.float32)
+                for f in ordered
+            ]
             jersey_numbers = [f.jersey_numbers.numpy() for f in ordered]
 
             chains.append(
@@ -85,8 +116,20 @@ class TemporalChainsDataset(Dataset):
         )
 
     @staticmethod
-    def collate(batch: List[DynamicGraphTemporalSignal]):
+    def collate(batch: list[DynamicGraphTemporalSignal]):
+        """
+        Stack B chains into one `DynamicGraphTemporalSignalBatch`.
+
+        At every time step the B graphs are laid out as one disjoint union
+        (nodes of chain b occupy rows [b*N, (b+1)*N)), exactly like
+        `torch_geometric.data.Batch.from_data_list`. The edge indices stored
+        in each chain are local to the chain, so they must be shifted by b*N:
+        `DynamicGraphTemporalSignalBatch` builds `Batch` objects from the raw
+        arrays and performs no such offset itself. Shorter chains are padded
+        at the end with masked frames.
+        """
         T_max = max(c.snapshot_count for c in batch)
+        num_nodes = batch[0].features[0].shape[0]
 
         batch_edge_indices = []
         batch_edge_weights = []
@@ -97,9 +140,12 @@ class TemporalChainsDataset(Dataset):
         batch_masks = []
         batches = []
 
-        for c in batch:
+        for b, c in enumerate(batch):
             T = c.snapshot_count
             pad_frames = T_max - T
+
+            if c.features[0].shape[0] != num_nodes:
+                raise ValueError("All graphs in a batch must have the same node count")
 
             ei, ew, x, y, u, jn = (
                 pad_chain(c, pad_frames)
@@ -113,6 +159,9 @@ class TemporalChainsDataset(Dataset):
                     c.jersey_numbers,
                 )
             )
+
+            # local node ids -> position in the disjoint union of the time step
+            ei = [e + b * num_nodes for e in ei]
 
             batch_edge_indices.append(ei)
             batch_edge_weights.append(ew)
@@ -153,10 +202,7 @@ class TemporalChainsDataset(Dataset):
         # `batch` vector used in PyG for graphs, but replicated over time.
         for _ in range(T_max):
             timestep_batch = np.concatenate(
-                [
-                    np.full(batch[0].features[0].shape[0], i, dtype=np.int64)
-                    for i in range(len(batch))
-                ]
+                [np.full(num_nodes, i, dtype=np.int64) for i in range(len(batch))]
             )
             batches.append(timestep_batch)
 
@@ -174,9 +220,14 @@ class TemporalChainsDataset(Dataset):
 
 def pad_chain(
     c: DynamicGraphTemporalSignal, num_pad_frames: int
-) -> Tuple[List[np.ndarray], ...]:
-    pad_ei = np.zeros_like(c.edge_indices[0])
-    pad_ew = np.zeros_like(c.edge_weights[0])
+) -> tuple[list[np.ndarray], ...]:
+    """
+    Append `num_pad_frames` masked frames: zero features, target -1 and the
+    edges of the last real frame with zero weight (so that no spurious
+    self-loops are created once the node ids are offset per graph).
+    """
+    pad_ei = c.edge_indices[-1]
+    pad_ew = np.zeros_like(c.edge_weights[-1])
     pad_x = np.zeros_like(c.features[0])
     pad_y = np.full_like(c.targets[0], -1)
     pad_u = np.zeros_like(c.u[0])

@@ -1,6 +1,5 @@
 import tempfile
 from pathlib import Path
-from typing import Dict, Optional
 
 import polars as pl
 from loguru import logger
@@ -20,12 +19,12 @@ class RostersEnricher:
         self._base_url = base_url
 
     def _enrich_player_record(
-        self, player: Dict, tm_player_id: Optional[str] = None
-    ) -> Dict:
+        self, player: dict, tm_player_id: str | None = None
+    ) -> dict:
         player_name = player["playerName"]
         player_team = player["playerTeam"]
         player_role = player["playerRole"]
-        combined_stats: Dict = {}
+        combined_stats: dict = {}
 
         if tm_player_id is None:
             tm_player_id = tm.search_player_id(player_name, player_team, self._base_url)

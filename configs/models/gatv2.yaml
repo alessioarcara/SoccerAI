@@ -1,0 +1,13 @@
+run_name: gatv2
+
+backbone:
+  _target_type_: soccerai.models.backbones:GATv2Backbone
+  _init_args_:
+    din: ${train_ds.num_node_features}
+    n_layers: 2
+    dout: 64
+    drop: 0.1
+    norm: graph
+    num_heads: 4
+    use_edge_attr: true
+    edge_dropout: 0.2

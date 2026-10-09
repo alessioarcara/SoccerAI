@@ -1,0 +1,10 @@
+run_name: gcn2
+
+backbone:
+  _target_type_: soccerai.models.backbones:GCNIIBackbone
+  _init_args_:
+    din: ${train_ds.num_node_features}
+    n_layers: 6
+    dout: 64
+    drop: 0.1
+    norm: graph

@@ -1,0 +1,15 @@
+run_name: diffpool
+
+# the backbone pools the graph itself: the model feeds its graph embedding
+# straight to the recurrent neck
+backbone:
+  _target_type_: soccerai.models.diffpool:DiffPoolBackbone
+  _init_args_:
+    din: ${train_ds.num_node_features}
+    dhid: 32
+    pooling_ratio: 0.25
+    dhid_multiplier: 1
+    readout: mean
+
+model:
+  _target_type_: soccerai.models.diffpool:HierarchicalGNN

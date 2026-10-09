@@ -1,23 +1,23 @@
 import json
 import os
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import polars as pl
 from loguru import logger
 
+from soccerai.data.annotations import FRAME_KEYS, chain_errors, decode_chains
 from soccerai.data.config import (
     ACCEPTED_NEG_CHAINS_PATH,
     ACCEPTED_POS_CHAINS_PATH,
     PLAYER_STATS_PATH,
 )
-from soccerai.data.enrichers import PlayerVelocityEnricher
 from soccerai.data.utils import (
     offset_x,
     offset_y,
 )
 
 
-def extract_event(event: Dict[str, Any]) -> Dict[str, Any]:
+def extract_event(event: dict[str, Any]) -> dict[str, Any]:
     return {
         "gameId": event["gameId"],
         "gameEventId": event["gameEventId"],
@@ -31,12 +31,13 @@ def extract_event(event: Dict[str, Any]) -> Dict[str, Any]:
         "playerName": event["gameEvents"]["playerName"],
         "videoUrl": event["gameEvents"]["videoUrl"],
         "frameTime": event["possessionEvents"]["formattedGameClock"],
+        "period": event["gameEvents"]["period"],
     }
 
 
 def extract_players(
-    event: Dict[str, Any],
-) -> List[Dict[str, Any]]:
+    event: dict[str, Any],
+) -> list[dict[str, Any]]:
     players = []
     game_id = event["gameId"]
     game_event_id = event["gameEventId"]
@@ -44,12 +45,12 @@ def extract_players(
 
     def extract_entity(
         team: str | None,
-        x: float,
-        y: float,
+        x: float | None,
+        y: float | None,
         z: float,
         jerseyNum: str | None,
         visibility: str | None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return {
             "gameId": game_id,
             "gameEventId": game_event_id,
@@ -81,7 +82,7 @@ def extract_players(
     return players
 
 
-def extract_metadata(game_metadata: List[Dict[str, Any]]) -> Dict[str, Any]:
+def extract_metadata(game_metadata: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "gameId": game_metadata[0]["id"],
         "awayTeamName": game_metadata[0]["awayTeam"]["name"],
@@ -89,11 +90,14 @@ def extract_metadata(game_metadata: List[Dict[str, Any]]) -> Dict[str, Any]:
         "homeTeamName": game_metadata[0]["homeTeam"]["name"],
         "homeTeamColor": game_metadata[0]["homeTeamKit"]["primaryColor"],
         "homeTeamStartLeft": game_metadata[0]["homeTeamStartLeft"],
+        "homeTeamStartLeftExtraTime": game_metadata[0].get(
+            "homeTeamStartLeftExtraTime"
+        ),
         "startPeriod2": game_metadata[0]["startPeriod2"],
     }
 
 
-def extract_player_info(player_info: Dict[str, Any]) -> Dict[str, Any]:
+def extract_player_info(player_info: dict[str, Any]) -> dict[str, Any]:
     return {
         "playerId": player_info["player"]["id"],
         "playerName": player_info["player"]["nickname"],
@@ -105,8 +109,8 @@ def extract_player_info(player_info: Dict[str, Any]) -> Dict[str, Any]:
 
 def load_and_process_soccer_events(
     event_dir_path: str, filter_invalid_events: bool = False
-) -> Tuple[pl.DataFrame, pl.DataFrame]:
-    event_files = [f for f in os.listdir(event_dir_path) if f.endswith(".json")]
+) -> tuple[pl.DataFrame, pl.DataFrame]:
+    event_files = sorted(f for f in os.listdir(event_dir_path) if f.endswith(".json"))
 
     all_events = []
     all_players = []
@@ -140,6 +144,60 @@ def load_and_process_soccer_events(
         )
 
     return event_df, players_df
+
+
+def load_event_periods(event_dir_path: str) -> pl.DataFrame:
+    """
+    Lightweight loader returning the game period (1-4) of every game event,
+    without parsing player positions.
+    """
+    rows = []
+    for event_file in sorted(os.listdir(event_dir_path)):
+        if not event_file.endswith(".json"):
+            continue
+        with open(os.path.join(event_dir_path, event_file), "r") as f:
+            data = json.load(f)
+        for e in data:
+            rows.append(
+                {
+                    "gameId": e["gameId"],
+                    "gameEventId": e["gameEventId"],
+                    "period": e["gameEvents"]["period"],
+                }
+            )
+
+    return pl.DataFrame(rows).unique(["gameId", "gameEventId"], keep="first")
+
+
+def add_period_columns(
+    df: pl.DataFrame, event_dir_path: str, metadata_dir_path: str
+) -> pl.DataFrame:
+    """
+    Attach `period` (from the raw events) and `homeTeamStartLeftExtraTime`
+    (from the raw metadata) to an existing dataset, preserving row order.
+    """
+    periods = load_event_periods(event_dir_path).with_columns(
+        pl.col("gameId").cast(pl.Int64), pl.col("gameEventId").cast(pl.Int64)
+    )
+    metadata = (
+        load_and_process_metadata(metadata_dir_path)
+        .select(["gameId", "homeTeamStartLeftExtraTime"])
+        .with_columns(pl.col("gameId").cast(pl.Int64))
+    )
+
+    df = df.drop(
+        [c for c in ("period", "homeTeamStartLeftExtraTime") if c in df.columns]
+    )
+    out = df.join(periods, on=["gameId", "gameEventId"], how="left").join(
+        metadata, on="gameId", how="left"
+    )
+
+    if out.height != df.height:
+        raise ValueError("Joining periods changed the number of rows")
+    if out["period"].null_count() > 0:
+        raise ValueError("Some events have no period in the raw event data")
+
+    return out
 
 
 def load_and_process_metadata(
@@ -182,14 +240,13 @@ def load_and_process_rosters(rosters_dir_path: str) -> pl.DataFrame:
     return rosters_df
 
 
-def _load_chains(chain_path: str) -> List[List[int]]:
+def _load_chains(chain_path: str, event_df: pl.DataFrame) -> list[list[int]]:
     with open(chain_path, "r") as f:
-        chains = json.load(f)
-        return chains
+        return decode_chains(json.load(f), event_df)
 
 
 def _attach_indices_to_chains(
-    pos_chains: List[List[int]], neg_chains: List[List[int]]
+    pos_chains: list[list[int]], neg_chains: list[list[int]]
 ) -> pl.DataFrame:
     all_chains = pos_chains + neg_chains
 
@@ -199,10 +256,10 @@ def _attach_indices_to_chains(
         for frame_id in chain
     ]
 
-    return pl.DataFrame(rows)
+    return pl.DataFrame(rows, schema={"chain_id": pl.Int64, "index": pl.UInt32})
 
 
-def _flatten_chains(chains: List[List[int]]) -> List[int]:
+def _flatten_chains(chains: list[list[int]]) -> list[int]:
     return [idx for chain in chains for idx in chain]
 
 
@@ -217,12 +274,20 @@ def create_dataset(
     logger.info("Loading event and player data from {}", event_data_path)
     event_df, players_df = load_and_process_soccer_events(event_data_path, True)
 
-    pos_chains = _load_chains(ACCEPTED_POS_CHAINS_PATH)
-    neg_chains = _load_chains(ACCEPTED_NEG_CHAINS_PATH)
+    pos_chains = _load_chains(ACCEPTED_POS_CHAINS_PATH, event_df)
+    neg_chains = _load_chains(ACCEPTED_NEG_CHAINS_PATH, event_df)
+    for positive, chains in [(True, pos_chains), (False, neg_chains)]:
+        errors = chain_errors(chains, event_df, positive=positive)
+        if errors:
+            raise ValueError(
+                f"Invalid {'positive' if positive else 'negative'} annotations: {errors}"
+            )
     chains_df = _attach_indices_to_chains(pos_chains, neg_chains)
 
     pos_indices = _flatten_chains(pos_chains)
     neg_indices = _flatten_chains(neg_chains)
+    if set(pos_indices) & set(neg_indices):
+        raise ValueError("Positive and negative annotations share events")
 
     labeled_events_df = (
         event_df.join(chains_df, on="index", how="left")
@@ -238,15 +303,22 @@ def create_dataset(
     )
 
     if not skip_velocity:
+        # imported lazily: the enrichers pull in the scraping stack (selenium,
+        # bs4), which is not needed to merely read or patch a dataset
+        from soccerai.data.enrichers import PlayerVelocityEnricher
+
         logger.info("Adding player velocities from {}", tracking_data_path)
         enricher = PlayerVelocityEnricher(tracking_data_path)
         players_df = enricher.add_velocity_per_player(players_df)
 
     result_df = labeled_events_df.join(
         players_df,
-        on=["gameEventId", "possessionEventId"],
+        on=FRAME_KEYS,
         coalesce=True,
+        nulls_equal=True,
     )
+    # Keep the raw schema's legacy suffix column for existing consumers.
+    result_df = result_df.with_columns(pl.col("gameId").alias("gameId_right"))
 
     if not skip_player_stats:
         logger.info("Adding player statistics")
@@ -264,6 +336,7 @@ def create_dataset(
                         "homeTeamName",
                         "awayTeamName",
                         "homeTeamStartLeft",
+                        "homeTeamStartLeftExtraTime",
                         "startPeriod2",
                     ]
                 ),

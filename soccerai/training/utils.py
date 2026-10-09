@@ -1,10 +1,12 @@
-from typing import Any, Dict, Generic, List, Sequence, Tuple, TypeVar
+from collections.abc import Sequence
+from typing import Any, Generic, TypeVar
 
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 import torch
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.lines import Line2D
 from mplsoccer import Pitch
 from torch_geometric.data import Batch, Data
 from torch_geometric.seed import seed_everything
@@ -20,6 +22,9 @@ _PITCH_KWARGS: dict = {
     "line_color": "white",
     "linewidth": 2,
 }
+_POSSESSION_COLOUR = "#2563eb"
+_OPPOSITION_COLOUR = "#ef4444"
+_CARRIER_COLOUR = "#facc15"
 
 
 def fix_random(seed: int):
@@ -31,9 +36,9 @@ def fix_random(seed: int):
 class TopKStorage(Generic[T]):
     def __init__(self, k: int) -> None:
         self.k = k
-        self._items: List[Tuple[float, T]] = []
+        self._items: list[tuple[float, T]] = []
 
-    def add(self, entry: Tuple[float, T]) -> None:
+    def add(self, entry: tuple[float, T]) -> None:
         self._items.append(entry)
         self._items.sort(key=lambda x: x[0], reverse=True)
         if len(self._items) > self.k:
@@ -42,29 +47,38 @@ class TopKStorage(Generic[T]):
     def clear(self) -> None:
         self._items.clear()
 
-    def get_all_entries(self) -> List[Tuple[float, T]]:
+    def get_all_entries(self) -> list[tuple[float, T]]:
         return list(self._items)
 
 
 def _prepare_frame_data(
     data: Data,
-    idx_x: int,
-    idx_team: int,
-    idx_ball: int,
-) -> Tuple[np.ndarray, ...]:
+    feature_names: Sequence[str],
+) -> tuple[np.ndarray, ...]:
     node_features = data.x.detach().cpu().numpy()
-    xy = node_features[:, idx_x : idx_x + 2]
-    x, y = xy.T
+    x = node_features[:, feature_names.index("x")]
+    y = node_features[:, feature_names.index("y")]
 
-    teams = node_features[:, idx_team].astype(int)
-    has_ball = node_features[:, idx_ball].astype(bool)
+    teams = node_features[:, feature_names.index("is_possession_team_1")] > 0.5
+    has_ball = node_features[:, feature_names.index("is_ball_carrier_1")] > 0.5
 
-    face_colours = np.where(teams == 0, "red", "blue")
-    edge_colours = np.where(has_ball, "white", face_colours)
+    face_colours = np.where(teams, _POSSESSION_COLOUR, _OPPOSITION_COLOUR)
+    edge_colours = np.where(has_ball, _CARRIER_COLOUR, "#1f2937")
 
     jersey_numbers = data.jersey_numbers.detach().cpu().numpy()
 
     return x, y, jersey_numbers, face_colours, edge_colours
+
+
+def _attacks_right(data: Data, feature_names: Sequence[str]) -> bool | None:
+    # Goal direction refers to the attacked goal for every player. It also
+    # works when attack normalisation is disabled; do not assume a direction
+    # if goal features are unavailable.
+    if "goal_cos" not in feature_names:
+        return None
+    direction = data.x[:, feature_names.index("goal_cos")].detach().cpu().numpy()
+    direction = direction[np.isfinite(direction) & (np.abs(direction) > 1e-6)]
+    return bool(np.median(direction) > 0) if direction.size else None
 
 
 def _draw_frame(
@@ -75,8 +89,17 @@ def _draw_frame(
     face_colours: np.ndarray,
     edge_colours: np.ndarray,
     title: str,
+    attacks_right: bool | None = None,
 ) -> None:
-    ax.scatter(x, y, c=face_colours, ec=edge_colours, s=200)
+    ax.scatter(
+        x,
+        y,
+        c=face_colours,
+        ec=edge_colours,
+        s=180,
+        linewidths=np.where(edge_colours == _CARRIER_COLOUR, 2.5, 0.7).tolist(),
+        zorder=3,
+    )
 
     for xi, yi, num in zip(x, y, jersey_numbers):
         ax.text(
@@ -91,8 +114,29 @@ def _draw_frame(
             zorder=4,
         )
 
-    ax.set_title(title, fontsize=12, pad=4)
+    if attacks_right is not None:
+        start, end = (0.72, 0.92) if attacks_right else (0.28, 0.08)
+        ax.annotate(
+            "",
+            xy=(end, 0.04),
+            xytext=(start, 0.04),
+            xycoords="axes fraction",
+            arrowprops={"arrowstyle": "->", "color": _CARRIER_COLOUR, "lw": 1.6},
+        )
+        ax.text(
+            (start + end) / 2,
+            0.075,
+            "Attack",
+            transform=ax.transAxes,
+            color=_CARRIER_COLOUR,
+            fontsize=7,
+            ha="center",
+        )
+
+    ax.set_title(title, fontsize=10, pad=6)
     ax.axis("off")
+    # metricasports draws y downwards; the data (like the labeling view in
+    # `soccerai.data.visualize`) has y upwards
     ax.invert_yaxis()
 
 
@@ -120,7 +164,7 @@ def plot_player_feature_importance(
 
 
 def plot_average_feature_importance(
-    node_masks: List[np.ndarray],
+    node_masks: list[np.ndarray],
     feature_names: Sequence[str],
     num_frames: int,
 ) -> plt.Figure:
@@ -144,28 +188,68 @@ def plot_average_feature_importance(
 
 
 def plot_pitch_frames_grid(
-    entries: Sequence[Tuple[float, Data]],
+    entries: Sequence[tuple[float, Data]],
     feature_names: Sequence[str],
-    grid_params: Dict[str, int],
+    grid_params: dict[str, int],
+    *,
+    item_name: str = "Frame",
+    title: str | None = None,
 ) -> plt.Figure:
-    idx_x = feature_names.index("x")
-    idx_team = feature_names.index("is_possession_team_1")
-    idx_ball = feature_names.index("is_ball_carrier_1")
-
+    if not entries:
+        raise ValueError("At least one frame is required to draw a pitch grid")
+    if any(grid_params[key] <= 0 for key in ("nrows", "ncols", "figheight")):
+        raise ValueError("Pitch grid dimensions must be positive")
+    ncols = min(grid_params["ncols"], len(entries))
+    nrows = (len(entries) + ncols - 1) // ncols
+    row_height = max(2.5, grid_params["figheight"] / grid_params["nrows"])
+    header_height = 0.7 if title else 0.45
+    fig_height = nrows * row_height + header_height
     pitch = Pitch(**_PITCH_KWARGS)
-    fig, axs = pitch.grid(
-        **grid_params,
-        grid_height=0.95,
-        grid_width=0.95,
-        bottom=0.025,
-        endnote_height=0,
-        title_height=0,
+    fig, axs = plt.subplots(
+        nrows,
+        ncols,
+        squeeze=False,
+        figsize=(max(6, ncols * row_height * pitch.ax_aspect), fig_height),
+        layout="constrained",
+    )
+    fig.set_layout_engine("constrained", rect=(0, 0, 1, 1 - header_height / fig_height))
+    if title:
+        fig.text(
+            0.02, 1 - 0.1 / fig_height, title, fontsize=12, fontweight="bold", va="top"
+        )
+    legend = [
+        Line2D(
+            [],
+            [],
+            linestyle="none",
+            marker="o",
+            markerfacecolor=colour,
+            markeredgecolor=edge,
+            markeredgewidth=width,
+            markersize=8,
+            label=label,
+        )
+        for colour, edge, width, label in [
+            (_POSSESSION_COLOUR, "#1f2937", 0.7, "Possession team"),
+            (_OPPOSITION_COLOUR, "#1f2937", 0.7, "Opponents"),
+            ("#64748b", _CARRIER_COLOUR, 2.5, "Ball carrier"),
+        ]
+    ]
+    fig.legend(
+        handles=legend,
+        loc="upper center",
+        ncol=3,
+        frameon=False,
+        fontsize=9,
+        bbox_to_anchor=(0.5, 1 - (0.30 if title else 0.05) / fig_height),
     )
     axes = axs.flatten()
 
     for i, (ax, (score, data)) in enumerate(zip(axes, entries), 1):
+        pitch.draw(ax=ax)
         x, y, jerseys, face_c, edge_c = _prepare_frame_data(
-            data, idx_x, idx_team, idx_ball
+            data,
+            feature_names,
         )
         _draw_frame(
             ax,
@@ -174,13 +258,13 @@ def plot_pitch_frames_grid(
             jerseys,
             face_c,
             edge_c,
-            title=f"Frame {i} — Conf. {score:.2f}",
+            title=f"{item_name} {i} · p(shot)={score:.2f}",
+            attacks_right=_attacks_right(data, feature_names),
         )
 
     for ax in axes[len(entries) :]:
         ax.set_visible(False)
 
-    fig.tight_layout()
     return fig
 
 
@@ -189,10 +273,6 @@ def plot_chain_frames(
     scores: Sequence[float],
     feature_names: Sequence[str],
 ) -> np.ndarray:
-    idx_x = feature_names.index("x")
-    idx_team = feature_names.index("is_possession_team_1")
-    idx_ball = feature_names.index("is_ball_carrier_1")
-
     pitch = Pitch(**_PITCH_KWARGS)
     figs = []
 
@@ -200,7 +280,8 @@ def plot_chain_frames(
         fig, ax = pitch.draw()
 
         x, y, jerseys, face_c, edge_c = _prepare_frame_data(
-            snapshot, idx_x, idx_team, idx_ball
+            snapshot,
+            feature_names,
         )
 
         _draw_frame(
@@ -210,7 +291,8 @@ def plot_chain_frames(
             jerseys,
             face_c,
             edge_c,
-            title=f"Frame {i} — Conf. {score:.2f}",
+            title=f"Frame {i} · p(shot)={score:.2f}",
+            attacks_right=_attacks_right(snapshot, feature_names),
         )
 
         figs.append(fig_to_numpy(fig))
@@ -231,8 +313,8 @@ def fig_to_numpy(
 
 
 def build_dummy_inputs(
-    bs: int, feat_dim: int, glob_dim: int, device: torch.device
-) -> Dict[str, Any]:
+    bs: int, feat_dim: int, glob_dim: int, device: str | torch.device
+) -> dict[str, Any]:
     """
     Creates random tensors to feed `torch_geometric.nn.summary`.
     """
@@ -249,7 +331,7 @@ def build_dummy_inputs(
     return dict(x=x, edge_index=edge_index, edge_attr=edge_attr, u=u, batch=batch)
 
 
-def extract_chain(batch: Discrete_Signal, chain_idx: int) -> List[Data]:
+def extract_chain(batch: Discrete_Signal, chain_idx: int) -> list[Data]:
     """
     NOTE - PyTorch Geometric Temporal assembles its batches manually instead of
     via `Batch.from_data_list`, so helper methods such as `get_example()` or
@@ -263,10 +345,13 @@ def extract_chain(batch: Discrete_Signal, chain_idx: int) -> List[Data]:
         x = snapshot.x[node_mask]
         jersey_numbers = snapshot.jersey_numbers[node_mask]
 
-        start_edge_idx = 22 * 11 * chain_idx
-        end_edge_idx = 22 * 11 * (chain_idx + 1)
-        edge_index = snapshot.edge_index[:, start_edge_idx:end_edge_idx]
-        edge_attr = snapshot.edge_attr[start_edge_idx:end_edge_idx]
+        # nodes of graph `chain_idx` are contiguous: map their ids back to 0..N-1
+        node_offset = int(node_mask.nonzero().min())
+        edge_mask = node_mask[snapshot.edge_index[0]]
+        edge_index = snapshot.edge_index[:, edge_mask] - node_offset
+        edge_attr = (
+            snapshot.edge_attr[edge_mask] if snapshot.edge_attr is not None else None
+        )
 
         u = snapshot.u[chain_idx].unsqueeze(0)
         y = snapshot.y[chain_idx]

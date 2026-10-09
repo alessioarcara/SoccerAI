@@ -1,0 +1,73 @@
+# Typed shape of the configuration, validated by EzConfy.
+# Regenerate the editor models after any change:
+#   uv run ezconfy generate configs/schema.yaml -o soccerai/generated.py
+types:
+  TorchModule: torch.nn:Module
+  Optimizer: torch.optim:Optimizer
+  LRScheduler: torch.optim.lr_scheduler:LRScheduler
+  DataLoader: torch.utils.data:DataLoader
+  GraphConverter: soccerai.data.converters:GraphConverter
+  WorldCupDataset: soccerai.data.dataset:WorldCup2022Dataset
+  ChainsDataset: soccerai.data.temporal_dataset:TemporalChainsDataset
+  MetricCollection: eztrain.metrics:MetricCollection
+  Callback: eztrain.callbacks:Callback
+  Logger: eztrain.loggers:Logger
+  Trainer: soccerai.training.trainer:BaseTrainer
+
+schema:
+  project_name: str
+  run_name: str
+  seed: int
+  device: str = auto
+
+  # training hyper-parameters, referenced by the objects below
+  n_epochs: int
+  batch_size: int
+  num_workers: int
+  lr: float
+  max_lr: float
+  wd: float
+  eval_rate: int
+  threshold: float
+  fbeta: float
+  collector_frames: int
+  resume_from: str?
+  steps_per_epoch: int
+
+  data_config:
+    val_ratio: float
+    split_mode: str = chronological   # see soccerai.data.dataset:SplitMode
+    drop_games_without_negatives: bool = true
+    goal_window_for_positives: float?
+    include_goal_features: bool
+    include_ball_features: bool
+    use_macro_roles: bool
+    use_augmentations: bool
+    use_regression_imputing: bool
+    use_pca_on_roster_cols: bool
+    mask_non_possession_shooting_stats: bool
+    normalize_attack_direction: bool = true
+    max_chain_len: int?
+    use_roster_features: bool = false
+    use_match_clock: bool = false
+
+  converter: GraphConverter
+  train_ds: WorldCupDataset
+  val_ds: WorldCupDataset
+  train_chains: ChainsDataset
+  val_chains: ChainsDataset
+  train_loader: DataLoader
+  val_loader: DataLoader
+  pos_weight: float?
+
+  backbone: TorchModule
+  neck: TorchModule
+  head: TorchModule
+  model: TorchModule
+
+  optim: Optimizer
+  scheduler: LRScheduler
+  metrics: MetricCollection
+  callbacks: list[Callback]
+  logger: Logger
+  trainer: Trainer
