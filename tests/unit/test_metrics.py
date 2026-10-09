@@ -9,6 +9,7 @@ from soccerai.training.metrics import (
     BinaryPrecisionRecallCurve,
     EarlyWarning,
     chain_level_predictions,
+    frames_before_first_shot,
 )
 
 
@@ -85,3 +86,22 @@ def test_early_warning_measures_how_early_positives_are_flagged():
     assert 0 < results["frame_average_precision"] <= 1
     assert 0 <= results["frame_auroc"] <= 1
     assert set(m.plot()) == {"early_warning_curve"}
+
+
+def test_frames_before_first_shot_stop_where_the_time_to_shot_jumps():
+    inf = np.inf
+    assert frames_before_first_shot(np.array([5.0, 3.0, 1.0, inf, inf])) == 3
+    assert frames_before_first_shot(np.array([5.0, 1.0, 9.0, 4.0])) == 2
+    assert frames_before_first_shot(np.array([2.0, 1.0])) == 2
+    assert frames_before_first_shot(np.array([inf, inf])) == 0
+
+
+def test_early_warning_ignores_alarms_after_the_shot():
+    # positive chain flagged only after its shot (time to shot jumps to inf)
+    chains = [make_chain(3, 1.0, 0), make_chain(2, 0.0, 1), make_chain(2, 0.0, 2)]
+    batch = TemporalChainsDataset.collate(chains)
+    batch.time_to_shot[:, 0] = [3.0, 1.0, np.inf]
+    preds = torch.tensor([[0.1, 0.2, 0.3], [0.1, 0.1, 0.2], [0.9, -1.0, -1.0]])
+    m = EarlyWarning(false_alarm_rate=0.5, min_lead=1.0)
+    m.update(preds.clamp(min=0), torch.from_numpy(batch.targets), batch)
+    assert m.compute()["early_recall"] == 0.0

@@ -408,6 +408,20 @@ class ChainCollector(Collector[tuple[np.ndarray, list[Data]]]):
         return entries[0]
 
 
+def frames_before_first_shot(time_to_shot: np.ndarray) -> int:
+    """
+    Number of leading frames of a chain that precede its first shot: the time
+    to the shot is finite and keeps falling until the shot, then jumps to the
+    next shot (or +inf).
+    """
+    if len(time_to_shot) == 0 or not np.isfinite(time_to_shot[0]):
+        return 0
+    rises = np.flatnonzero(
+        ~np.isfinite(time_to_shot[1:]) | (np.diff(time_to_shot) > 1e-6)
+    )
+    return int(rises[0]) + 1 if rises.size else len(time_to_shot)
+
+
 class EarlyWarning(Metric):
     """
     How early the prediction flags the actions that end in a shot.
@@ -479,12 +493,18 @@ class EarlyWarning(Metric):
         return float(np.quantile(peaks, 1 - self.false_alarm_rate))
 
     def _leads(self, threshold: float) -> np.ndarray:
-        """Warning time of every positive chain (NaN when never flagged)."""
+        """
+        Warning time of every positive chain (NaN when never flagged). Only
+        the frames before the first shot of the chain can raise the alarm:
+        later frames (the shot in flight, a rebound) would otherwise count
+        as warnings of the next shot, or of none, with an infinite lead.
+        """
         leads = []
         for label, probs, time_to_shot in self.chains:
             if label != 1:
                 continue
-            alarms = np.flatnonzero(probs > threshold)
+            n = frames_before_first_shot(time_to_shot)
+            alarms = np.flatnonzero(probs[:n] > threshold)
             leads.append(time_to_shot[alarms[0]] if alarms.size else np.nan)
         return np.asarray(leads, dtype=float)
 
